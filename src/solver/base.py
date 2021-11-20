@@ -64,6 +64,8 @@ class SolverBase(ABC):
 		minimum values of state variables
 	max_state: numpy array
 		maximum values of state variables
+	itime: integer
+		current time step number
 
 	Abstract Methods:
 	-----------------
@@ -637,6 +639,8 @@ class SolverBase(ABC):
 
 		itime = 0
 		while itime < stepper.num_time_steps:
+			# Store timestep number
+			self.itime = itime
 			# Reset min and max state
 			self.max_state[:] = -np.inf
 			self.min_state[:] = np.inf
