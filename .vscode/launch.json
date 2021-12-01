@@ -1,0 +1,22 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\src\\quail",
+      // "program": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\test\\volcano_models\\mp_execution.py",
+      "console": "integratedTerminal",
+      "args": ["vent_region.py"],
+      // "args": ["p0.py"],
+      // "args": ["-p", "post_process.py"],
+      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\reference1",
+      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\examples\\euler\\2D\\flow_over_bump",
+      "subProcess": true,
+    }
+  ]
+}

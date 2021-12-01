@@ -39,6 +39,8 @@ from physics.euler.functions import ConvNumFluxType as \
 from physics.euler.functions import FcnType as euler_fcn_type
 from physics.euler.functions import SourceType as euler_source_type
 
+import numerics.helpers.helpers as helpers
+from dataclasses import dataclass
 
 class Euler(base.PhysicsBase):
 	'''
@@ -73,6 +75,9 @@ class Euler(base.PhysicsBase):
 			base_BC_type.Extrapolate : base_fcns.Extrapolate,
 			euler_BC_type.SlipWall : euler_fcns.SlipWall,
 			euler_BC_type.PressureOutlet : euler_fcns.PressureOutlet,
+			euler_BC_type.CustomInlet : euler_fcns.CustomInlet,
+			euler_BC_type.Euler2D1D: euler_fcns.Euler2D1D,
+			euler_BC_type.Euler2D2D: euler_fcns.Euler2D2D,
 		})
 
 	def set_physical_params(self, GasConstant=287., SpecificHeatRatio=1.4):
@@ -222,6 +227,7 @@ class Euler1D(Euler):
 			euler_fcn_type.RiemannProblem : euler_fcns.RiemannProblem,
 			euler_fcn_type.ShuOsherProblem :
 					euler_fcns.ShuOsherProblem,
+			euler_fcn_type.MultipleRiemann : euler_fcns.MultipleRiemann,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -230,6 +236,7 @@ class Euler1D(Euler):
 
 		self.source_map.update({
 			euler_source_type.StiffFriction : euler_fcns.StiffFriction,
+			euler_source_type.PorousSource : euler_fcns.PorousSource,
 		})
 
 		self.conv_num_flux_map.update({

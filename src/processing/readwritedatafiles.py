@@ -34,6 +34,9 @@ def write_data_file(solver, iwrite):
 	
 	# Remove un-pickle-able functions, objects, etc...
 	solver.physics.gas = None
+	# Remove piped objects
+	bdnet = solver.physics.bdry_data_net
+	solver.physics.bdry_data_net = None
 
 	# Get file name
 	prefix = solver.params["Prefix"]
@@ -45,6 +48,9 @@ def write_data_file(solver, iwrite):
 	with open(fname, 'wb') as fo:
 		# Save solver
 		pickle.dump(solver, fo, pickle.HIGHEST_PROTOCOL)
+	
+	# Replace removed objects
+	solver.physics.bdry_data_net = bdnet
 
 
 def read_data_file(fname):

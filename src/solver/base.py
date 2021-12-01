@@ -188,6 +188,12 @@ class SolverBase(ABC):
 		# Compatibility checks
 		self.check_compatibility()
 
+	def __getstate__(self):
+			# Return state with some attributes removed to exclude from pickle-dump
+			state = self.__dict__.copy()
+			if state.get("custom_user_function") is not None:
+				state["custom_user_function"] = None
+			return state
 	def __repr__(self):
 		return '{self.__class__.__name__}(Physics: {self.physics},\n   \
 		Basis: {self.basis},\n   Stepper: {self.stepper})'.format(self=self)

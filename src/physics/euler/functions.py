@@ -31,6 +31,8 @@ import general
 from physics.base.data import (FcnBase, BCWeakRiemann, BCWeakPrescribed,
         SourceBase, ConvNumFluxBase)
 
+from dataclasses import dataclass
+import copy
 
 class FcnType(Enum):
 	'''
@@ -46,6 +48,7 @@ class FcnType(Enum):
 	TaylorGreenVortex = auto()
 	ShuOsherProblem = auto()
 	GravityRiemann = auto()
+	MultipleRiemann = auto()
 
 class BCType(Enum):
 	'''
@@ -54,6 +57,9 @@ class BCType(Enum):
 	'''
 	SlipWall = auto()
 	PressureOutlet = auto()
+	CustomInlet = auto()
+	Euler2D1D = auto()
+	Euler2D2D = auto()
 
 
 class SourceType(Enum):
@@ -64,6 +70,7 @@ class SourceType(Enum):
 	StiffFriction = auto()
 	TaylorGreenSource = auto()
 	GravitySource = auto()
+	PorousSource = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -671,6 +678,38 @@ class GravityRiemann(FcnBase):
 		return Uq # [ne, nq, ns]
 
 
+class MultipleRiemann(FcnBase):
+	'''
+	Replicates the Riemann IC in the section of the 1D domain far from the
+	interface. Used as an initial condition for low-hassle Riemann problem
+	tests. 
+	'''
+	def __init__(self, rhoL=1.0, uL=0.0, pL=1.0,
+										 rhoR=0.125, uR=0.0, pR=0.1):
+		self.rhoL = rhoL
+		self.uL = uL
+		self.pL = pL
+		self.rhoR = rhoR
+		self.uR = uR
+		self.pR = pR
+
+	def get_state(self, physics, x, t):
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		gamma = physics.gamma
+		Rg = physics.R
+
+		Uq[:, :, 0] = self.rhoL
+		Uq[:, :, 1] = self.rhoL * self.uL
+		Uq[:, :, 2] = self.pL / (gamma - 1.0) + \
+											 0.5 * self.rhoL* np.power(self.uL, 2.0)
+		
+		Uq[np.logical_and(x[:,:,0] < -8, x[:,:,0] > -14), 0] = self.rhoR
+		Uq[np.logical_and(x[:,:,0] < -8, x[:,:,0] > -14), 1] = self.rhoR * self.uR
+		Uq[np.logical_and(x[:,:,0] < -8, x[:,:,0] > -14), 2] = self.pR / (gamma - 1.0) + \
+											 0.5 * self.rhoR* np.power(self.uR, 2.0)
+
+		return Uq # [ne, nq, ns]
+
 '''
 -------------------
 Boundary conditions
@@ -785,6 +824,606 @@ class PressureOutlet(BCWeakPrescribed):
 		return UqB
 
 
+class CustomInlet(BCWeakPrescribed):
+	'''
+	This class corresponds to an inflow boundary condition that specifies mass
+	and momentum flux over the boundary.
+
+	Requires physics class to have a vent_physics(VentPhysics) object.
+
+	Attributes:
+	-----------
+	None
+	'''
+	def __init__(self):
+		self.porousLength = 1.0
+		self.poreLengthScale = 1e-3
+		self.porousDragCoeff = 1e-6 # Function of Re, porosity, pore length scale
+		self.porousDragMultiplier = self.porousDragCoeff * self.porousLength \
+																/ self.poreLengthScale
+
+	def resolveReverseFlow (self, pGrid, pPocket, JPlus, cOut, gamma):
+		''' Computes boundary values of pressure and M for subsonic flow
+				from atmosphere to pocket.
+		
+		Args:
+			pGrid (np.array): DG domain boundary pressure
+			pPocket: Pocket pressure
+			JPlus: DG domain J+ == u + 2*c / (gamma-1)
+			cOut: DG domain soudn speed
+			gamma: Heat capacity ratio
+			frictionMultiplier: C_d * L / bar{d} for porous flow
+
+		Returns:
+			(p, M): Pressure, Mach number tuple
+		'''
+
+		# Flag to use scalar-array type conversions and debug output
+		use_safe_mode = False
+
+		globalPressureRatio = pGrid / pPocket
+
+		# (Subsonic) Mach number as a function of (p/p_pocket)^2
+		MFn = lambda P2 : JPlus / cOut * np.power(globalPressureRatio / np.sqrt(P2), (gamma-1)/(2*gamma)) - 2 / (gamma - 1)
+		# Fixed point mapping for variable (p/p_pocket)^2 representing
+		# the equation P2 == 1 / (1 - 2*(...) * (MFn(P2))^2 )
+		fixedPointMapping = lambda P2 : 1.0 / (1.0 - 2.0 * gamma * self.porousDragMultiplier
+			* np.power(MFn(P2),2.0))
+
+		''' Perform fixed point iteration '''
+		# Set initial guess 
+		pRatioLastSq = np.ones(pGrid.shape)
+		pRatioSq = fixedPointMapping(pRatioLastSq)
+		iterCount = 1
+		while np.any(np.abs(pRatioSq - pRatioLastSq)/ pRatioLastSq > 1e-5) and iterCount < 10:
+			pRatioLastSq = pRatioSq
+			pRatioSq = fixedPointMapping(pRatioSq)
+			iterCount += 1
+		
+		pRatio = np.sqrt(pRatioSq)
+		M = JPlus / cOut * np.power(globalPressureRatio / pRatio,
+																(gamma-1)/(2*gamma)) - 2 / (gamma - 1)
+
+		if use_safe_mode:
+			print(f"Debug: Iteration count: {iterCount}")
+			# Scalar to array cast, or no-op
+			M = np.array(M)
+			pRatio = np.array(pRatio)
+
+		''' Check choked condition '''
+		pRatioChoked =  np.sqrt(1.0 + 2.0*gamma*self.porousDragMultiplier)
+
+		M[pRatio >= pRatioChoked] = 1.0 / pRatioChoked
+		pRatio[pRatio >= pRatioChoked] = pRatioChoked
+		
+		# Compute pressure from pRatio
+		p = pRatio * pPocket
+		return (p, M)
+
+	def get_boundary_state(self, physics, UqI, normals, x, t, aux_output=None):
+
+		# Init
+		UqB = UqI.copy()
+		# Unpack
+		srho = physics.get_state_slice("Density")
+		srhoE = physics.get_state_slice("Energy")
+		smom = physics.get_momentum_slice()
+		gamma = physics.gamma
+		# Compute unit normals
+		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+
+		''' Get interior state '''
+		# Extrapolate interior state to boundary
+		interior = physics.vent_physics.createVentLocalState()
+		interior.rho = UqI[:, :, srho]
+		interior.vel = UqI[:, :, smom] / interior.rho
+		interior.veln = np.sum(interior.vel*n_hat[:, :, :],
+													 axis=2,
+													 keepdims=True)
+		interior.p = physics.compute_variable("Pressure", UqI)[:, :, :]
+		if np.any(interior.p < 0.0):
+			raise errors.NotPhysicalError
+		interior.c = physics.compute_variable("SoundSpeed", UqI)[:, :, :]
+		interior.Mn = interior.veln / interior.c
+		# Interior tangential velocity
+		interior.velt = interior.vel - interior.veln*n_hat[:, :, :]
+		interior.x = x[:,:,:]
+
+		''' Get boundary data profile '''
+		# Uniform exit profile
+		inletProfileVelocity = 1.0 + 0.0*x[:,:,0:1]
+		inletProfilePressure = inletProfileVelocity
+		inletProfileSoundSpeed = inletProfileVelocity
+		# # Smooth exit profile
+		# inletProfileVelocity = np.expand_dims(
+		# 	np.exp(1.0 - 1.0 / (1.0 - np.power(x,2.0))),
+		# 	axis=2)
+		# smoootherCutoffLength = 1.0
+		# inletProfileVelocity[np.all(abs(x[ventMask,:,0]) >=
+		#                    smoootherCutoffLength,axis=1), :, :] = 0.0
+
+		''' Get pocket state '''
+		pocket = physics.vent_physics.createVentLocalState()
+		pocket.rho = physics.vent_physics.rho
+		pocket.p = physics.vent_physics.p
+		pocket.c = np.sqrt(physics.vent_physics.gamma * physics.vent_physics.p
+											/ physics.vent_physics.rho)
+
+		''' Get partial porous exit state '''
+		boundary = physics.vent_physics.createVentLocalState()
+		boundary.c = pocket.c * inletProfileSoundSpeed
+		boundary.velt = interior.velt
+		boundary.x = x[:,:,:]
+
+		# # Evaluate boundary exterior state as a function of x
+		# pExt = physics.vent_physics.p * ventProfile
+		# rhoExt = physics.vent_physics.rho * ventProfile
+		# vnExt = 1e-6*np.sqrt(np.clip(pExt - pI,0,None))		# Porous law
+		# cExt = np.sqrt(gamma * pExt / rhoExt)
+
+		''' Identify grid-sonic points '''
+		gridSonicMask = np.all(interior.Mn <= -1.0,axis=1).squeeze()
+
+		''' Compute subsonic inflow hypothetical '''
+		# Compute porous exit condition based on interior invariant JOut
+		JOut = interior.veln + 2.0*interior.c/(gamma - 1.)
+		boundary.veln = interior.veln + 2.0/(gamma - 1.0) \
+											* (interior.c - boundary.c)
+		# Compute compressible, steady-state, isothermal porous flow state
+		boundary.Mn = boundary.veln / boundary.c
+		boundary.p = pocket.p * inletProfilePressure / np.sqrt(
+			1 + 2.0 * gamma * self.porousDragMultiplier * np.power(boundary.Mn, 2.0)
+		)
+		boundary.rho = gamma * boundary.p / np.power(pocket.c, 2.0)
+
+		# Compute invariants at boundary
+		J0 = boundary.p / np.power(boundary.rho, gamma)
+		# assert(np.all(boundary.veln <= 0)) # TEST
+		JIn = boundary.veln - 2.0*boundary.c/(gamma - 1.)
+
+		# Boundary state
+		# boundary = CustomInlet.LocalState()
+		# boundary.c = 0.25*(gamma - 1.0)*(JOut - JIn)
+		# boundary.velt = interior.velt
+		# boundary.veln = 0.5*(JOut + JIn)
+		# boundary.Mn = boundary.veln / boundary.c
+		# boundary.rho = np.power(np.power(boundary.c, 2.0) / (gamma * J0), 1.0/(gamma - 1.0))
+		# boundary.p = boundary.rho * np.power(boundary.c, 2.0) / gamma
+
+		''' Identify boundary-sonic points '''
+		boundarySonicMask = np.all(boundary.Mn <= -1.0,axis=1).squeeze()
+
+		''' Union of sonic points '''
+		sonicMask = np.logical_or.reduce([gridSonicMask,
+															 boundarySonicMask])
+
+		''' Recompute at sonic points '''
+		boundary.veln[sonicMask, :, :] = -boundary.c[sonicMask, :, :]
+		boundary.Mn[sonicMask, :, :] = -1.0
+		boundary.p[sonicMask, :, :] = pocket.p * \
+			inletProfilePressure[sonicMask, :, :] / np.sqrt(
+				1.0 + 2.0 * gamma * self.porousDragMultiplier * np.power(-1.0, 2.0)
+		)
+		boundary.rho[sonicMask, :, :] = gamma * boundary.p[sonicMask, :, :] \
+																			/ np.power(boundary.c[sonicMask, :, :], 2.0)
+		# JOut[sonicMask, :, :] = boundary.veln[sonicMask, :, :] \
+														# + 2.0 / (gamma - 1.0) * boundary.c[sonicMask, :, :]		
+
+		''' Compute outflow points
+				Outflow points are masked based on grid-value M and boundary M.
+		'''
+
+		# rhoveln = np.sum(UqI[:, :, smom] * n_hat[:, :, :],
+		#                  axis=2, keepdims=True)
+		outflowMask = np.all(np.logical_or(interior.Mn > 0.0, boundary.Mn > 0.0),axis=1).squeeze()
+		# Linearizing pressure in terms of quantity (M^2)
+		linearizedPressureDrop = pocket.p * (1.0
+			 + gamma * self.porousDragMultiplier * np.power(boundary.Mn, 2.0))
+
+		pSubs, MSubs = self.resolveReverseFlow (
+			interior.p[outflowMask, :, :], 
+			pocket.p, 
+			JOut[outflowMask, :, :],
+			interior.c[outflowMask, :, :],
+			gamma)
+
+		boundary.p[outflowMask, :, :] = pSubs
+		boundary.Mn[outflowMask, :, :] = MSubs
+		boundary.c[outflowMask, :, :] = JOut[outflowMask, :, :] \
+																		/(boundary.Mn[outflowMask, :, :] + 2.0 / (gamma - 1))
+		boundary.rho[outflowMask, :, :] = gamma * boundary.p[outflowMask, :, :] \
+																			/ np.power(boundary.c[outflowMask, :, :], 2.0)
+		boundary.veln[outflowMask, :, :] = boundary.Mn[outflowMask, :, :] \
+																			 * boundary.c[outflowMask, :, :]
+
+		qqqqqqq = 1
+
+		''' Obsolete: set pressure outflow '''
+		# # Set equal pressures (neglecting porous flow pressure drop--may be a bad idea)
+		# # boundary.p[outflowMask, :, :]	= pocket.p
+		# boundary.rho[outflowMask, :, :] = interior.rho[outflowMask, :, :] * np.power(
+		# 	pocket.p / interior.p[outflowMask, :, :], 1.0 / gamma
+		# )
+		# boundary.veln[outflowMask, :, :] = interior.veln[outflowMask, :, :] \
+		# 	+ 2.0/(gamma - 1.0) * (interior.c[outflowMask, :, :] - np.sqrt(
+		# 		gamma * boundary.p[outflowMask, :, :] / boundary.rho[outflowMask, :, :]
+		# 	))
+
+		''' Finalize boundary state '''		
+		boundary.vel = boundary.veln*n_hat[:, :, :] + boundary.velt
+
+		# Boundary kinetic energy (per volume)
+		kineticB = 0.5*boundary.rho*np.sum(np.power(boundary.vel, 2.0),
+																			 axis=2, keepdims=True)
+		# Set boundary states
+		UqB[:, :, srho] = boundary.rho
+		UqB[:, :, smom] = boundary.rho * boundary.vel
+		UqB[:, :, srhoE] = boundary.p / (gamma - 1.) + kineticB
+
+		''' Export intermediate states '''
+		if aux_output is not None:
+			aux_output["pocket"] = pocket
+			aux_output["interior"] = interior
+			aux_output["boundary"] = boundary
+
+		return UqB
+
+class CouplingBC(BCWeakPrescribed):
+	'''
+	This class corresponds to an coupled boundary that allows inflow or outflow.
+
+	Attributes:
+	-----------
+	bkey (immutable): Key for the boundary relevant to the instantiated BC
+	t: Last update time
+	bstate (CouplingBC.LocalState): Local state data object
+	'''
+
+	@dataclass
+	class LocalState:
+		''' Data namespace for states at a point in the boundary sequence'''
+		U: np.array = np.array(np.nan)       # State in native domain
+		Ucast: np.array = np.array(np.nan)   # State U, casted to common dim
+		vel: np.array = np.array(np.nan)
+		veln: np.array = np.array(np.nan)
+		velt: np.array = np.array(np.nan)
+		Mn: np.array = np.array(np.nan)
+		p: np.array = np.array(np.nan)
+		c: np.array = np.array(np.nan)
+		rho: np.array = np.array(np.nan)
+		x: np.array = np.array(np.nan)
+		n_hat: np.array = np.array(np.nan)
+
+	# (Debug) Seconds to wait for bdry data before raising exception
+	maxWaitTime = 2.0
+	
+	class NetworkTimeoutError(Exception):
+		pass
+
+	def __init__(self, bkey):
+		self.bkey = bkey
+		self.bstate = CouplingBC.LocalState()
+
+	def get_extrapolated_state(self, physics, UqI, normals, x, t):
+		''' Extrapolate interior state to boundary, expose LocalState object
+				State is valid at time self.t, and can be async accessed when
+				t == self.t.
+		'''
+		self.bstate = CouplingBC.LocalState()
+		# Unpack
+		srho = physics.get_state_slice("Density")
+		srhoE = physics.get_state_slice("Energy")
+		smom = physics.get_momentum_slice()
+		# Compute unit normals
+		self.bstate.n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		self.bstate.U = UqI
+		self.bstate.rho = UqI[:, :, srho]
+		self.bstate.vel = UqI[:, :, smom] / self.bstate.rho
+		self.bstate.veln = np.sum(self.bstate.vel*self.bstate.n_hat[:, :, :],
+													 axis=2,
+													 keepdims=True)
+		self.bstate.p = physics.compute_variable("Pressure", UqI)[:, :, :]
+		if np.any(self.bstate.p < 0.0):
+			raise errors.NotPhysicalError
+		self.bstate.c = physics.compute_variable("SoundSpeed", UqI)[:, :, :]
+		self.bstate.Mn = self.bstate.veln / self.bstate.c
+		# Interior tangential velocity
+		self.bstate.velt = self.bstate.vel - self.bstate.veln*self.bstate.n_hat[:, :, :]
+		self.bstate.x = x[:,:,:]
+
+		return self.bstate
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Called when computing states at shared boundaries. '''
+		raise NotImplementedError("Abstract CouplingBC class was instantiated. " +
+															" Implement get_boundary_state.")
+
+class Euler2D1D(CouplingBC):
+	'''
+	This class couples a 2D Euler domain to a 1D Euler domain.
+	Broadcasts 1D states to 2D
+
+	Attributes:
+	-----------
+	None
+	'''
+
+	def __init__(self, bkey):
+		super().__init__(bkey)
+		self.bdry_flux_fcn = Roe2D()
+
+	def get_extrapolated_state(self, physics, UqI, normals, x, t):
+		''' Called when computing states at shared boundaries. '''
+		super().get_extrapolated_state(physics, UqI, normals, x, t)
+		self.bstate.Ucast = self.bstate.U.copy()
+		# Broadcast state U to 2D
+		if physics.NDIMS == 1:
+			# Expand array shape
+			self.bstate.Ucast = np.append(self.bstate.Ucast, 
+								self.bstate.Ucast[:,:,-1:], axis=2)
+			# Set tangential momentum to zero
+			self.bstate.Ucast[:,:,2] *= 0.0
+		elif physics.NDIMS == 2:
+			# Project to [rho, rho vel_n, rho vel_t, rho e]
+			self.bstate.Ucast[:,:,1:2] = self.bstate.rho * self.bstate.veln
+			# TODO: check consistency of implementation. Tangenitals are required to
+			# prevent self-amplification in the 2D domain
+			# TODO: check floating point cancellation 
+			rotation_cw = np.array([ [0, 1], [-1, 0], ])
+			t_hat = np.einsum('ijk, mk', self.bstate.n_hat, rotation_cw)
+			self.bstate.Ucast[:,:,2:3] = np.sum(
+				(self.bstate.vel - self.bstate.veln * self.bstate.n_hat) * t_hat,
+				axis=2,
+				keepdims=True)
+		else:
+			raise Exception("Unhandled NDIMS in get_extrapolated_state. 0D?")
+		
+		return self.bstate
+		
+	def compute_roe_flux(self, physics2D, UqSelf, UqAdj):
+		''' Roe flux computation copied from class Roe1D, adapted to normal inputs '''
+		# (see physics.conv_flux_fcn.compute_flux)
+		# N.B. the coordinate system is pre-rotated to the normal coordinates
+		# N.B. UqAdj has its own normal coordinates (here we take negative)
+
+		# Unpack
+		srho = physics2D.get_state_slice("Density")
+		smom = physics2D.get_momentum_slice()
+		gamma = physics2D.gamma
+
+		# # Unit normals
+		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+
+		# Allocate memory for boundary flux function
+		self.bdry_flux_fcn = Roe2D(UqSelf)
+		# self.bdry_flux_fcn.R = 0.0*UqSelf
+		# self.bdry_flux_fcn.alphas = 0.0*UqSelf
+		# self.bdry_flux_fcn.alphas = 0.0*UqSelf
+
+		# Get velL, velR -- essentially normal
+		# Rebind Uq
+		UqAdj = UqAdj.copy()
+		UqSelf = UqSelf.copy()
+		# Account for opposite unit normal and opposite tangent orientation
+		UqAdj[:,:,smom] *= -1.0
+
+		# UqAdj[:,:,2] = 0.0
+		# UqSelf[:,:,2] = 0.0
+
+		velL = UqSelf[:,:,smom] / UqSelf[:,:,srho]
+		velR = UqAdj[:,:,smom] / UqAdj[:,:,srho]
+		rhoRoe, velRoe, HRoe = self.bdry_flux_fcn.roe_average_state(physics2D,
+														 srho, velL, velR, UqSelf, UqAdj)
+
+		# Speed of sound from Roe-averaged state
+		c2 = (gamma - 1.)*(HRoe - 0.5*np.sum(velRoe*velRoe, axis=2,
+				keepdims=True))
+		if np.any(c2 <= 0.):
+			# Non-physical state
+			raise errors.NotPhysicalError
+		c = np.sqrt(c2)
+
+		# Jumps
+		drho, dvel, dp = 	self.bdry_flux_fcn.get_differences(
+			physics2D, srho, velL, velR, UqSelf, UqAdj)
+		# alphas (left eigenvectors multiplied by dU)
+		alphas = 	self.bdry_flux_fcn.get_alphas(c, c2, dp, dvel, drho, rhoRoe)
+		# Eigenvalues
+		evals = 	self.bdry_flux_fcn.get_eigenvalues(velRoe, c)
+		# Right eigenvector matrix
+		R = self.bdry_flux_fcn.get_right_eigenvectors(
+			c, 
+			self.bdry_flux_fcn.get_eigenvalues(velRoe, c),
+			velRoe,
+			HRoe
+		)
+		# Form flux Jacobian matrix multiplied by dU
+		dURoe = np.einsum('ijkl, ijl -> ijk', R, np.sign(evals)*alphas)
+
+		return .5*(UqSelf + UqAdj - dURoe) # [nf, nq, ns]
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		adjacent_domain_id = [
+			key for key in 
+			physics.domain_edges[physics.domain_id][self.bkey] 
+			if key != physics.domain_id][0]
+		data_net_key = physics.edge_to_key(
+										 physics.domain_edges[physics.domain_id][self.bkey],
+										 adjacent_domain_id)
+		# Get shared state
+		# Flat manager-dict model
+		adjacent_bstate = copy.deepcopy(physics.bdry_data_net[data_net_key])
+		# Nested manager-dict model
+		# adjacent_bstate = copy.deepcopy(
+		# 	physics.bdry_data_net[physics.domain_id][self.bkey] \
+		# 	[adjacent_domain_id]["payload"])
+
+		# Prep useful parameters
+		gamma = physics.gamma
+		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+
+		# DEPRECATE:
+		adjacent_physics_NDIMS = 3 - physics.NDIMS
+
+		# Perform dimension matching
+		dim_match = lambda data : data
+		if physics.NDIMS < adjacent_physics_NDIMS:
+			# TODO: replace with proper integration
+			dim_match = lambda data : np.expand_dims(
+				np.expand_dims(np.array([np.mean(data)]), axis=1), axis=2)
+		elif physics.NDIMS > adjacent_physics_NDIMS:
+			# Manual broadcast
+			dim_match = lambda data : data.squeeze() * np.ones(self.bstate.c.shape)
+
+		# Assume uniform 1D and broadcast to copy
+		bcasted_shape = 0.0*(self.bstate.Ucast + adjacent_bstate.Ucast)
+		selfUcast = bcasted_shape + self.bstate.Ucast
+		adjacentUcast = bcasted_shape + adjacent_bstate.Ucast
+
+		# TODO: Generalize to all variables, separate code for 2D
+		# Opposite orientation at boundary
+		if adjacent_bstate.x.size > 1 and x.size > 1:
+			adjacentUcast = np.flip(adjacentUcast, axis=(0,1))
+			assert(np.linalg.norm(np.flip(adjacent_bstate.x, axis=(0,1)) - x) < 1e-4)
+		else: # 2D1D
+			# TODO: Should we delete tangentials?
+			selfUcast[:,:,2:3] = 0.0
+			adjacentUcast[:,:,2:3] = 0.0
+
+		# Compute Roe state as boundary state
+		if physics.NDIMS == 2:
+			URoe = self.compute_roe_flux(physics, selfUcast,
+				adjacentUcast)
+		else:
+			from physics.euler.euler import Euler2D
+			# Trick Euler2D constructor into thinking this is a real domain
+			# TODO: use better workaround
+			class Fake:
+				pass
+			fake_mesh = Fake()
+			fake_mesh.boundary_groups = {}
+			fake_mesh.ndims = 2
+			fake_physics2D = Euler2D(fake_mesh)
+			fake_physics2D.gamma = physics.gamma
+			fake_physics2D.R = physics.R
+			URoe = self.compute_roe_flux(fake_physics2D, selfUcast,
+				adjacentUcast)
+		
+		def compute_bdry_case(Mn):
+			# Compute out-supersonic case
+			JOut = self.bstate.veln + 2.0 / (gamma - 1.0) * self.bstate.c
+			J0 = self.bstate.p / np.power(self.bstate.rho, gamma)
+			JIn = self.bstate.veln - 2.0 / (gamma - 1.0) * self.bstate.c
+
+			# Replace invariants with corresponding exterior state
+			np.putmask(
+				JIn,
+				Mn < 1,
+				dim_match(
+					(-adjacent_bstate.veln) - 2.0 / (gamma - 1.0) * adjacent_bstate.c
+			))
+			np.putmask(
+				J0,
+				Mn < 0,
+				dim_match(
+					adjacent_bstate.p / np.power(adjacent_bstate.rho, gamma)
+			))
+			np.putmask(
+				JOut,
+				Mn <= -1,
+				dim_match(
+					(-adjacent_bstate.veln) + 2.0 / (gamma - 1.0) * adjacent_bstate.c
+			))
+
+			# Compute states based on invariants
+			veln = 0.5 * (JIn + JOut)
+			c = 0.25 * (gamma - 1)  * (JOut - JIn)
+			rho = np.power(np.power(c, 2.0) / (gamma * J0), 1.0/(gamma - 1.0))
+			p = rho * np.power(c, 2.0) / gamma
+			vel = veln * self.bstate.n_hat + self.bstate.velt
+
+			return veln, c, rho, p, vel
+
+		# (veln, c, rho, p, vel) =  compute_bdry_case(self.bstate.Mn)
+
+		# print(f"Mn1={np.mean(veln/c)};")
+		# # Update
+		# (veln, c, rho, p, vel) =  compute_bdry_case(veln / c)
+		# print(f"Mn2={np.mean(veln/c)};")
+
+		
+		if physics.NDIMS == 1:
+			# Dimension down by deleting tangential velocity and taking mean
+			# TODO: mean needs be replaced with integration
+			UqB = np.mean(np.delete(URoe, 2, axis=2),axis=(0,1), keepdims=True)
+			# Adjust for boundary sign
+			UqB[:,:,1:2] *= n_hat
+		else:
+			# Rotate
+			UqB = URoe.copy()
+			# Setting zero tangential velocity may be needed for a well-posed
+			# Euler-Euler coupling, else unstable in the tangential direction (?)
+			# UqB[:,:,1] = URoe[:,:,1] * n_hat[:,:,0] + self.bstate.velt[:,:,0]
+			# UqB[:,:,2] = URoe[:,:,1] * n_hat[:,:,1] + self.bstate.velt[:,:,1]
+			rotation_cw = np.array([ [0, 1], [-1, 0], ])
+			t_hat = np.einsum('ijk, mk', self.bstate.n_hat, rotation_cw)
+			UqB[:,:,1] = URoe[:,:,1] * n_hat[:,:,0] + URoe[:,:,2] * t_hat[:,:,0]
+			UqB[:,:,2] = URoe[:,:,1] * n_hat[:,:,1] + URoe[:,:,2] * t_hat[:,:,1]
+		
+		# Try y-filter
+		# May be needed for well-posed coupling condition, else unstable in the tangential direction (?)
+		# UqB[:,:,1] = 0
+
+		# Set boundary states	
+		
+		# UqB = UqI.copy()
+		# kineticB = 0.5*rho*np.sum(np.power(vel, 2.0),
+		# 																	 axis=2, keepdims=True)
+		# UqB[:, :, physics.get_state_slice("Density")] = rho
+		# UqB[:, :, physics.get_momentum_slice()] = rho * vel
+		# UqB[:, :, physics.get_state_slice("Energy")] = p / (gamma - 1.) + kineticB
+
+		assert(not np.any(np.isnan(UqB)))
+		assert(UqB.shape == UqI.shape)
+
+		return UqB
+
+
+class Euler2D2D(BCWeakRiemann):
+	'''
+	This class couples a 2D Euler domain to a 2D Euler domain.
+	Implementation mimics the Roe approximate RIemann solve for interior fluxes.
+
+	Attributes:
+	-----------
+	bkey (str): Key corresponding to boundary as edge in domain graph; typically
+	            the name of the boundary.
+	'''
+
+	def __init__(self, bkey):
+		self.bkey = bkey
+
+	def get_extrapolated_state(self, physics, UqI, normals, x, t):
+		''' Called when computing states at shared boundaries. '''
+		return UqI
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Get shared state UqI and return (BCWeakRiemann) '''
+		# Get id string of adjacent domain from domain graph (local)
+		adjacent_domain_id = [
+			key for key in 
+			physics.domain_edges[physics.domain_id][self.bkey] 
+			if key != physics.domain_id][0]
+		# Get key for boundary state in shared memory (via Manager.dict)
+		data_net_key = physics.edge_to_key(
+										 physics.domain_edges[physics.domain_id][self.bkey],
+										 adjacent_domain_id)
+		# Return orientation-corrected exterior state
+		return np.flip(
+			copy.copy(physics.bdry_data_net[data_net_key]),
+			axis=(0,1))
+		
+
 '''
 ---------------------
 Source term functions
@@ -845,6 +1484,88 @@ class StiffFriction(SourceBase):
 		jac[:, :, irhou, irhou] = nu
 		jac[:, :, irhoE, irho] = -nu*vel**2
 		jac[:, :, irhoE, irhou] = 2.0*nu*vel
+
+		return jac
+
+class CouplingSource(SourceBase):
+	def __init__(self, **kwargs):
+		super().__init__(kwargs)
+
+	def get_source(self, physics, Uq, x, t):
+		if physics.NDIMS > 1:
+			raise Exception(f"Called PorousSource for 1D in a" + 
+											f"{physics.NDIMS}-dim physics context.")
+		irho, irhou, irhoE = physics.get_state_indices()
+		S = np.zeros_like(Uq)
+
+		# Compute temperature
+		KE =  0.5*np.power(Uq[:, :, irhou],2.0) \
+					/ Uq[:, :, irho]
+		c_v = physics.R / (physics.gamma - 1.0)
+		T = (Uq[:, :, irhoE] - KE) / (Uq[:, :, irho] * c_v)
+
+		eps = general.eps
+		S[:, :, irho] = 0.0
+		S[:, :, irhou] = self.nu*(2.0*KE)
+		S[:, :, irhoE] = self.alpha*(self.T_m - T)
+
+		return S
+
+	def get_jacobian(self, physics, Uq, x, t):
+		raise Exception("Not implemented.")
+
+class PorousSource(SourceBase):
+	'''
+	Stiff source term (1D) of the form:
+	S = [0, nu*rho*u^2, alpha*(T_m-T)]
+
+	Attributes:
+	-----------
+	nu: float
+		stiffness parameter
+	'''
+	def __init__(self, nu:float=0.0, alpha:float=0.0, T_m:float=300.0, **kwargs):
+		super().__init__(kwargs)
+		self.nu = nu
+		self.alpha = alpha
+		self.T_m = T_m
+
+	def get_source(self, physics, Uq, x, t):
+		if physics.NDIMS > 1:
+			raise Exception(f"Called PorousSource for 1D in a" + 
+											f"{physics.NDIMS}-dim physics context.")
+		irho, irhou, irhoE = physics.get_state_indices()
+		S = np.zeros_like(Uq)
+
+		# Compute temperature
+		KE =  0.5*np.power(Uq[:, :, irhou],2.0) \
+					/ Uq[:, :, irho]
+		c_v = physics.R / (physics.gamma - 1.0)
+		T = (Uq[:, :, irhoE] - KE) / (Uq[:, :, irho] * c_v)
+
+		eps = general.eps
+		S[:, :, irho] = 0.0
+		S[:, :, irhou] = self.nu*(2.0*KE)
+		S[:, :, irhoE] = self.alpha*(self.T_m - T)
+
+		return S
+
+	def get_jacobian(self, physics, Uq, x, t):
+		irho, irhou, irhoE = physics.get_state_indices()
+
+		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+		c_v = physics.R / (physics.gamma - 1.0)
+		vel = Uq[:, :, 1]/(general.eps + Uq[:, :, 0])
+
+		jac[:, :, irhou, irho] = -self.nu*vel**2
+		jac[:, :, irhou, irhou] = 2.0*self.nu*vel
+		jac[:, :, irhoE, irho] = (self.alpha / c_v) \
+			* (Uq[:, :, irhoE] / np.power(Uq[:, :, irho], 2.0)
+				 - np.power(Uq[:, :, irhou], 2.0) / np.power(Uq[:, :, irho], 3.0))
+		jac[:, :, irhoE, irhou] = (self.alpha / c_v) \
+			* Uq[:, :, irhou] / np.power(Uq[:, :, irho], 2.0)
+		jac[:, :, irhoE, irhoE] = -(self.alpha / c_v) \
+			/ Uq[:, :, irho]
 
 		return jac
 

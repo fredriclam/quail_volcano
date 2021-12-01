@@ -50,6 +50,10 @@ import processing.readwritedatafiles as readwritedatafiles
 import solver.DG as DG
 import solver.ADERDG as ADERDG
 
+import time
+import multiprocessing as mp
+from multidomain import Domain, Observer
+
 
 def set_physics(mesh, physics_type):
 	'''
@@ -147,16 +151,16 @@ def read_inputs(deck):
 		deck: input deck (modified)
 	'''
 	# Defaults
-	restart_params = default_deck.Restart
-	stepper_params = default_deck.TimeStepping
-	numerics_params = default_deck.Numerics
-	mesh_params = default_deck.Mesh
-	physics_params = default_deck.Physics
-	IC_params = default_deck.InitialCondition
-	exact_params = default_deck.ExactSolution
-	BC_params = default_deck.BoundaryConditions
-	source_params = default_deck.SourceTerms
-	output_params = default_deck.Output
+	restart_params = default_deck.Restart.copy()
+	stepper_params = default_deck.TimeStepping.copy()
+	numerics_params = default_deck.Numerics.copy()
+	mesh_params = default_deck.Mesh.copy()
+	physics_params = default_deck.Physics.copy()
+	IC_params = default_deck.InitialCondition.copy()
+	exact_params = default_deck.ExactSolution.copy()
+	BC_params = default_deck.BoundaryConditions.copy()
+	source_params = default_deck.SourceTerms.copy()
+	output_params = default_deck.Output.copy()
 
 	# Overwrite
 	try:
@@ -428,11 +432,6 @@ def driver(deck):
 					solver.params)
 
 
-	'''
-	Run simulation
-	'''
-	solver.solve()
-
 	return solver, physics, mesh
 
 
@@ -460,6 +459,44 @@ def process_post_file(post_file, auto_process):
 			postprocess = importlib.import_module(post_file)
 		except ModuleNotFoundError:
 			print("Warning: post_process.py file not found")
+
+
+def dom_recursive_build(deck, domain_list,
+												domain_edges, global_timestepping,
+												domain_edge_list=None):
+	# Check global timestep settings
+	if global_timestepping is None:
+		global_timestepping = deck.__dict__.get("TimeStepping")
+	else:
+		deck.TimeStepping = global_timestepping
+	# Build domain
+	solver, physics, mesh = driver(deck)
+	domain_list.append(Domain(solver, physics, mesh, deck.__name__))
+	# Add edge set for node to graph
+	domain_edges[deck.__name__] = {}
+	# Process any linked domains
+	if deck.__dict__.get("LinkedSolvers") is not None:
+		for linked_solver in deck.LinkedSolvers:
+			linked_deck_name = linked_solver["DeckName"].replace(".py", "")
+			edge_name = linked_solver["BoundaryName"]
+			# Build adjacent domain if it doesn't exist
+			if linked_deck_name not in [dom.id for dom in domain_list]:
+				dom_recursive_build(importlib.import_module(linked_deck_name),
+														domain_list,
+														domain_edges,
+														global_timestepping,
+														domain_edge_list=domain_edge_list)
+			# Add edge to edge set
+			domain_edges[deck.__name__][edge_name] = \
+				(deck.__name__, linked_deck_name)
+			domain_edges[linked_deck_name][edge_name] = \
+				(linked_deck_name, deck.__name__)
+			if domain_edge_list is not None:
+				domain_edge_list.append( {
+					"name": edge_name,
+					0: linked_deck_name,
+					1: deck.__name__,
+				})
 
 
 def main(argv):
@@ -503,15 +540,103 @@ def main(argv):
 	current_dir = os.path.dirname(os.path.abspath(file)) + "/"
 	sys.path.append(current_dir)
 
-	''' Run	'''
+	''' Process input domains	'''
 	if input_deck is not None:
-		# Run solver
+		# Create empty list of domain objects
+		domain_list = []
+		# Graph representing domain connectivity: maps node(str) -> edgeset(dict)
+		domain_edges = {} 
+		# List of edges (redundant but useful)
+		_domain_edge_list = []
+		# Global timestep settings, set by the first encountered option
+		global_timestepping = None
 
-		# Process deck
-		input_deck = input_deck.replace(".py", "")
-		deck = importlib.import_module(input_deck)
-		# Run
-		solver, physics, mesh = driver(deck)
+		setup_timer_start = time.time()
+
+		# Build domains (depth-first) starting from root deck
+		dom_recursive_build(importlib.import_module(input_deck.replace(".py", "")),
+												domain_list,
+												domain_edges,
+												global_timestepping,
+												domain_edge_list=_domain_edge_list)
+		
+		_num_timesteps = domain_list[0].solver.params["NumTimeSteps"]
+
+		for domain in domain_list:
+			# Attach domain topology to each domain
+			domain.domain_edges = domain_edges
+			# Synchronize num timesteps
+			domain.num_timesteps = _num_timesteps
+
+		# Set up subprocesses
+		with mp.Manager() as manager:
+			''' Initialize boundary data server
+			Look up with Domain.edge_to_key(edge, node)
+			'''
+			boundaryData = manager.dict()
+			# # Mimic graph structure
+			# for node in domain_edges.keys():
+			# 	boundaryData[node] = manager.dict()
+			# for edge in _domain_edge_list:
+			# 	boundaryData[edge[0]][edge["name"]] = manager.dict()
+			# 	# Bind edge access from both adjacent nodes
+			# 	boundaryData[edge[1]][edge["name"]] = \
+			# 		boundaryData[edge[0]][edge["name"]]
+			# 	# Initialize some data
+			# 	boundaryData[edge[0]][edge["name"]][edge[0]] = manager.dict({
+			# 		"payload": None,
+			# 	})
+			# 	boundaryData[edge[0]][edge["name"]][edge[1]] = manager.dict({
+			# 		"payload": None,
+			# 	})
+
+			# Initialize queue for signalling to observer 
+			ready_queue = mp.Queue()
+			# Initialize condition for green-light signal from observer
+			glight_condition = mp.Condition()
+			# Initialize outputs server
+			domain_outputs = manager.dict()
+
+			# Connect each domain to server
+			for domain in domain_list:
+				domain.set_network(glight_condition, ready_queue,
+                  boundaryData, domain_outputs)
+
+			# Create observer process
+			observer = Observer(_num_timesteps, ready_queue,
+			                    glight_condition, len(domain_list))
+			observer_process = mp.Process(
+				target=observer.listen,
+				args=()
+			)
+
+			# Map domain list to processes
+			process_list = [mp.Process(
+				target=dom.solve,
+				args=()
+			) for dom in domain_list]
+
+			# Start processes
+			observer_process.start()
+			for process in process_list:
+				process.start()
+
+			# Main process tasks
+			setup_wall_time = time.time() - setup_timer_start
+			run_total_wall_time_start = time.time()
+
+			# # Join processes
+			for process in process_list:
+				process.join()
+			observer_process.join()
+
+		run_total_wall_time = time.time() - run_total_wall_time_start
+
+		print(f"Global prep time  = {setup_wall_time:.5f} seconds")
+		print(f"Global solve time = {run_total_wall_time:.5f} seconds")
+
+		# Expose root solver for backward compatibility
+		solver = domain_list[0].solver
 		# Process post-processing script
 		auto_process = solver.params["AutoPostProcess"]
 		process_post_file(post_file, auto_process)
