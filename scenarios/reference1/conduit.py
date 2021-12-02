@@ -2,13 +2,19 @@ import numpy as np
 import copy
 
 Numerics = {
-    "SolutionOrder" : 0,
+    "SolutionOrder" : 1,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     # "ApplyLimiters" : "PositivityPreserving",
     # "NodeType" : "Equidistant",
     "ElementQuadrature" : "GaussLegendre",
     "FaceQuadrature" : "GaussLegendre",
+    "ArtificialViscosity" : True,
+		# Flag to use artificial viscosity
+		# If true, artificial visocity will be added
+	"AVParameter" : 1e3,
+		# Parameter in the artificial viscosity term. A larger value will
+		# increase the amount of AV added, giving a smoother solution.
 }
 
 Output = {
@@ -21,9 +27,9 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 1500,#800,
-    "xmin" : -153.0,#-23.0,
-    "xmax" : -3.0,
+    "NumElemsX" : 1000,
+    "xmin" : -5000.0-150.0,
+    "xmax" : -150.0,
 }
 
 Physics = {
@@ -42,10 +48,13 @@ SourceTerms = {
     },
 }
 
-rhoAmbient = 3.0 # 1.2
-TAmbient = 800.0 # 300.0
+pAmbient = 100*1e5
+TAmbient = 1000.0 # 300.0
+rhoAmbient = pAmbient / ( Physics["GasConstant"] * TAmbient )
+
 eAmbient = rhoAmbient * Physics["GasConstant"] / (Physics["SpecificHeatRatio"] - 1.0) * TAmbient
-pAmbient = rhoAmbient * Physics["GasConstant"] * TAmbient
+# rhoAmbient = 3.0 # 1.2
+# pAmbient = rhoAmbient * Physics["GasConstant"] * TAmbient
 
 if False:
     # Sod state

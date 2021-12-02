@@ -8,7 +8,7 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/generalB2.msh",
+	"File" : "../meshes/volcanoA2.msh",
 }
 
 Physics = {
@@ -44,6 +44,9 @@ BoundaryConditions = {
 	"symmetry_far" : {
 		"BCType" : "SlipWall",
 	},
+	# "r2" : {
+	# 	"BCType" : "SlipWall",
+	# },
 	"r2" : {
 		"BCType" : "Euler2D2D",
 		"bkey": "r2",
@@ -55,8 +58,8 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "debug_standard3_generalB2",
-	"WriteInterval" : 1000,
+	"Prefix" : "referenceA2",
+	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }

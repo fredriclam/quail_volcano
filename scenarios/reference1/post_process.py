@@ -14,7 +14,7 @@ import numerics.basis.tools as basis_tools
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
 name_2D_domain = "referenceA"
-num_2D_domains = 1
+num_2D_domains = 6
 dataSize = 5+1
 verbose = False
 
@@ -75,6 +75,8 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 	domain_p = []
 	domainIntegrals = []
 	samplePoints = []
+	x_r1 = []
+	x_r2 = []
 
 	for i, input_fname in enumerate(input_fname_list):
 		if verbose:
@@ -119,8 +121,6 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		domainIntegrals.append(integrated_dict)
 
 		# Get special boundaries
-		x_r1 = []
-		x_r2 = []
 		if i == 0:
 			x_r1 = solver.bface_helpers.x_bgroups[
 				       solver.mesh.boundary_groups["r1"].number]

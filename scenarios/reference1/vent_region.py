@@ -2,21 +2,27 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.,
-	"FinalTime" : 0.1/10, #*0.1000, #0.0014, #0.0014625, # 0.0250,
+	"FinalTime" : 0.01, #0.1 #*0.1000, #0.0014, #0.0014625, # 0.0250,
 	"NumTimeSteps" : 500,#5000, #8000 ,#560, #585, #400,
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
 
 Numerics = {
-	"SolutionOrder" : 0,
+	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
 	# "ApplyLimiters" : ["WENO", "PositivityPreserving"],
 	"Solver" : "DG",
+	"ArtificialViscosity" : True,
+		# Flag to use artificial viscosity
+		# If true, artificial visocity will be added
+	"AVParameter" : 1e3,
+		# Parameter in the artificial viscosity term. A larger value will
+		# increase the amount of AV added, giving a smoother solution.
 }
 
 Mesh = {
-	"File" : "../meshes/generalA1.msh",
+	"File" : "../meshes/volcanoA1.msh",
 }
 
 Physics = {
@@ -46,13 +52,13 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	# "r1" : {
-	# 	"BCType" : "Euler2D2D",
-	# 	"bkey": "r1",
-	# },
 	"r1" : {
-		"BCType" : "SlipWall",
+		"BCType" : "Euler2D2D",
+		"bkey": "r1",
 	},
+	# "r1" : {
+	# 	"BCType" : "SlipWall",
+	# },
 	"ground" : {
 		"BCType" : "SlipWall",
 	},
@@ -83,8 +89,8 @@ LinkedSolvers = [
 		"DeckName": "conduit.py",
 		"BoundaryName": "x2",
 	},
-	# {
-	# 	"DeckName": "r1r2.py",
-	# 	"BoundaryName": "r1",
-	# },
+	{
+		"DeckName": "r1r2.py",
+		"BoundaryName": "r1",
+	},
 ]

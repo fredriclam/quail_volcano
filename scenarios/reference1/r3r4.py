@@ -8,7 +8,7 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/generalB4.msh",
+	"File" : "../meshes/volcanoA4.msh",
 }
 
 Physics = {
@@ -55,8 +55,8 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "debug_standard3_generalB4",
-	"WriteInterval" : 1000,
+	"Prefix" : "referenceA4",
+	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
