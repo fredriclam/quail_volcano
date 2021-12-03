@@ -1270,12 +1270,12 @@ class Euler2D1D(CouplingBC):
 			adjacentUCast = np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)
 			# Remove tangential and return
 			adjacentUCast = np.concatenate((adjacentUCast[:,:,0:2], adjacentUCast[:,:,3:4]), axis=2)
-			adjacentUCast[:,:,1] *= -1
+			adjacentUCast[:,:,1] *= 1.0
 			return adjacentUCast
 			return np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)[0,1]
 		elif physics.NDIMS > adjacent_physics_NDIMS:
 			adjacentUCast = np.tile(adjacent_bstate.Ucast, (self.bstate.Ucast.shape[0],self.bstate.Ucast.shape[1],1))
-			adjacentUCast[:,:,1] *= -1
+			adjacentUCast[:,:,1] *= 1.0
 			return adjacentUCast
 
 

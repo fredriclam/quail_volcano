@@ -13,9 +13,9 @@ import numerics.basis.tools as basis_tools
 # fnameRadical = "pocket_atmos_mushroom" + "_"
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
-name_2D_domain = "referenceC"
+name_2D_domain = "referenceD"
 num_2D_domains = 3
-dataSize = 20+1
+dataSize = 200+1
 verbose = False
 
 outputfname = name_2D_domain + "_"

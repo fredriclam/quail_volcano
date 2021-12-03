@@ -18,8 +18,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "referenceC_conduit",
-	"WriteInterval" : 100,
+	"Prefix" : "referenceD_conduit",
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }

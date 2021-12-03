@@ -64,8 +64,8 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "referenceC3",
-	"WriteInterval" : 100,
+	"Prefix" : "referenceD3",
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }

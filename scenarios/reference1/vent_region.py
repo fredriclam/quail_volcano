@@ -2,8 +2,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.,
-	"FinalTime" : 0.01*100, #0.1 @ meter scale
-	"NumTimeSteps" : 1000*20,#5000 @ meter scale
+	"FinalTime" : 0.01*200, #0.1 @ meter scale
+	"NumTimeSteps" : 1000*40,#5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
@@ -78,8 +78,8 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "referenceC1",
-	"WriteInterval" : 100,
+	"Prefix" : "referenceD1",
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
