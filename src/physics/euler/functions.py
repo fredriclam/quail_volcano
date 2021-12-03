@@ -1068,7 +1068,7 @@ class CustomInlet(BCWeakPrescribed):
 
 		return UqB
 
-class CouplingBC(BCWeakPrescribed):
+class CouplingBC(BCWeakRiemann):
 	'''
 	This class corresponds to an coupled boundary that allows inflow or outflow.
 
@@ -1166,7 +1166,7 @@ class Euler2D1D(CouplingBC):
 		elif physics.NDIMS == 2:
 			# Project to [rho, rho vel_n, rho vel_t, rho e]
 			self.bstate.Ucast[:,:,1:2] = self.bstate.rho * self.bstate.veln
-			# TODO: check consistency of implementation. Tangenitals are required to
+			# TODO: check consistency of implementation. Tangentials are required to
 			# prevent self-amplification in the 2D domain
 			# TODO: check floating point cancellation 
 			rotation_cw = np.array([ [0, 1], [-1, 0], ])
@@ -1265,6 +1265,20 @@ class Euler2D1D(CouplingBC):
 		# DEPRECATE:
 		adjacent_physics_NDIMS = 3 - physics.NDIMS
 
+		if physics.NDIMS < adjacent_physics_NDIMS:
+			# TODO: replace with proper integration
+			adjacentUCast = np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)
+			# Remove tangential and return
+			adjacentUCast = np.concatenate((adjacentUCast[:,:,0:2], adjacentUCast[:,:,3:4]), axis=2)
+			adjacentUCast[:,:,1] *= -1
+			return adjacentUCast
+			return np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)[0,1]
+		elif physics.NDIMS > adjacent_physics_NDIMS:
+			adjacentUCast = np.tile(adjacent_bstate.Ucast, (self.bstate.Ucast.shape[0],self.bstate.Ucast.shape[1],1))
+			adjacentUCast[:,:,1] *= -1
+			return adjacentUCast
+
+
 		# Perform dimension matching
 		dim_match = lambda data : data
 		if physics.NDIMS < adjacent_physics_NDIMS:
@@ -1287,8 +1301,11 @@ class Euler2D1D(CouplingBC):
 			assert(np.linalg.norm(np.flip(adjacent_bstate.x, axis=(0,1)) - x) < 1e-4)
 		else: # 2D1D
 			# TODO: Should we delete tangentials?
-			selfUcast[:,:,2:3] = 0.0
-			adjacentUcast[:,:,2:3] = 0.0
+			# selfUcast[:,:,2:3] = 0.0
+			# adjacentUcast[:,:,2:3] = 0.0
+			pass
+
+		return adjacentUcast
 
 		# Compute Roe state as boundary state
 		if physics.NDIMS == 2:

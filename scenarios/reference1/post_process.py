@@ -13,9 +13,9 @@ import numerics.basis.tools as basis_tools
 # fnameRadical = "pocket_atmos_mushroom" + "_"
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
-name_2D_domain = "referenceA"
-num_2D_domains = 6
-dataSize = 5+1
+name_2D_domain = "referenceC"
+num_2D_domains = 3
+dataSize = 20+1
 verbose = False
 
 outputfname = name_2D_domain + "_"
@@ -88,8 +88,14 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		physics = solver.physics
 
 		# Extract numerical solution on mesh
+		# Sample down to the corners
+		temp_order_ = solver.order
+		solver.order = 0
 		samplePoints.append(plot.get_sample_points(
 			mesh, solver, physics, solver.basis, True))
+		solver.order = temp_order_
+
+		# Get numerical solution
 		getns = lambda quantity: plot.get_numerical_solution(
 			physics,
 			solver.state_coeffs,

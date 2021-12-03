@@ -12,13 +12,13 @@ Numerics = {
     "ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 1e3,
+	"AVParameter" : 1e4,#5e3,
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 }
 
 Output = {
-	"Prefix" : "referenceA_conduit",
+	"Prefix" : "referenceC_conduit",
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

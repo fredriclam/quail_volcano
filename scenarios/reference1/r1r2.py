@@ -1,14 +1,20 @@
 import numpy as np
 
 Numerics = {
-	"SolutionOrder" : 0,
+	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
 	# "ApplyLimiters" : "PositivityPreserving", #["WENO", "PositivityPreserving"],
 	"Solver" : "DG",
+	"ArtificialViscosity" : True,
+		# Flag to use artificial viscosity
+		# If true, artificial visocity will be added
+	"AVParameter" : 1e5,#5e3,
+		# Parameter in the artificial viscosity term. A larger value will
+		# increase the amount of AV added, giving a smoother solution.
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA2.msh",
+	"File" : "../meshes/volcanoC2.msh",
 }
 
 Physics = {
@@ -58,7 +64,7 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "referenceA2",
+	"Prefix" : "referenceC2",
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

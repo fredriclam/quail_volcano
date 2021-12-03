@@ -2,8 +2,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.,
-	"FinalTime" : 0.01, #0.1 #*0.1000, #0.0014, #0.0014625, # 0.0250,
-	"NumTimeSteps" : 500,#5000, #8000 ,#560, #585, #400,
+	"FinalTime" : 0.01*100, #0.1 @ meter scale
+	"NumTimeSteps" : 1000*20,#5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
@@ -16,13 +16,13 @@ Numerics = {
 	"ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 1e3,
+	"AVParameter" : 1e4,#5e3
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA1.msh",
+	"File" : "../meshes/volcanoC1.msh",
 }
 
 Physics = {
@@ -78,7 +78,7 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "referenceA1",
+	"Prefix" : "referenceC1",
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
