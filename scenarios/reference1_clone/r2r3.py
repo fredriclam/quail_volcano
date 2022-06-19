@@ -14,7 +14,7 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoC2.msh",
+	"File" : "../meshes/volcanoC3.msh",
 }
 
 Physics = {
@@ -44,35 +44,35 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"ground_far" : {
+	"ground3" : {
 		"BCType" : "SlipWall",
 	},
-	"symmetry_far" : {
+	"symmetry3" : {
 		"BCType" : "SlipWall",
 	},
-	# "r2" : {
-	# 	"BCType" : "SlipWall",
+	# "r3" : {
+	# 	"BCType" : "Euler2D2D",
+	# 	"bkey": "r3",
 	# },
+	"r3" : {
+		"BCType" : "SlipWall",
+	},
 	"r2" : {
 		"BCType" : "Euler2D2D",
 		"bkey": "r2",
 	},
-	"r1" : {
-		"BCType" : "Euler2D2D",
-		"bkey": "r1",
-	},
 }
 
 Output = {
-	"Prefix" : "referenceN2",
+	"Prefix" : "referenceL3",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
 
 LinkedSolvers = [
-	{
-		"DeckName": "r2r3.py",
-		"BoundaryName": "r2",
-	},
+	# {
+	# 	"DeckName": "r3r4.py",
+	# 	"BoundaryName": "r3",
+	# },
 ]

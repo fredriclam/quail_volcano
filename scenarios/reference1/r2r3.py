@@ -1,14 +1,14 @@
 import numpy as np
 
 Numerics = {
-	"SolutionOrder" : 1,
+	"SolutionOrder" : 2,
 	"SolutionBasis" : "LagrangeTri",
 	# "ApplyLimiters" : "PositivityPreserving", #["WENO", "PositivityPreserving"],
 	"Solver" : "DG",
 	"ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 1e5,#5e3,
+	"AVParameter" : 1e4,#5e3,
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 }
@@ -64,7 +64,7 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "referenceD3",
+	"Prefix" : "referenceN3",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

@@ -2,14 +2,14 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.,
-	"FinalTime" : 0.01*200, #0.1 @ meter scale
-	"NumTimeSteps" : 1000*40,#5000 @ meter scale
+	"FinalTime" : 12.0, #0.1 @ meter scale
+	"NumTimeSteps" : 240000,#5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
 
 Numerics = {
-	"SolutionOrder" : 1,
+	"SolutionOrder" : 2,
 	"SolutionBasis" : "LagrangeTri",
 	# "ApplyLimiters" : ["WENO", "PositivityPreserving"],
 	"Solver" : "DG",
@@ -78,7 +78,7 @@ BoundaryConditions = {
 }
 
 Output = {
-	"Prefix" : "referenceD1",
+	"Prefix" : "referenceN1",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,

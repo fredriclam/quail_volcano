@@ -18,7 +18,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "referenceN_conduit",
+	"Prefix" : "referenceL_conduit",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -39,14 +39,14 @@ Physics = {
     "SpecificHeatRatio" : 1.4,
 }
 
-# SourceTerms = {
-#     "source1" : {
-#         "Function" : "PorousSource",
-#         "nu": 0.0*-.5,
-#         "alpha": 0.0*2.0e4,
-#         "T_m": 400.0,
-#     },
-# }
+SourceTerms = {
+    "source1" : {
+        "Function" : "PorousSource",
+        "nu": 0.0*-.5,
+        "alpha": 0.0*2.0e4,
+        "T_m": 400.0,
+    },
+}
 
 pAmbient = 30*1e5
 TAmbient = 1000.0 # 300.0

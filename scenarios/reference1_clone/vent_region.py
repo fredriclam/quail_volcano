@@ -1,20 +1,28 @@
 import numpy as np
 
+TimeStepping = {
+	"InitialTime" : 0.,
+	"FinalTime" : 0.01*200*2, #0.1 @ meter scale
+	"NumTimeSteps" : 1000*40*2,#5000 @ meter scale
+  # 100000 for generalB1, 400~K
+	"TimeStepper" : "FE",
+}
+
 Numerics = {
 	"SolutionOrder" : 2,
 	"SolutionBasis" : "LagrangeTri",
-	# "ApplyLimiters" : "PositivityPreserving", #["WENO", "PositivityPreserving"],
+	# "ApplyLimiters" : ["WENO", "PositivityPreserving"],
 	"Solver" : "DG",
 	"ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 1e4,#5e3,
+	"AVParameter" : 1e4,#5e3
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoC2.msh",
+	"File" : "../meshes/volcanoC1.msh",
 }
 
 Physics = {
@@ -44,35 +52,45 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"ground_far" : {
-		"BCType" : "SlipWall",
-	},
-	"symmetry_far" : {
-		"BCType" : "SlipWall",
-	},
-	# "r2" : {
-	# 	"BCType" : "SlipWall",
-	# },
-	"r2" : {
-		"BCType" : "Euler2D2D",
-		"bkey": "r2",
-	},
 	"r1" : {
 		"BCType" : "Euler2D2D",
 		"bkey": "r1",
 	},
+	# "r1" : {
+	# 	"BCType" : "SlipWall",
+	# },
+	"ground" : {
+		"BCType" : "SlipWall",
+	},
+	"flare" : {
+		"BCType" : "SlipWall",
+	},
+	"pipewall" : {
+		"BCType" : "SlipWall",
+	},
+	"x2" : {
+		"BCType" : "Euler2D1D",
+		"bkey": "x2",
+	},
+	"symmetry" : {
+		"BCType" : "SlipWall",
+	},
 }
 
 Output = {
-	"Prefix" : "referenceN2",
+	"Prefix" : "referenceL1",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
-	"AutoPostProcess": False,
+	"AutoPostProcess": True,
 }
 
 LinkedSolvers = [
 	{
-		"DeckName": "r2r3.py",
-		"BoundaryName": "r2",
+		"DeckName": "conduit.py",
+		"BoundaryName": "x2",
+	},
+	{
+		"DeckName": "r1r2.py",
+		"BoundaryName": "r1",
 	},
 ]

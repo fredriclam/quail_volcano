@@ -9,7 +9,7 @@
 import numpy as np
 import numerics.helpers.helpers as helpers
 
-_global_timeout_seconds = 15.0
+_global_timeout_seconds = 615.0
 
 # TODO: typing of input args
 

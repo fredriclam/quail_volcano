@@ -96,23 +96,23 @@ Physical Curve("pipewall", 11) = {4};
 Physical Curve("x2", 12) = {5};
 Physical Curve("symmetry", 13) = {6};
 Physical Surface("domain1", 2) = {2};
-Save "volcanoC1.msh";
+//Save "volcanoC1.msh";
 //+
-Delete Physicals;
+//Delete Physicals;
 Physical Curve("r1", 17) = {10};
 Physical Curve("r2", 14) = {7};
 Physical Curve("symmetry_far", 15) = {8};
 Physical Curve("ground_far", 16) = {9};
 Physical Surface("domain2", 3) = {3};
-Save "volcanoC2.msh";
+////Save "volcanoC2.msh";
 //+
-Delete Physicals;
+//Delete Physicals;
 Physical Curve("r3", 18) = {11};
 Physical Curve("ground3", 19) = {12};
 Physical Curve("r2", 20) = {13};
 Physical Curve("symmetry3", 21) = {14};
 Physical Surface("domain3", 4) = {4};
-Save "volcanoC3.msh";
+//Save "volcanoC3.msh";
 //+
-Hide "*";
+//Hide "*";
 //+

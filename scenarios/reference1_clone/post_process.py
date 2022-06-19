@@ -8,19 +8,31 @@ import meshing.tools as mesh_tools
 import numerics.helpers.helpers as helpers
 import numerics.basis.tools as basis_tools
 
-import scipy.interpolate
-
 # Set fname
 # fnameRadical = "pocket_atmos_flared" + "_"
 # fnameRadical = "pocket_atmos_mushroom" + "_"
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
-name_2D_domain = "referenceM"
-num_2D_domains = 2 #!
-dataSize = 1200+1
+## Manual tasks
+solver = readwritedatafiles.read_data_file("D:\\Landfill\\Volcano_AGU_referenceM\\referenceM1_400.pkl")
+print(dir(solver.physics))
+solver.physics = None
+
+import pickle
+
+with open("referenceM1_400_no_physics.pkl", 'wb') as fo:
+	# Save solver
+	pickle.dump(solver, fo, pickle.HIGHEST_PROTOCOL)
+
+raise Exception("Success")
+## END -- manual tasks
+
+name_2D_domain = "referenceL"
+num_2D_domains = 3
+dataSize = 400+1
 verbose = False
 
-outputfname = "redo_" + name_2D_domain + "_"
+outputfname = name_2D_domain + "_"
 # outputfname = "void_"
 fnameRadicals = {
 	"conduit": f"{name_2D_domain}_conduit",
@@ -117,65 +129,38 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		domain_p.append(getns('Pressure'))
 
 		# More computed quantities
-		if False:
-			normgradrho = np.linalg.norm(
-				np.einsum('ijnl, ink -> ijkl',
-					solver.elem_helpers.basis_phys_grad_elems,
-					solver.state_coeffs)[:, :, 0],
-				axis=2) # [ne, nq]
-			# print("Sample points: ")
-			# print(plot.get_sample_points(
-					# mesh, solver, physics, solver.basis, True).shape)
-			# print("|rho|: ")
-			# print(normgradrho.shape)
-			# print("Uq")
-			# print(solver.state_coeffs.shape)
-			# domain_normgradrho.append(plot.interpolate_2D_soln_to_points(
-			# 	physics,
-			# 	plot.get_sample_points(
-			# 		mesh, solver, physics, solver.basis, True),
-			# 	normgradrho,
-			# 	samplePoints[i]))
-			domain_normgradrho.append(np.expand_dims(scipy.interpolate.griddata(
-				( np.ndarray.flatten(solver.elem_helpers.x_elems[:,:,0]),
-					np.ndarray.flatten(solver.elem_helpers.x_elems[:,:,1]) ),
-				np.ndarray.flatten(normgradrho),
-				samplePoints[i],
-				method='nearest' # plot.get_sample_points(
-				# mesh, solver, physics, solver.basis, True), method='cubic')
-			), 2))
+		normgradrho = np.linalg.norm(
+			np.einsum('ijnl, ink -> ijkl',
+				solver.elem_helpers.basis_phys_grad_elems,
+				solver.state_coeffs)[:, :, 0],
+			axis=2) # [ne, nq]
+		print("Sample points: ")
+		print(plot.get_sample_points(
+				mesh, solver, physics, solver.basis, True).shape)
+		print("|rho|: ")
+		print(normgradrho.shape)
+		print("Uq")
+		print(solver.state_coeffs.shape)
+		domain_normgradrho.append(plot.interpolate_2D_soln_to_points(
+			physics,
+			plot.get_sample_points(
+				mesh, solver, physics, solver.basis, True),
+			normgradrho,
+			samplePoints[i]))
 
-			gradu = np.einsum('ijnl, ink -> ijkl',
-					solver.elem_helpers.basis_phys_grad_elems,
-					solver.state_coeffs[:,:,1:3] / solver.state_coeffs[:,:,0:1])
-			vorticity = gradu[:,:,1,0] - gradu[:,:,0,1]
-			# domain_vorticity.append(plot.interpolate_2D_soln_to_points(
-			# 	physics,
-			# 	plot.get_sample_points(
-			# 		mesh, solver, physics, solver.basis, True),
-			# 	vorticity,
-			# 	samplePoints[i]))
-			domain_vorticity.append(np.expand_dims(scipy.interpolate.griddata(
-				( np.ndarray.flatten(solver.elem_helpers.x_elems[:,:,0]),
-					np.ndarray.flatten(solver.elem_helpers.x_elems[:,:,1]) ),
-				np.ndarray.flatten(vorticity),
-				samplePoints[i],
-				method='nearest'  #plot.get_sample_points(
-				# mesh, solver, physics, solver.basis, True), method='cubic'))
-			), 2))
+		gradu = np.einsum('ijnl, ink -> ijkl',
+				solver.elem_helpers.basis_phys_grad_elems,
+				solver.state_coeffs[:,:,1:3] / solver.state_coeffs[:,:,0:1])
+		vorticity = gradu[:,:,1,0] - gradu[:,:,0,1]
+		domain_vorticity.append(plot.interpolate_2D_soln_to_points(
+			physics,
+			plot.get_sample_points(
+				mesh, solver, physics, solver.basis, True),
+			vorticity,
+			samplePoints[i]))
 
-		# Gradient quantities
-		sample_basis_phys_grad_elems = precompute_list[i][3]
-		domain_normgradrho.append(np.linalg.norm(
-				np.einsum('ijnl, ink -> ijkl',
-					np.array(sample_basis_phys_grad_elems),
-					solver.state_coeffs)[:,:,0],
-				axis=2, keepdims=True))
-		du_ij = np.einsum('ijnl, ink -> ijkl',
-					np.array(sample_basis_phys_grad_elems),
-					solver.state_coeffs[:,:,1:3]/solver.state_coeffs[:,:,0:1])
-		vorticity = du_ij[:,:,1:2,0] - du_ij[:,:,0:1,1]
-		domain_vorticity.append(vorticity)
+		
+
 
 		# Integrate key quantities over entire domain
 		quad_pts = precompute_list[i][0]
@@ -261,39 +246,13 @@ def pre_compute(fname_radical):
 		solver.basis.get_quadrature_order(solver.mesh, 2*np.amax([solver.order, 1]),
 		physics=solver.physics))
 	djacs = np.zeros((solver.mesh.num_elems, quad_wts.shape[0]))
-
-	# Get points at nodes of each elements
-	# temp_order_ = solver.order
-	# solver.order = 0
-	# sample_points_in_domain = plot.get_sample_points(
-	# 	solver.mesh, solver, solver.physics, solver.basis, True)
-	# solver.order = temp_order_
-
-	sample_basis_phys_grad_elems = []
 	for elem_ID in range(solver.mesh.num_elems):
 			# Calculate element-local error
 			djac, _, _ = basis_tools.element_jacobian(solver.mesh, elem_ID, 
 				quad_pts, get_djac=True)
 				
 			djacs[elem_ID, :] = djac.squeeze()
-
-			sample_points_ref = solver.basis.PRINCIPAL_NODE_COORDS
-			sample_points_phys = mesh_tools.ref_to_phys(solver.mesh,
-					elem_ID,
-					solver.basis.PRINCIPAL_NODE_COORDS)
-			nq_sample = sample_points_ref.shape[0]
-			
-			# Compute gradient of basis
-			solver.basis.get_basis_val_grads(
-				sample_points_ref, # sample_points_in_domain[elem_ID,:,:],
-				get_val=True,
-				get_ref_grad=True,
-				get_phys_grad=True,
-				ijac=solver.elem_helpers.ijac_elems[elem_ID,0:nq_sample,:,:])
-			# Append gradient, in physical space, of the bases for element elem_ID
-			sample_basis_phys_grad_elems.append(solver.basis.basis_phys_grad) # [nq=3,nb,dim]
-
-	return (quad_pts, quad_wts, djacs, sample_basis_phys_grad_elems)
+	return (quad_pts, quad_wts, djacs)
 
 precomps = [pre_compute(fnameRadicals[j]) for j in range(num_2D_domains)]
 for i in range(dataSize):

@@ -1265,17 +1265,31 @@ class Euler2D1D(CouplingBC):
 		# DEPRECATE:
 		adjacent_physics_NDIMS = 3 - physics.NDIMS
 
-		if physics.NDIMS < adjacent_physics_NDIMS:
+		if physics.NDIMS < adjacent_physics_NDIMS: # from 1D side
 			# TODO: replace with proper integration
 			adjacentUCast = np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)
 			# Remove tangential and return
 			adjacentUCast = np.concatenate((adjacentUCast[:,:,0:2], adjacentUCast[:,:,3:4]), axis=2)
-			adjacentUCast[:,:,1] *= 1.0
+			# print(physics.compute_variable("Pressure", adjacentUCast))
+			# Convert from n-t representation to x-y
+			# Correct for opposite orientation
+			adjacentUCast[:,:,1] *= -1.0
 			return adjacentUCast
 			return np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)[0,1]
-		elif physics.NDIMS > adjacent_physics_NDIMS:
+		elif physics.NDIMS > adjacent_physics_NDIMS: # from 2D side
 			adjacentUCast = np.tile(adjacent_bstate.Ucast, (self.bstate.Ucast.shape[0],self.bstate.Ucast.shape[1],1))
-			adjacentUCast[:,:,1] *= 1.0
+			# adjacentUCast[:,:,1] *= 1.0
+
+			# Convert from n-t representation to x-y
+			# TODO: save t_hat as state in network payload
+			rotation_cw = np.array([ [0, 1], [-1, 0], ])
+			t_hat = np.einsum('ijk, mk', self.bstate.n_hat, rotation_cw)	
+			n_hat = -self.bstate.n_hat
+			rhovel_n = adjacentUCast[:,:,1:2]
+			rhovel_t = adjacentUCast[:,:,2:3]
+			rhovel_n_repr = np.einsum('ijk, ijn -> ijk', n_hat, rhovel_n)
+			rhovel_t_repr = np.einsum('ijk, ijn -> ijk', t_hat, rhovel_t)
+			adjacentUCast[:,:,1:3] = rhovel_n_repr + rhovel_t_repr
 			return adjacentUCast
 
 
