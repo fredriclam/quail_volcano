@@ -42,6 +42,7 @@ import physics.euler.euler as euler
 import physics.navierstokes.navierstokes as navierstokes
 import physics.scalar.scalar as scalar
 import physics.chemistry.chemistry as chemistry
+import physics.multiphasevpT.multiphasevpT as multiphasevpT
 
 import physics.navierstokes.tools as ns_tools
 
@@ -53,6 +54,7 @@ import solver.ADERDG as ADERDG
 import time
 import multiprocessing as mp
 from multidomain import Domain, Observer
+# from src.physics import euler
 
 
 def set_physics(mesh, physics_type):
@@ -104,6 +106,8 @@ def set_physics(mesh, physics_type):
 		physics_class = navierstokes.NavierStokes2D
 	elif PhysicsType[physics_type] == PhysicsType.Chemistry and ndims ==1:
 		physics_class = chemistry.Chemistry1D
+	elif PhysicsType[physics_type] == PhysicsType.MultiphasevpT and ndims == 1:
+		physics_class = multiphasevpT.MultiphasevpT1D
 	else:
 	    raise NotImplementedError
 
@@ -597,38 +601,51 @@ def main(argv):
 			# Initialize outputs server
 			domain_outputs = manager.dict()
 
+			run_serial = True
 			# Connect each domain to server
 			for domain in domain_list:
 				domain.set_network(glight_condition, ready_queue,
-                  boundaryData, domain_outputs)
-
+									boundaryData, domain_outputs)
 			# Create observer process
 			observer = Observer(_num_timesteps, ready_queue,
-			                    glight_condition, len(domain_list))
+													glight_condition, len(domain_list))
 			observer_process = mp.Process(
 				target=observer.listen,
 				args=()
 			)
+			if run_serial:
+				if len(domain_list) == 1:
+					# Set network options
+					domain_list[0].set_network(glight_condition, ready_queue,
+										boundaryData, domain_outputs)
+					# Initiate serial solve with observer process in background
+					observer_process.start()
+					setup_wall_time = time.time() - setup_timer_start
+					run_total_wall_time_start = time.time()
+					domain_list[0].solve()
+					observer_process.join()
+				else:
+					raise Exception("Specified serial solve for multiple domains.")
+			else:
+				# Map domain list to processes
+				process_list = [mp.Process(
+					target=dom.solve,
+					args=()
+				) for dom in domain_list]
 
-			# Map domain list to processes
-			process_list = [mp.Process(
-				target=dom.solve,
-				args=()
-			) for dom in domain_list]
+				# Start processes
+				observer_process.start()
+				for process in process_list:
+					process.start()
 
-			# Start processes
-			observer_process.start()
-			for process in process_list:
-				process.start()
+				# Main process tasks
+				setup_wall_time = time.time() - setup_timer_start
+				run_total_wall_time_start = time.time()
 
-			# Main process tasks
-			setup_wall_time = time.time() - setup_timer_start
-			run_total_wall_time_start = time.time()
-
-			# # Join processes
-			for process in process_list:
-				process.join()
-			observer_process.join()
+				# # Join processes
+				for process in process_list:
+					process.join()
+				observer_process.join()
 
 		run_total_wall_time = time.time() - run_total_wall_time_start
 
