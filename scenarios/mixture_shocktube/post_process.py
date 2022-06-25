@@ -16,6 +16,7 @@ import scipy.interpolate
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
 solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit_final.pkl")
+# solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit_126.pkl")
 mesh = solver.mesh
 physics = solver.physics
 

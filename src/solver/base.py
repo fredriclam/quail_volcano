@@ -257,6 +257,8 @@ class SolverBase(ABC):
 		# modal triangular basis
 		if LimiterType.PositivityPreserving.name in params["ApplyLimiters"] \
 				or LimiterType.PositivityPreservingChem.name in params[
+				"ApplyLimiters"] \
+				or LimiterType.PositivityPreservingMultiphasevpT.name in params[
 				"ApplyLimiters"]:
 			if basis.BASIS_TYPE == BasisType.HierarchicH1Tri:
 				raise errors.IncompatibleError

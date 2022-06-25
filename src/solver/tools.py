@@ -199,6 +199,13 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 		norm_grad_p = np.linalg.norm(grad_p, axis = 2)
 		# Calculate smoothness switch
 		f = norm_grad_p / (pressure + 1e-12)
+	elif physics.PHYSICS_TYPE == general.PhysicsType.MultiphasevpT:
+		# Compute pressure gradient
+		grad_p = physics.compute_pressure_gradient(Uq, grad_Uq)
+		# Compute its magnitude
+		norm_grad_p = np.linalg.norm(grad_p, axis = 2)
+		# Calculate smoothness switch
+		f = norm_grad_p / (pressure + 1e-12)
 	# For everything else, use the first solution variable
 	else:
 		U0 = Uq[:, :, 0]

@@ -49,6 +49,9 @@ def set_limiter(limiter_type, physics_type):
 	elif general.LimiterType[limiter_type] is \
 			general.LimiterType.PositivityPreservingChem:
 		limiter_class = pp_limiter.PositivityPreservingChem
+	elif general.LimiterType[limiter_type] is \
+			general.LimiterType.PositivityPreservingMultiphasevpT:
+		limiter_class = pp_limiter.PositivityPreservingMultiphasevpT
 	elif general.LimiterType[limiter_type] is general.LimiterType.WENO:
 		limiter_class = weno_limiter.WENO
 	else:

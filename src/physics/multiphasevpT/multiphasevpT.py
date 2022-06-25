@@ -253,19 +253,19 @@ class MultiphasevpT(base.PhysicsBase):
 			varq = get_Psi1()
 		elif vname is self.AdditionalVariables["pi1"].name:
 			T = get_temperature()
-			varq = get_Psi1(T) * (self.Gas[0].R * T
-			                     - (get_Gamma() - 1) * (self.Gas[0].c_v * T))
+			varq = get_Psi1(T) * (self.Gas[0]["R"] * T
+			                     - (get_Gamma() - 1) * (self.Gas[0]["c_v"] * T))
 		elif vname is self.AdditionalVariables["pi2"].name:
 			T = get_temperature()
-			varq = get_Psi1(T) * (self.Gas[1].R * T
-			                     - (get_Gamma() - 1) * (self.Gas[1].c_v * T))
+			varq = get_Psi1(T) * (self.Gas[1]["R"] * T
+			                     - (get_Gamma() - 1) * (self.Gas[1]["c_v"] * T))
 		elif vname is self.AdditionalVariables["pi3"].name:
 			T = get_temperature()
 			p = get_pressure()
-			rhoM = (p - self.Liquid.p0 + self.Liquid.K)/self.Liquid.K*self.Liquid.rho0
+			rhoM = (p - self.Liquid["p0"] + self.Liquid["K"])/self.Liquid["K"]*self.Liquid["rho0"]
 			varq = get_Psi1(T=T,p=p) * (p / rhoM
 			                     - (get_Gamma() - 1) * (
-														 self.Liquid.c_m * T + self.Liquid.E_m0))
+														 self.Liquid["c_m"] * T + self.Liquid["E_m0"]))
 		else:
 			raise NotImplementedError
 

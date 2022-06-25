@@ -76,10 +76,10 @@ def set_physics(mesh, physics_type):
 
 	if PhysicsType[physics_type] == PhysicsType.ConstAdvScalar and \
 			ndims == 1:
-	    physics_class = scalar.ConstAdvScalar1D
+			physics_class = scalar.ConstAdvScalar1D
 	elif PhysicsType[physics_type] == PhysicsType.ConstAdvScalar and \
 			ndims == 2:
-	    physics_class = scalar.ConstAdvScalar2D
+			physics_class = scalar.ConstAdvScalar2D
 	elif PhysicsType[physics_type] == PhysicsType.ConstAdvDiffScalar and \
 			ndims == 1:
 		physics_class = scalar.ConstAdvDiffScalar1D
@@ -87,7 +87,7 @@ def set_physics(mesh, physics_type):
 			ndims == 2:
 		physics_class = scalar.ConstAdvDiffScalar2D
 	elif PhysicsType[physics_type] == PhysicsType.Burgers and ndims == 1:
-	    physics_class = scalar.Burgers1D
+			physics_class = scalar.Burgers1D
 	elif PhysicsType[physics_type] == PhysicsType.ModelProblem:
 		physics_class = zerod.ModelProblem
 	elif PhysicsType[physics_type] == PhysicsType.ModelPSRScalar:
@@ -97,9 +97,9 @@ def set_physics(mesh, physics_type):
 	elif PhysicsType[physics_type] == PhysicsType.Pendulum:
 		physics_class = zerod.Pendulum
 	elif PhysicsType[physics_type] == PhysicsType.Euler and ndims == 1:
-	    physics_class = euler.Euler1D
+			physics_class = euler.Euler1D
 	elif PhysicsType[physics_type] == PhysicsType.Euler and ndims == 2:
-	    physics_class = euler.Euler2D
+			physics_class = euler.Euler2D
 	elif PhysicsType[physics_type] == PhysicsType.NavierStokes and ndims == 1:
 		physics_class = navierstokes.NavierStokes1D
 	elif PhysicsType[physics_type] == PhysicsType.NavierStokes and ndims == 2:
@@ -109,7 +109,7 @@ def set_physics(mesh, physics_type):
 	elif PhysicsType[physics_type] == PhysicsType.MultiphasevpT and ndims == 1:
 		physics_class = multiphasevpT.MultiphasevpT1D
 	else:
-	    raise NotImplementedError
+			raise NotImplementedError
 
 	physics = physics_class(mesh)
 

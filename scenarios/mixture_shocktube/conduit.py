@@ -4,25 +4,23 @@ import copy
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 1.3, #0.1 @ meter scale
-	"NumTimeSteps" : 285, #5000 @ meter scale
+	"NumTimeSteps" : 2850, #5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
 
 Numerics = {
-    "SolutionOrder" : 0,
+    "SolutionOrder" : 1,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
-    # "ApplyLimiters" : "PositivityPreserving",
+    "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
     # "NodeType" : "Equidistant",
     "ElementQuadrature" : "GaussLegendre",
     "FaceQuadrature" : "GaussLegendre",
-    "ArtificialViscosity" : False,
-		# Flag to use artificial viscosity
+        # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 1e-5, #1e3, 5e3,
-		# Parameter in the artificial viscosity term. A larger value will
-		# increase the amount of AV added, giving a smoother solution.
+    "ArtificialViscosity" : True,
+	"AVParameter" : 500., #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
