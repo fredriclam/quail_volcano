@@ -502,7 +502,7 @@ class ODEIntegrator(StepperBase, source_stepper.SourceSolvers):
 		except:
 			pass
 			try:
-			    stepper = SourceStepperType[ode_scheme]
+					stepper = SourceStepperType[ode_scheme]
 			except:
 				raise NotImplementedError("ODE time scheme is not supported")
 

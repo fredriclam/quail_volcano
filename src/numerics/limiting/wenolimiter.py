@@ -68,7 +68,8 @@ class WENO(base.LimiterBase):
 	'''
 	COMPATIBLE_PHYSICS_TYPES = [general.PhysicsType.Burgers, \
 			general.PhysicsType.Euler, \
-			general.PhysicsType.Chemistry]
+			general.PhysicsType.Chemistry,
+			general.PhysicsType.MultiphasevpT]
 
 	def __init__(self, physics_type):
 		super().__init__(physics_type)

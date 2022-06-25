@@ -412,7 +412,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			# Compute density
 			quant_elem_faces = physics.compute_variable(var_name, U_elem_faces)
 			# Check if limiting is needed
-			# theta = np.abs((rho1_bar - POS_TOL)/(rho1_bar - quant_elem_faces))
+			# theta = np.abs((rho_bar[var_name] - POS_TOL)/(rho_bar[var_name] - quant_elem_faces))
 			theta = np.abs((rho_bar[var_name])/(
 				rho_bar[var_name] - quant_elem_faces + POS_TOL))
 			# Truncate theta1; otherwise, can get noticeably different

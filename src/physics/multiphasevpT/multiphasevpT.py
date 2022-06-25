@@ -24,7 +24,6 @@
 #
 # ------------------------------------------------------------------------ #
 from enum import Enum
-from random import betavariate
 import numpy as np
 
 import errors
@@ -82,9 +81,9 @@ class MultiphasevpT(base.PhysicsBase):
 
 	def set_physical_params(self, 
 													Gas1={"R": 287., "gamma": 1.4},
-												  Gas2={"R": 8.314/18.02e-3, "c_p": 2.288e3}, 
+													Gas2={"R": 8.314/18.02e-3, "c_p": 2.288e3}, 
 													Liquid={"K": 10e9, "rho0": 2.5e3, "p0": 5e6,
-													        "E_m0": 0, "c_m": 3e3},
+																	"E_m0": 0, "c_m": 3e3},
 													Solubility={"k": 5e-6, "n": 0.5},
 													mu = 3e5,
 													tau_d = 0.5):
@@ -151,7 +150,6 @@ class MultiphasevpT(base.PhysicsBase):
 		pi3 = "pi3"
 		Enthalpy = "Enthalpy"
 		Gamma = "Gamma"
-		
 
 	def compute_additional_variable(self, var_name, Uq, flag_non_physical):
 		''' Extract state variables '''
@@ -172,7 +170,7 @@ class MultiphasevpT(base.PhysicsBase):
 			kinetic = 0.5*np.sum(mom*mom, axis=2, keepdims=True) \
 				/(arhoA + arhoWv + arhoM)
 			c_mix = arhoA * self.Gas[0]["c_v"] \
-					  + arhoWv * self.Gas[1]["c_v"] \
+						+ arhoWv * self.Gas[1]["c_v"] \
 						+ arhoM * self.Liquid["c_m"]
 			return (e - arhoM * self.Liquid["E_m0"] - kinetic)/c_mix
 		def get_porosity(T=None):
@@ -210,7 +208,7 @@ class MultiphasevpT(base.PhysicsBase):
 				p + phi * (self.Liquid["K"] - self.Liquid["p0"]))
 		def get_Gamma():
 			c_mix = arhoA * self.Gas[0]["c_v"] \
-					  + arhoWv * self.Gas[1]["c_v"] \
+						+ arhoWv * self.Gas[1]["c_v"] \
 						+ arhoM * self.Liquid["c_m"]
 			return 1. + (arhoA * self.Gas[0]["R"] + arhoWv * self.Gas[1]["R"]) / c_mix
 
@@ -254,17 +252,17 @@ class MultiphasevpT(base.PhysicsBase):
 		elif vname is self.AdditionalVariables["pi1"].name:
 			T = get_temperature()
 			varq = get_Psi1(T) * (self.Gas[0]["R"] * T
-			                     - (get_Gamma() - 1) * (self.Gas[0]["c_v"] * T))
+													 - (get_Gamma() - 1) * (self.Gas[0]["c_v"] * T))
 		elif vname is self.AdditionalVariables["pi2"].name:
 			T = get_temperature()
 			varq = get_Psi1(T) * (self.Gas[1]["R"] * T
-			                     - (get_Gamma() - 1) * (self.Gas[1]["c_v"] * T))
+													 - (get_Gamma() - 1) * (self.Gas[1]["c_v"] * T))
 		elif vname is self.AdditionalVariables["pi3"].name:
 			T = get_temperature()
 			p = get_pressure()
 			rhoM = (p - self.Liquid["p0"] + self.Liquid["K"])/self.Liquid["K"]*self.Liquid["rho0"]
 			varq = get_Psi1(T=T,p=p) * (p / rhoM
-			                     - (get_Gamma() - 1) * (
+													 - (get_Gamma() - 1) * (
 														 self.Liquid["c_m"] * T + self.Liquid["E_m0"]))
 		else:
 			raise NotImplementedError
@@ -303,12 +301,12 @@ class MultiphasevpT(base.PhysicsBase):
 		# Retrieve auxiliary quantities
 		beta = self.compute_additional_variable("beta", Uq, True)
 		bu2 = beta*np.sum(mom**2, axis=2, keepdims=True)/np.power(
-			arhoA+ arhoWv + arhoM,2.)
+			arhoA + arhoWv + arhoM,2.)
 		dpdU = np.empty_like(Uq)
 		dpdU[:, :, slarhoA] = bu2 + self.compute_additional_variable("pi1", Uq, True)
 		dpdU[:, :, slarhoWv] = bu2 + self.compute_additional_variable("pi2", Uq, True)
 		dpdU[:, :, slarhoM] = bu2 + self.compute_additional_variable("pi3", Uq, True)
-		dpdU[:, :, slmom] = -2.*beta*mom/(arhoA+ arhoWv + arhoM)
+		dpdU[:, :, slmom] = -2.*beta*mom/(arhoA + arhoWv + arhoM)
 		dpdU[:, :, sle] = 2.*beta
 		
 
@@ -435,61 +433,64 @@ class MultiphasevpT1D(MultiphasevpT):
 			left_eigen: Left eigenvector matrix [ne, 1, ns, ns]
 		'''
 
-		raise NotImplementedError
 		# Unpack
 		ne = U_bar.shape[0]
-
 		ns = self.NUM_STATE_VARS
 
-		irho, irhou, irhoE = self.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, irhou, ie = self.get_state_indices()
 
-		rho = U_bar[:, :, irho]
-		rhou = U_bar[:, :, irhou]
-		rhoE = U_bar[:, :, irhoE]
+		arhoA  = U_bar[:, :, iarhoA]
+		arhoWv = U_bar[:, :, iarhoWv]
+		arhoM  = U_bar[:, :, iarhoM]
+		rhou   = U_bar[:, :, irhou]
+		e      = U_bar[:, :, ie]
 
-		# Get velocity
+		rho = arhoA + arhoWv + arhoM
 		u = rhou / rho
-		# Get squared velocity
 		u2 = u**2
-		# Calculate pressure using the Ideal Gasd Law
-		p = (self.gamma - 1.)*(rhoE - 0.5 * rho * u2) # [n, nq]
-		# Get total specific enthalpy
-		H = rhoE/rho + p/rho
-
-		# Get sound speed
-		a = np.sqrt(self.gamma * p / rho)
-
-		gm1oa2 = (self.gamma - 1.) / (a * a)
+		p = np.squeeze(self.compute_additional_variable("Pressure", U_bar, True), axis=2)
+		H = (e + p)/rho
+		a = np.squeeze(self.compute_additional_variable("SoundSpeed", U_bar, True), axis=2)
+		y1 = arhoA/rho
+		y2 = arhoWv/rho
+		y3 = arhoM/rho
+		pi1 = np.squeeze(self.compute_additional_variable("pi1", U_bar, True), axis=2)
+		pi2 = np.squeeze(self.compute_additional_variable("pi2", U_bar, True), axis=2)
+		pi3 = np.squeeze(self.compute_additional_variable("pi3", U_bar, True), axis=2)
+		beta = np.squeeze(self.compute_additional_variable("beta", U_bar, True), axis=2)
 
 		# Allocate the right and left eigenvectors
 		right_eigen = np.zeros([ne, 1, ns, ns])
 		left_eigen = np.zeros([ne, 1, ns, ns])
 
 		# # Calculate the right and left eigenvectors
-		right_eigen[:, :, irho, irho]  = 1.
-		right_eigen[:, :, irho, irhou] = 1.
-		right_eigen[:, :, irho, irhoE] = 1.
+		right_eigen[:, :, iarhoA,  iarhoA]  = pi2 - pi3
+		right_eigen[:, :, iarhoWv, iarhoA]  = pi3 - pi1
+		right_eigen[:, :, iarhoM,  iarhoA]  = pi1 - pi2
+		right_eigen[:, :, irhou,   iarhoA]  = 0.
+		right_eigen[:, :, ie,      iarhoA]  = 0.
+		right_eigen[:, :, iarhoA,  iarhoWv] = -pi2
+		right_eigen[:, :, iarhoWv, iarhoWv] = pi1
+		right_eigen[:, :, iarhoM,  iarhoWv] = 0.
+		right_eigen[:, :, irhou,   iarhoWv] = u*(pi1 - pi2)
+		right_eigen[:, :, ie,      iarhoWv] = 0.5*u2*(pi1 - pi2)
+		right_eigen[:, :, iarhoA,  iarhoM]  = -2*beta
+		right_eigen[:, :, iarhoWv, iarhoM]  = 2*beta
+		right_eigen[:, :, iarhoM,  iarhoM]  = 0.
+		right_eigen[:, :, irhou,   iarhoM]  = 0.
+		right_eigen[:, :, ie,      iarhoM]  = pi1 - pi2
+		right_eigen[:, :, iarhoA,  irhou]   = y1
+		right_eigen[:, :, iarhoWv, irhou]   = y2
+		right_eigen[:, :, iarhoM,  irhou]   = y3
+		right_eigen[:, :, irhou,   irhou]   = u - a
+		right_eigen[:, :, ie,      irhou]   = H - a*u
+		right_eigen[:, :, iarhoA,  ie]      = y1
+		right_eigen[:, :, iarhoWv, ie]      = y2
+		right_eigen[:, :, iarhoM,  ie]      = y3
+		right_eigen[:, :, irhou,   ie]      = u + a
+		right_eigen[:, :, ie,      ie]      = H + a*u
 
-		right_eigen[:, :, irhou, irho]  = u - a
-		right_eigen[:, :, irhou, irhou] = u + a
-		right_eigen[:, :, irhou, irhoE] = u
-
-		right_eigen[:, :, irhoE, irho]  = H - u*a
-		right_eigen[:, :, irhoE, irhou] = H + u*a
-		right_eigen[:, :, irhoE, irhoE] = 0.5 * u2
-
-		left_eigen[:, :, irho, irho]  = 0.5 * (0.5*gm1oa2 * u2 + u/a)
-		left_eigen[:, :, irho, irhou] = -0.5 * (gm1oa2 * u + 1./a)
-		left_eigen[:, :, irho, irhoE] = 0.5 * gm1oa2
-
-		left_eigen[:, :, irhou, irho]  = 0.5 * (0.5*gm1oa2 * u2 - u/a)
-		left_eigen[:, :, irhou, irhou] = -0.5 * (gm1oa2 * u - 1./a)
-		left_eigen[:, :, irhou, irhoE] = 0.5 * gm1oa2
-
-		left_eigen[:, :, irhoE, irho]  = 1. - 0.5 * gm1oa2 * u2
-		left_eigen[:, :, irhoE, irhou] = gm1oa2 * u
-		left_eigen[:, :, irhoE, irhoE] = -1.*gm1oa2
-
+		left_eigen = np.linalg.inv(right_eigen)
 		# Can uncomment line below to test l dot r = kronecker delta
 		# test = np.einsum('elij,eljk->elik', left_eigen, right_eigen)
 
