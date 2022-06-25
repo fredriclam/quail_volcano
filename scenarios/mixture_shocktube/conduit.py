@@ -4,29 +4,30 @@ import copy
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 1.3, #0.1 @ meter scale
-	"NumTimeSteps" : 2850, #5000 @ meter scale
+	"NumTimeSteps" : 13000, #5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
 
 Numerics = {
-    "SolutionOrder" : 1,
+    "SolutionOrder" : 2,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
+    # "ApplyLimiters" : ["PositivityPreservingMultiphasevpT", "WENO"], "ShockIndicator": "MinMod",
     # "NodeType" : "Equidistant",
     "ElementQuadrature" : "GaussLegendre",
     "FaceQuadrature" : "GaussLegendre",
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 500., #1e-5, #1e3, 5e3,
+	"AVParameter" : 150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
 Output = {
 	"Prefix" : "mixture_shocktube_conduit",
-	"WriteInterval" : 10,
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
@@ -34,7 +35,7 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 351,
+    "NumElemsX" : 401, #151,#351,
     "xmin" : -1000.0,
     "xmax" : 1000,
 }

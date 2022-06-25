@@ -31,6 +31,7 @@ import meshing.tools as mesh_tools
 import numerics.helpers.helpers as helpers
 import numerics.limiting.base as base
 
+import pickle
 
 POS_TOL = 1.e-10
 
@@ -354,6 +355,7 @@ class PositivityPreservingChem(PositivityPreserving):
 
 		return Uc # [ne, nq, ns]
 
+
 class PositivityPreservingMultiphasevpT(PositivityPreserving):
 	'''
     Class: PPLimiter
@@ -374,6 +376,13 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		self.var_name2 = "pDensityWv"
 		self.var_name3 = "pDensityM"
 		self.var_name4 = "Pressure"
+
+		# self.theta_store = [[], [], [], []]
+	
+	# def __del__(self):
+	# 	print("Dismantling logging in positivitypreserving.py/PositivityPreservingMultiphasevpT")
+	# 	with open('log_data.dat', 'wb') as f:
+	# 		pickle.dump(self.theta_store, f)
 
 	def limit_solution(self, solver, Uc):
 		# Unpack
@@ -407,18 +416,26 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		# Ignore divide-by-zero
 		np.seterr(divide='ignore')
 
+		# logger_idx = -1
 		''' Limit partial-density variables '''
 		for var_name in [self.var_name1, self.var_name2, self.var_name3]:
+			# logger_idx += 1
 			# Compute density
 			quant_elem_faces = physics.compute_variable(var_name, U_elem_faces)
-			# Check if limiting is needed
-			# theta = np.abs((rho_bar[var_name] - POS_TOL)/(rho_bar[var_name] - quant_elem_faces))
-			theta = np.abs((rho_bar[var_name])/(
-				rho_bar[var_name] - quant_elem_faces + POS_TOL))
+			# Evaluate theta parameter
+			if self.var_name3 == var_name:
+				# Liquid phase: separate theta evaluation
+				theta = np.abs((rho_bar[var_name])/(
+					rho_bar[var_name] - quant_elem_faces + POS_TOL))
+			else:
+				theta = np.abs((rho_bar[var_name] - POS_TOL)/(rho_bar[var_name] - quant_elem_faces))
+			# theta = np.abs((rho_bar[var_name])/(
+			# 	rho_bar[var_name] - quant_elem_faces + POS_TOL))
 			# Truncate theta1; otherwise, can get noticeably different
 			# results across machines, possibly due to poor conditioning in its
 			# calculation
 			theta1 = trunc(np.minimum(1., np.min(theta, axis=1)))
+			# self.theta_store[logger_idx].append(theta1)
 
 			# Get specific partial density index
 			irho = physics.get_state_index(var_name)
@@ -485,6 +502,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		# results across machines, possibly due to poor conditioning in its
 		# calculation
 		theta3 = trunc(np.min(theta, axis=1))
+		# self.theta_store[3].append(theta3)
 		# Get IDs of elements that need limiting
 		elem_IDs = np.where(theta3 < 1.)[0]
 		# Modify coefficients

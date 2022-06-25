@@ -15,10 +15,12 @@ import scipy.interpolate
 # fnameRadical = "pocket_atmos_mushroom" + "_"
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
-solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit_final.pkl")
-# solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit_126.pkl")
+single_fname = "mixture_shocktube_conduit_final.pkl"
+# single_fname = "mixture_shocktube_conduit_126.pkl"
+solver = readwritedatafiles.read_data_file(single_fname)
 mesh = solver.mesh
 physics = solver.physics
+output_fname = "output_unnamed_"
 
 plot.prepare_plot(linewidth=0.5)
 plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True, 
@@ -26,31 +28,32 @@ plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True,
 		show_elem_IDs=False)
 # Save figure
 plot.show_plot()
-plot.save_figure(file_name='Pressure', file_type='pdf', crop_level=2)
+plot.save_figure(file_name='Pressure', file_type='png', crop_level=2)
 
 plot.plot_solution(mesh, physics, solver, "SoundSpeed", plot_numerical=True, 
 		create_new_figure=True, include_mesh=False, regular_2D=False, 
 		show_elem_IDs=False)
 plot.show_plot()
-plot.save_figure(file_name='SoundSpeed', file_type='pdf', crop_level=2)
+plot.save_figure(file_name='SoundSpeed', file_type='png', crop_level=2)
 
-quit()
+# For-loop extraction
+use_multidomain = False
+if use_multidomain:
+	name_2D_domain = "referenceM"
+	num_2D_domains = 2 #!
+	dataSize = 1200+1
+	verbose = False
 
-name_2D_domain = "referenceM"
-num_2D_domains = 2 #!
-dataSize = 1200+1
-verbose = False
-
-outputfname = "redo_" + name_2D_domain + "_"
-# outputfname = "void_"
-fnameRadicals = {
-	"conduit": f"{name_2D_domain}_conduit",
-}
-for i in range(num_2D_domains):
-	fnameRadicals[i] = f"{name_2D_domain}{i+1}"
-for key in fnameRadicals.keys():
-	if not fnameRadicals[key].endswith("_"):
-		fnameRadicals[key] += "_"
+	outputfname = "redo_" + name_2D_domain + "_"
+	# outputfname = "void_"
+	fnameRadicals = {
+		"conduit": f"{name_2D_domain}_conduit",
+	}
+	for i in range(num_2D_domains):
+		fnameRadicals[i] = f"{name_2D_domain}{i+1}"
+	for key in fnameRadicals.keys():
+		if not fnameRadicals[key].endswith("_"):
+			fnameRadicals[key] += "_"
 
 def integrate(mesh, physics, solver, var_names, quad_pts, quad_wts, djacs):
 	# Extract info
@@ -87,13 +90,15 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		Velocity = "|u|"
 	'''
 
+	domain_prhoA = []
+	domain_prhoWv = []
+	domain_prhoM = []
 	domain_rho = []
 	domain_rhou = []
 	domain_rhov = []
 	domain_u = []
 	domain_v = []
 	domain_T = []
-	domain_s = []
 	domain_E = []
 	domain_p = []
 	domainIntegrals = []
@@ -127,13 +132,15 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 			samplePoints[i],
 			solver.basis,
 			quantity)
-		domain_rho.append(getns('Density'))
+		domain_prhoA.append(getns('pDensityA'))
+		domain_prhoWv.append(getns('pDensityWv'))
+		domain_prhoM.append(getns('pDensityM'))
+		domain_rho.append(domain_prhoA[i] + domain_prhoWv[i] + domain_prhoM)
 		domain_rhou.append(getns('XMomentum'))
 		domain_rhov.append(getns('YMomentum'))
 		domain_u.append(domain_rhou[i] / domain_rho[i])
 		domain_v.append(domain_rhov[i] / domain_rho[i])
 		domain_T.append(getns('Temperature'))
-		domain_s.append(getns('Entropy'))
 		domain_E.append(getns('Energy'))
 		domain_p.append(getns('Pressure'))
 
@@ -203,7 +210,7 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		quad_wts = precompute_list[i][1]
 		djacs = precompute_list[i][2]
 		
-		state_names = ['Density', 'Energy', 'XMomentum',
+		state_names = ['pDensityA', 'pDensityWv', 'pDensityM', 'Energy', 'XMomentum',
 				'YMomentum', 'Pressure', 'InternalEnergy']
 		integrated_dict = dict(zip(
 			state_names,
@@ -249,11 +256,13 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 	scipy.io.savemat(outputfname, mdict={
 		"samplePoints": samplePoints,
 		"domain_p": domain_p,
+		"domain_prhoA": domain_prhoA,
+		"domain_prhoWv": domain_prhoWv,
+		"domain_prhoM": domain_prhoM,
 		"domain_rho": domain_rho,
 		"domain_E": domain_E,
 		"domain_rhou": domain_rhou,
 		"domain_rhov": domain_rhov,
-		"domain_s": domain_s,
 		"domain_u": domain_u,
 		"domain_v": domain_v,
 		"domain_T": domain_T,
@@ -261,13 +270,18 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		"domain_vorticity": domain_vorticity,
 		"samplePointsConduit": samplePointsConduit,
 		"pConduit": getns_conduit("Pressure"),
-		"rhoConduit": getns_conduit("Density"),
+		"prhoAConduit": getns_conduit("pDensityA"),
+		"prhoWvConduit": getns_conduit("pDensityWv"),
+		"prhoMConduit": getns_conduit("pDensityM"),
+		"rhoConduit": getns_conduit("pDensityA") + getns_conduit("pDensityWv") \
+			            + getns_conduit("pDensityM"),
 		"EConduit": getns_conduit("Energy"),
-		"sConduit": getns_conduit("Entropy"),
-		"uConduit": getns_conduit("XMomentum") / getns_conduit("Density"),
+		"uConduit": getns_conduit("XMomentum") / (getns_conduit("pDensityA") 
+									+ getns_conduit("pDensityWv")
+			            + getns_conduit("pDensityM")),
 		"TConduit": getns_conduit("Temperature"),
 		"integrated": domainIntegrals,
-		"t": solver.time,
+		"t": conduitsolver.time,
 		"x_r1": x_r1,
 		"x_r2": x_r2,
 	})
@@ -316,65 +330,19 @@ def pre_compute(fname_radical):
 
 	return (quad_pts, quad_wts, djacs, sample_basis_phys_grad_elems)
 
-precomps = [pre_compute(fnameRadicals[j]) for j in range(num_2D_domains)]
-for i in range(dataSize):
+if use_multidomain:
+	precomps = [pre_compute(fnameRadicals[j]) for j in range(num_2D_domains)]
+	for i in range(dataSize):
+		pkl2mat(
+			[f"{fnameRadicals[j]}{i}.pkl" for j in range(num_2D_domains)],
+			f"{fnameRadicals['conduit']}{i}.pkl",
+			precomps,
+			outputfname=(outputfname + f"{i}"),
+			verbose=False)
+else:
 	pkl2mat(
-		[f"{fnameRadicals[j]}{i}.pkl" for j in range(num_2D_domains)],
-		f"{fnameRadicals['conduit']}{i}.pkl",
-	  precomps,
-		outputfname=(outputfname + f"{i}"),
-		verbose=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # Compute L2 error
-# post.get_error(mesh, physics, solver, "Entropy", 
-# 		normalize_by_volume=False)
-
-# # Unpack
-# mesh = solver.mesh
-# physics = solver.physics
-
-# plot.prepare_plot(linewidth=0.5)
-# plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True, 
-# 		create_new_figure=True, include_mesh=True, regular_2D=False, 
-# 		show_elem_IDs=False)
-# # Save figure
-# plot.save_figure(file_name='Pressure', file_type='pdf', crop_level=2)
-
-print("End of postprocessing.")
-
-if False:
-	''' Plot '''
-	### Pressure contour ###
-	plot.prepare_plot(linewidth=0.5)
-	plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True, 
-			create_new_figure=True, include_mesh=True, regular_2D=False, 
-			show_elem_IDs=False)
-	# Save figure
-	plot.save_figure(file_name='Pressure', file_type='pdf', crop_level=2)
-
-	### Entropy contour ###
-	# plot.plot_solution(mesh, physics, solver, "Entropy", plot_numerical=True, 
-	# 		create_new_figure=True, include_mesh=True, regular_2D=False)
-	# # Save figure
-	# plot.save_figure(file_name='Entropy', file_type='pdf', crop_level=2)
-
-	### Boundary info ###
-	# Plot pressure in x-direction along wall
-	# Boundary integral gives drag force in x-direction
-	# post.get_boundary_info(solver, mesh, physics, "y1", "Pressure", 
-	# 		dot_normal_with_vec=True, vec=[1.,0.], integrate=True, 
-	# 		plot_vs_x=True, plot_vs_y=False, fmt="bo", ylabel="$F_x$")
-
-	plot.show_plot()
+			[],
+			single_fname,
+			[],
+			outputfname=(output_fname),
+			verbose=False)
