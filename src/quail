@@ -467,7 +467,10 @@ def process_post_file(post_file, auto_process):
 
 def dom_recursive_build(deck, domain_list,
 												domain_edges, global_timestepping,
-												domain_edge_list=None):
+												domain_edge_list=None,
+												edge_name_to_loc_bdry=None):
+	if edge_name_to_loc_bdry is None:
+		edge_name_to_loc_bdry = {}
 	# Check global timestep settings
 	if global_timestepping is None:
 		global_timestepping = deck.__dict__.get("TimeStepping")
@@ -475,6 +478,7 @@ def dom_recursive_build(deck, domain_list,
 		deck.TimeStepping = global_timestepping
 	# Build domain
 	solver, physics, mesh = driver(deck)
+
 	domain_list.append(Domain(solver, physics, mesh, deck.__name__))
 	# Add edge set for node to graph
 	domain_edges[deck.__name__] = {}
@@ -489,8 +493,9 @@ def dom_recursive_build(deck, domain_list,
 														domain_list,
 														domain_edges,
 														global_timestepping,
-														domain_edge_list=domain_edge_list)
-			# Add edge to edge set
+														domain_edge_list=domain_edge_list,
+														edge_name_to_loc_bdry=edge_name_to_loc_bdry)
+			''' Add edges to edge set '''
 			domain_edges[deck.__name__][edge_name] = \
 				(deck.__name__, linked_deck_name)
 			domain_edges[linked_deck_name][edge_name] = \
@@ -501,6 +506,30 @@ def dom_recursive_build(deck, domain_list,
 					0: linked_deck_name,
 					1: deck.__name__,
 				})
+			''' Add inverse mapping (edge_name -> local boundary name)'''
+			if not edge_name_to_loc_bdry.get(deck.__name__):
+				edge_name_to_loc_bdry[deck.__name__] = {}
+			is_valid_construction = False
+			for loc_name, bc in physics.BCs.items():
+				if hasattr(bc,"bkey") and bc.bkey == edge_name:
+					edge_name_to_loc_bdry[deck.__name__][edge_name] = loc_name
+					is_valid_construction = True
+			if not is_valid_construction:
+				raise Exception("A BoundaryName specified in LinkedSolvers was not " +
+												"a bkey of any boundary condition.")
+
+			is_valid_construction = False
+			linked_physics = domain_list[
+				[dom.id for dom in domain_list].index(linked_deck_name)].physics
+			if not edge_name_to_loc_bdry.get(linked_deck_name):
+				edge_name_to_loc_bdry[linked_deck_name] = {}
+			for loc_name, bc in linked_physics.BCs.items():
+				if hasattr(bc,"bkey") and bc.bkey == edge_name:
+					edge_name_to_loc_bdry[linked_deck_name][edge_name] = loc_name
+					is_valid_construction = True
+			if not is_valid_construction:
+				raise Exception("A BoundaryName specified in LinkedSolvers was not " +
+												"a bkey of any boundary condition.")
 
 
 def main(argv):
@@ -552,6 +581,8 @@ def main(argv):
 		domain_edges = {} 
 		# List of edges (redundant but useful)
 		_domain_edge_list = []
+		# Map domain -> map(edge name known to graph -> mesh's local boundary name)
+		edge_name_to_loc_bdry = {}
 		# Global timestep settings, set by the first encountered option
 		global_timestepping = None
 
@@ -562,13 +593,16 @@ def main(argv):
 												domain_list,
 												domain_edges,
 												global_timestepping,
-												domain_edge_list=_domain_edge_list)
+												domain_edge_list=_domain_edge_list,
+												edge_name_to_loc_bdry=edge_name_to_loc_bdry)
 		
 		_num_timesteps = domain_list[0].solver.params["NumTimeSteps"]
 
 		for domain in domain_list:
 			# Attach domain topology to each domain
 			domain.domain_edges = domain_edges
+			# Attach global-edge-name-to-local-boundary-name mapping
+			domain.edge_name_to_loc_bdry = edge_name_to_loc_bdry
 			# Synchronize num timesteps
 			domain.num_timesteps = _num_timesteps
 
@@ -601,7 +635,7 @@ def main(argv):
 			# Initialize outputs server
 			domain_outputs = manager.dict()
 
-			run_serial = True
+			run_serial = False
 			# Connect each domain to server
 			for domain in domain_list:
 				domain.set_network(glight_condition, ready_queue,

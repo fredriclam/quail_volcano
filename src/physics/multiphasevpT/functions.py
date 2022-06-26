@@ -51,6 +51,7 @@ class BCType(Enum):
 	SlipWall = auto()
 	PressureOutlet = auto()
 	CustomInlet = auto()
+	MultiphasevpT1D1D = auto()
 	MultiphasevpT2D1D = auto()
 	MultiphasevpT2D2D = auto()
 
@@ -1000,6 +1001,42 @@ class Euler2D2D(BCWeakRiemann):
 			copy.copy(physics.bdry_data_net[data_net_key]),
 			axis=(0,1))
 		
+
+class MultiphasevpT1D1D(BCWeakRiemann):
+	'''
+	This class implements a 1D-1D coupling boundary condition.
+	The interior convective flux and the artifical viscosity diffusion integral
+	need to be dealt with.
+
+	Attributes:
+	-----------
+	bkey (str): Key corresponding to boundary as edge in domain graph; typically
+	            the name of the boundary.
+	'''
+
+	def __init__(self, bkey):
+		self.bkey = bkey
+
+	def get_extrapolated_state(self, physics, UqI, normals, x, t):
+		''' Called when computing states at shared boundaries. '''
+		return UqI
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Get shared state UqI and return (BCWeakRiemann) '''
+		# Get id string of adjacent domain from domain graph (local)
+		adjacent_domain_id = [
+			key for key in 
+			physics.domain_edges[physics.domain_id][self.bkey] 
+			if key != physics.domain_id][0]
+		# Get key for boundary state in shared memory (via Manager.dict)
+		data_net_key = physics.edge_to_key(
+										 physics.domain_edges[physics.domain_id][self.bkey],
+										 adjacent_domain_id)
+		# Return orientation-corrected exterior state
+		return np.flip(
+			copy.copy(physics.bdry_data_net[data_net_key]["bdry_face_state"]),
+			axis=(0,1))
+
 
 '''
 ---------------------

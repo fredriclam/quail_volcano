@@ -35,9 +35,9 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 401, #151,#351,
-    "xmin" : -1000.0,
-    "xmax" : 1000,
+    "NumElemsX" : 151, #151,#351,
+    "xmin" : -300.0,
+    "xmax" : 300.0,
 }
 
 Physics = {
@@ -98,9 +98,23 @@ ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
   "x1" : {
-      "BCType" : "SlipWall",
+      "BCType" : "MultiphasevpT1D1D",
+      "bkey": "xlower",
   },
   "x2" : { 
-      "BCType" : "SlipWall",
+    #   "BCType" : "SlipWall",
+    "BCType" : "MultiphasevpT1D1D",
+    "bkey": "xupper",
   },
 }
+
+LinkedSolvers = [
+	{
+		"DeckName": "conduit2.py",
+		"BoundaryName": "xlower",
+	},
+    {
+		"DeckName": "conduit3.py",
+		"BoundaryName": "xupper",
+	},
+]

@@ -30,11 +30,27 @@ plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True,
 plot.show_plot()
 plot.save_figure(file_name='Pressure', file_type='png', crop_level=2)
 
-plot.plot_solution(mesh, physics, solver, "SoundSpeed", plot_numerical=True, 
+# plot.plot_solution(mesh, physics, solver, "SoundSpeed", plot_numerical=True, 
+# 		create_new_figure=True, include_mesh=False, regular_2D=False, 
+# 		show_elem_IDs=False)
+# plot.show_plot()
+# plot.save_figure(file_name='SoundSpeed', file_type='png', crop_level=2)
+
+solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit2_final.pkl")
+plot.prepare_plot(linewidth=0.5)
+plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
 		create_new_figure=True, include_mesh=False, regular_2D=False, 
 		show_elem_IDs=False)
 plot.show_plot()
-plot.save_figure(file_name='SoundSpeed', file_type='png', crop_level=2)
+
+solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit3_final.pkl")
+plot.prepare_plot(linewidth=0.5)
+plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
+		create_new_figure=True, include_mesh=False, regular_2D=False, 
+		show_elem_IDs=False)
+plot.show_plot()
+
+quit()
 
 # For-loop extraction
 use_multidomain = False

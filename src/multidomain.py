@@ -8,6 +8,7 @@
 
 import numpy as np
 import numerics.helpers.helpers as helpers
+import logging
 
 _global_timeout_seconds = 615.0
 
@@ -23,6 +24,7 @@ class Domain():
     self.mesh = mesh
     self.id = id
     self.domain_edges = {}
+    self.edge_name_to_loc_bdry = {}
     self.num_timesteps = np.nan
     self.glight_condition = None
     self.ready_queue = None
@@ -69,10 +71,16 @@ class Domain():
 
   def post_await(self, solver):
     ''' Post data and await green light signal from observer node.'''
+    
+    # Test boundary at x2
+    # self.domain_edges[self.id]={"x2":(self.id, "virtualDomain")}
+    data = {}
     # Post data
     for bname in self.domain_edges[self.id]:
+      # Get boundary name known to solver.mesh from the multidomain edge name
+      localbname = self.edge_name_to_loc_bdry[self.id][bname]
       ''' Call BC class's boundary data computation method. '''
-      bgroup = solver.mesh.boundary_groups[bname]
+      bgroup = solver.mesh.boundary_groups[localbname]
       basis_val = solver.bface_helpers.faces_to_basis[
         solver.bface_helpers.face_IDs[bgroup.number]] # [nbf, nq, nb]
       # Interpolate state at quad points
@@ -85,7 +93,13 @@ class Domain():
         # quad_wts = solver.bface_helpers.quad_wts
       BC = solver.physics.BCs[bgroup.name]
       # Get data from BC method
-      data = BC.get_extrapolated_state(solver.physics, UqI, normals, x, None)
+      data["bdry_face_state"] = BC.get_extrapolated_state(solver.physics, UqI, normals, x, None)
+      ''' Attach data for elements at boundary to payload. '''
+      # Identify elements at boundary
+      boundary_elem_IDs = [bface.elem_ID for bface 
+                           in solver.mesh.boundary_groups[localbname].boundary_faces]
+      data["element_data"] = solver.state_coeffs[boundary_elem_IDs,:,:]
+
       ''' Post data to network '''
       write_key = Domain.edge_to_key(self.domain_edges[self.id][bname], self.id)
       self.pprint(f"Write to key <{write_key}>")

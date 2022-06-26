@@ -77,6 +77,7 @@ class MultiphasevpT(base.PhysicsBase):
 			# BCType.PressureOutlet : mpvpT_fcns.PressureOutlet,
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			# BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
+			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 		})
 
 	def set_physical_params(self, 
