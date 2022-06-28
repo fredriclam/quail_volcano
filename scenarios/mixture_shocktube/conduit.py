@@ -3,8 +3,8 @@ import copy
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 1.3, #0.1 @ meter scale
-	"NumTimeSteps" : 13000*2, #13000*2, #5000 @ meter scale
+	"FinalTime" : 2.0, #0.1 @ meter scale
+	"NumTimeSteps" : 20000*4,#5000*2, #13000*2, #5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
@@ -22,7 +22,7 @@ Numerics = {
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 500, #150, #50, #1e-5, #1e3, 5e3,
+	"AVParameter" : 500, # 150 ~ 500 is ok for this commit #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
@@ -36,7 +36,7 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 151*4, #151,#351,
+    "NumElemsX" : 301, #151,#351,
     "xmin" : -600.0,
     "xmax" : 600.0,
 }

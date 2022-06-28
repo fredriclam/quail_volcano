@@ -29,7 +29,7 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 151*4, #151,#351,
+    "NumElemsX" : 301, #151,#351,
     "xmin" : 600.0,
     "xmax" : 1800.0,
 }
@@ -52,13 +52,14 @@ BoundaryConditions = {
       "bkey": "xupper",
   },
   "x2" : { 
-      "BCType" : "SlipWall",
+      "BCType" : "MultiphasevpT1D1D",
+      "bkey": "xupperupper",
   },
 }
 
-# LinkedSolvers = [
-# 	{
-# 		"DeckName": "conduit3.py",
-# 		"BoundaryName": "x1",
-# 	},
-# ]
+LinkedSolvers = [
+	{
+		"DeckName": "conduit5.py",
+		"BoundaryName": "xupperupper",
+	},
+]

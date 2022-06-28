@@ -219,7 +219,8 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 		# 	 + np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12)
 
 		# Turns out the first solution variable (low amount of air) is the one that needs limiting
-		f =  np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12)
+		f =  np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12) \
+			 + np.linalg.norm(physics.compute_pressure_gradient(Uq, grad_Uq), axis=2) / (pressure + 1e-12)
 
 	# For everything else, use the first solution variable
 	else:

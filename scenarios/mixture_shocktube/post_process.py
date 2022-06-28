@@ -24,9 +24,14 @@ physics = solver.physics
 output_fname = "output_unnamed_"
 
 input_fname_conduit_list = [
+	# "mixture_shocktube_conduit_25.pkl",
+	# "mixture_shocktube_conduit2_25.pkl",
+	# "mixture_shocktube_conduit3_25.pkl",
 	"mixture_shocktube_conduit_final.pkl",
 	"mixture_shocktube_conduit2_final.pkl",
 	"mixture_shocktube_conduit3_final.pkl",
+	"mixture_shocktube_conduit4_final.pkl",
+	"mixture_shocktube_conduit5_final.pkl",
 ]
 
 if False:

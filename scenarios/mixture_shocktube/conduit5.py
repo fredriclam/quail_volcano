@@ -20,7 +20,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_conduit2",
+	"Prefix" : "mixture_shocktube_conduit5",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -30,8 +30,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     "NumElemsX" : 301, #151,#351,
-    "xmin" : -1800.0,
-    "xmax" : -600.0,
+    "xmin" : 1800.0,
+    "xmax" : 3000.0,
 }
 
 Physics = {
@@ -48,18 +48,17 @@ ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
   "x1" : {
-      "BCType" : "MultiphasevpT1D1D",
-      "bkey": "xlowerlower",
+      "BCType" : "MultiphasevpT1D1D", # Link
+      "bkey": "xupperupper",
   },
   "x2" : { 
-      "BCType" : "MultiphasevpT1D1D", # Link
-      "bkey": "xlower",
+      "BCType" : "SlipWall",
   },
 }
 
-LinkedSolvers = [
-	{
-		"DeckName": "conduit4.py",
-		"BoundaryName": "xlowerlower",
-	},
-]
+# LinkedSolvers = [
+# 	{
+# 		"DeckName": "conduit3.py",
+# 		"BoundaryName": "x1",
+# 	},
+# ]
