@@ -95,10 +95,10 @@ class Domain():
       # Get data from BC method
       data["bdry_face_state"] = BC.get_extrapolated_state(solver.physics, UqI, normals, x, None)
       ''' Attach data for elements at boundary to payload. '''
-      # Identify elements at boundary
-      boundary_elem_IDs = [bface.elem_ID for bface 
-                           in solver.mesh.boundary_groups[localbname].boundary_faces]
-      data["element_data"] = solver.state_coeffs[boundary_elem_IDs,:,:]
+      # # Identify elements at boundary
+      # boundary_elem_IDs = [bface.elem_ID for bface 
+      #                      in solver.mesh.boundary_groups[localbname].boundary_faces]
+      # data["element_data"] = solver.state_coeffs[boundary_elem_IDs,:,:]
 
       ''' Post data to network '''
       write_key = Domain.edge_to_key(self.domain_edges[self.id][bname], self.id)

@@ -201,11 +201,26 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 		f = norm_grad_p / (pressure + 1e-12)
 	elif physics.PHYSICS_TYPE == general.PhysicsType.MultiphasevpT:
 		# Compute pressure gradient
-		grad_p = physics.compute_pressure_gradient(Uq, grad_Uq)
-		# Compute its magnitude
-		norm_grad_p = np.linalg.norm(grad_p, axis = 2)
-		# Calculate smoothness switch
-		f = norm_grad_p / (pressure + 1e-12)
+		# grad_p = physics.compute_pressure_gradient(Uq, grad_Uq)
+		# norm_grad_p = np.linalg.norm(grad_p, axis=2)
+		# f = norm_grad_p / (pressure + 1e-12)
+
+		# U0 = Uq[:, :, 0]
+		# grad_U0 = grad_Uq[:, :, 0]
+		# norm_grad_U0 = np.linalg.norm(grad_U0, axis = 2)
+		# # Calculate ad hoc smoothness switch (pressure and air partial density)
+		# f = np.maximum(
+		# 	norm_grad_p / (pressure + 1e-12), norm_grad_U0 / (U0 + 1e-12))
+
+		# U0 = Uq[:, :, -1]
+		# grad_U0 = grad_Uq[:, :, -1]
+		# norm_grad_U0 = np.linalg.norm(grad_U0, axis=2)
+		# f =  0*norm_grad_U0 / (U0 + 1e-12) \
+		# 	 + np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12)
+
+		# Turns out the first solution variable (low amount of air) is the one that needs limiting
+		f =  np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12)
+
 	# For everything else, use the first solution variable
 	else:
 		U0 = Uq[:, :, 0]

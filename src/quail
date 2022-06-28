@@ -635,7 +635,10 @@ def main(argv):
 			# Initialize outputs server
 			domain_outputs = manager.dict()
 
-			run_serial = False
+			# Default to serial handling
+			run_serial = True
+			if len(domain_list) > 1:
+				run_serial = False
 			# Connect each domain to server
 			for domain in domain_list:
 				domain.set_network(glight_condition, ready_queue,

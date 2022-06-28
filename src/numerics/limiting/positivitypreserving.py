@@ -437,7 +437,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			theta1 = trunc(np.minimum(1., np.min(theta, axis=1)))
 			# self.theta_store[logger_idx].append(theta1)
 
-			# Get specific partial density index
+			# Get component's partial density index
 			irho = physics.get_state_index(var_name)
 			# Get IDs of elements that need limiting
 			elem_IDs = np.where(theta1 < 1.)[0]

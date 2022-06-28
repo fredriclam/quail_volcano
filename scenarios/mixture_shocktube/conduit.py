@@ -4,7 +4,7 @@ import copy
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 1.3, #0.1 @ meter scale
-	"NumTimeSteps" : 13000, #5000 @ meter scale
+	"NumTimeSteps" : 13000*2, #13000*2, #5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
@@ -14,14 +14,15 @@ Numerics = {
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
-    # "ApplyLimiters" : ["PositivityPreservingMultiphasevpT", "WENO"], "ShockIndicator": "MinMod",
+    # "ApplyLimiters" : ["WENO", "PositivityPreservingMultiphasevpT"], "ShockIndicator": "MinMod", "TVBParameter": 0.2,
+    # "ApplyLimiters" : ["PositivityPreservingMultiphasevpT", "WENO", "PositivityPreservingMultiphasevpT"], "ShockIndicator": "MinMod", "TVBParameter": 0.0,
     # "NodeType" : "Equidistant",
     "ElementQuadrature" : "GaussLegendre",
     "FaceQuadrature" : "GaussLegendre",
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 150, #50, #1e-5, #1e3, 5e3,
+	"AVParameter" : 500, #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
@@ -35,9 +36,9 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 151, #151,#351,
-    "xmin" : -300.0,
-    "xmax" : 300.0,
+    "NumElemsX" : 151*4, #151,#351,
+    "xmin" : -600.0,
+    "xmax" : 600.0,
 }
 
 Physics = {
@@ -96,19 +97,29 @@ if False:
 # Fake exact solution
 ExactSolution = InitialCondition.copy()
 
-BoundaryConditions = {
-  "x1" : {
-      "BCType" : "MultiphasevpT1D1D",
-      "bkey": "xlower",
-  },
-  "x2" : { 
-    #   "BCType" : "SlipWall",
-    "BCType" : "MultiphasevpT1D1D",
-    "bkey": "xupper",
-  },
-}
-
-LinkedSolvers = [
+IsDecoupled = False
+if IsDecoupled:
+    BoundaryConditions = {
+        "x1" : {
+            "BCType" : "SlipWall"
+        },
+        "x2" : { 
+            "BCType" : "SlipWall",
+        },
+    }
+else:
+    BoundaryConditions = {
+        "x1" : {
+            "BCType" : "MultiphasevpT1D1D",
+            "bkey": "xlower",
+        },
+        "x2" : { 
+            #   "BCType" : "SlipWall",
+            "BCType" : "MultiphasevpT1D1D",
+            "bkey": "xupper",
+        },
+    }
+    LinkedSolvers = [
 	{
 		"DeckName": "conduit2.py",
 		"BoundaryName": "xlower",

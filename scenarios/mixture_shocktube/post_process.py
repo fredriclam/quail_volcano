@@ -9,6 +9,7 @@ import numerics.helpers.helpers as helpers
 import numerics.basis.tools as basis_tools
 
 import scipy.interpolate
+import os
 
 # Set fname
 # fnameRadical = "pocket_atmos_flared" + "_"
@@ -22,35 +23,40 @@ mesh = solver.mesh
 physics = solver.physics
 output_fname = "output_unnamed_"
 
-plot.prepare_plot(linewidth=0.5)
-plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True, 
-		create_new_figure=True, include_mesh=False, regular_2D=False, 
-		show_elem_IDs=False)
-# Save figure
-plot.show_plot()
-plot.save_figure(file_name='Pressure', file_type='png', crop_level=2)
+input_fname_conduit_list = [
+	"mixture_shocktube_conduit_final.pkl",
+	"mixture_shocktube_conduit2_final.pkl",
+	"mixture_shocktube_conduit3_final.pkl",
+]
 
-# plot.plot_solution(mesh, physics, solver, "SoundSpeed", plot_numerical=True, 
-# 		create_new_figure=True, include_mesh=False, regular_2D=False, 
-# 		show_elem_IDs=False)
-# plot.show_plot()
-# plot.save_figure(file_name='SoundSpeed', file_type='png', crop_level=2)
+if False:
+	plot.prepare_plot(linewidth=0.5)
+	plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True, 
+			create_new_figure=True, include_mesh=False, regular_2D=False, 
+			show_elem_IDs=False)
+	# Save figure
+	plot.show_plot()
+	plot.save_figure(file_name='Pressure', file_type='png', crop_level=2)
 
-solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit2_final.pkl")
-plot.prepare_plot(linewidth=0.5)
-plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
-		create_new_figure=True, include_mesh=False, regular_2D=False, 
-		show_elem_IDs=False)
-plot.show_plot()
+	# plot.plot_solution(mesh, physics, solver, "SoundSpeed", plot_numerical=True, 
+	# 		create_new_figure=True, include_mesh=False, regular_2D=False, 
+	# 		show_elem_IDs=False)
+	# plot.show_plot()
+	# plot.save_figure(file_name='SoundSpeed', file_type='png', crop_level=2)
 
-solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit3_final.pkl")
-plot.prepare_plot(linewidth=0.5)
-plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
-		create_new_figure=True, include_mesh=False, regular_2D=False, 
-		show_elem_IDs=False)
-plot.show_plot()
+	solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit2_final.pkl")
+	plot.prepare_plot(linewidth=0.5)
+	plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
+			create_new_figure=True, include_mesh=False, regular_2D=False, 
+			show_elem_IDs=False)
+	plot.show_plot()
 
-quit()
+	solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit3_final.pkl")
+	plot.prepare_plot(linewidth=0.5)
+	plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
+			create_new_figure=True, include_mesh=False, regular_2D=False, 
+			show_elem_IDs=False)
+	plot.show_plot()
 
 # For-loop extraction
 use_multidomain = False
@@ -90,6 +96,77 @@ def integrate(mesh, physics, solver, var_names, quad_pts, quad_wts, djacs):
 			outputs[i] += np.sum(s[elem_ID]*quad_wts*np.expand_dims(djacs[elem_ID, :],axis=1))
 	
 	return outputs
+
+def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
+
+	Ne_per_domain = []
+	xConduit = []
+	pConduit = []
+	prhoAConduit = []
+	prhoWvConduit= []
+	prhoMConduit = []
+	rhoConduit = []
+	EConduit = []
+	uConduit = []
+	TConduit = []
+	aConduit = []
+
+	for fname in input_fname_conduit_list:
+		# Get conduit state
+		solver_conduit = readwritedatafiles.read_data_file(fname)
+		conduitsolver = solver_conduit
+		conduitmesh = solver_conduit.mesh
+		conduitphysics = solver_conduit.physics
+		samplePointsConduit = plot.get_sample_points(conduitmesh, 
+			conduitsolver, conduitphysics, conduitsolver.basis, True)
+		getns_conduit = lambda quantity: plot.get_numerical_solution(
+			conduitphysics,
+			conduitsolver.state_coeffs,
+			samplePointsConduit,
+			conduitsolver.basis,
+			quantity)
+
+		xConduit.append(samplePointsConduit)
+		pConduit.append(getns_conduit("Pressure"))
+		prhoAConduit.append(getns_conduit("pDensityA"))
+		prhoWvConduit.append(getns_conduit("pDensityWv"))
+		prhoMConduit.append(getns_conduit("pDensityM"))
+		rhoConduit.append(getns_conduit("pDensityA") + getns_conduit("pDensityWv")
+			               + getns_conduit("pDensityM"))
+		EConduit.append(getns_conduit("Energy"))
+		uConduit.append(getns_conduit("XMomentum") / (getns_conduit("pDensityA") 
+									+ getns_conduit("pDensityWv")
+			            + getns_conduit("pDensityM")))
+		TConduit.append(getns_conduit("Temperature"))
+		aConduit.append(getns_conduit("SoundSpeed"))
+		Ne_per_domain.append(conduitmesh.num_elems)
+		# t should be the same for each coupled domain
+		t = conduitsolver.time
+
+	# Get output file name if not specified
+	postfix = f".mat"
+	if outputfname is None:
+		outputfname = "./" + input_fname_conduit_list[0][:-4] + ".mat"
+	else:
+		outputfname += postfix
+
+	scipy.io.savemat(outputfname, mdict={
+		"xConduit": xConduit,
+		"Ne_per_domain": Ne_per_domain,
+		"samplePointsConduit": samplePointsConduit,
+		"pConduit": pConduit,
+		"prhoAConduit": prhoAConduit,
+		"prhoWvConduit": prhoWvConduit,
+		"prhoMConduit": prhoMConduit,
+		"rhoConduit": rhoConduit,
+		"EConduit": EConduit,
+		"uConduit": uConduit,
+		"TConduit": TConduit,
+		"aConduit": aConduit,
+		"t": t,
+	})
+	
+	print(f"Converted to .mat at {outputfname} in folder {os.getcwd()}.")
 
 def pkl2mat(input_fname_list, input_fname_conduit,
             precompute_list, outputfname=None, verbose=False):
@@ -356,9 +433,10 @@ if use_multidomain:
 			outputfname=(outputfname + f"{i}"),
 			verbose=False)
 else:
-	pkl2mat(
-			[],
-			single_fname,
-			[],
-			outputfname=(output_fname),
-			verbose=False)
+	pkl2mat_multiconduit(input_fname_conduit_list, "mixture_shocktube_conduit")
+	# pkl2mat(
+	# 		[],
+	# 		single_fname,
+	# 		[],
+	# 		outputfname=(output_fname),
+	# 		verbose=False)

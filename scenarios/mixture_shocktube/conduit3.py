@@ -15,7 +15,7 @@ Numerics = {
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 150, #50, #1e-5, #1e3, 5e3,
+	"AVParameter" : 500, #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
@@ -29,9 +29,9 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 151, #151,#351,
-    "xmin" : 300.0,
-    "xmax" : 900.0,
+    "NumElemsX" : 151*4, #151,#351,
+    "xmin" : 600.0,
+    "xmax" : 1800.0,
 }
 
 Physics = {

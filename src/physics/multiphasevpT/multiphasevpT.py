@@ -460,6 +460,11 @@ class MultiphasevpT1D(MultiphasevpT):
 		pi3 = np.squeeze(self.compute_additional_variable("pi3", U_bar, True), axis=2)
 		beta = np.squeeze(self.compute_additional_variable("beta", U_bar, True), axis=2)
 
+		# Check
+		# Gamma = np.squeeze(self.compute_additional_variable("Gamma", U_bar, True), axis=2)
+		# Psi1 = np.squeeze(self.compute_additional_variable("Psi1", U_bar, True), axis=2)
+		# H - 0.5*u2 - Gamma * (e/rho - 0.5*u2) - (y1*pi1+y2*pi2+y3*pi3)/Psi1
+
 		# Allocate the right and left eigenvectors
 		right_eigen = np.zeros([ne, 1, ns, ns])
 		left_eigen = np.zeros([ne, 1, ns, ns])
@@ -490,6 +495,9 @@ class MultiphasevpT1D(MultiphasevpT):
 		right_eigen[:, :, iarhoM,  ie]      = y3
 		right_eigen[:, :, irhou,   ie]      = u + a
 		right_eigen[:, :, ie,      ie]      = H + a*u
+
+		# Try permuting
+		# right_eigen[:, :, :, :] = right_eigen[:, :, :, [irhou, ie, iarhoA, iarhoWv, iarhoM]]
 
 		left_eigen = np.linalg.inv(right_eigen)
 		# Can uncomment line below to test l dot r = kronecker delta
