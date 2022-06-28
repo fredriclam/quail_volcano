@@ -34,6 +34,17 @@ input_fname_conduit_list = [
 	"mixture_shocktube_conduit5_final.pkl",
 ]
 
+t_indexed_fnames = lambda i : [
+	f"mixture_shocktube_conduit_{i}.pkl",
+	f"mixture_shocktube_conduit2_{i}.pkl",
+	f"mixture_shocktube_conduit3_{i}.pkl",
+	f"mixture_shocktube_conduit4_{i}.pkl",
+	f"mixture_shocktube_conduit5_{i}.pkl",
+]
+
+fname_radical_conduit = "mixture_shocktube_conduit"
+outputfname = "mat_mixture_shocktube_conduit"
+
 if False:
 	plot.prepare_plot(linewidth=0.5)
 	plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True, 
@@ -81,6 +92,16 @@ if use_multidomain:
 	for key in fnameRadicals.keys():
 		if not fnameRadicals[key].endswith("_"):
 			fnameRadicals[key] += "_"
+else:
+	dataSize = 200+1
+	verbose = False
+	# fnameRadicals = [fname_radical_conduit]
+
+	# for key in fnameRadicals.keys():
+	# 	if not fnameRadicals[key].endswith("_"):
+	# 		fnameRadicals[key] += "_"
+
+
 
 def integrate(mesh, physics, solver, var_names, quad_pts, quad_wts, djacs):
 	# Extract info
@@ -115,6 +136,8 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 	uConduit = []
 	TConduit = []
 	aConduit = []
+	normgrad_prhoAConduit = []
+	normgrad_pConduit = []
 
 	for fname in input_fname_conduit_list:
 		# Get conduit state
@@ -130,6 +153,46 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 			samplePointsConduit,
 			conduitsolver.basis,
 			quantity)
+
+		# Gradients
+		normgrad_prhoA = np.linalg.norm(
+				np.einsum('ijnl, ink -> ijkl',
+					conduitsolver.elem_helpers.basis_phys_grad_elems,
+					conduitsolver.state_coeffs)[:, :, 0],
+				axis=2) # [ne, nq]
+
+		# 2D
+		# normgrad_prhoAConduit.append(np.expand_dims(scipy.interpolate.griddata(
+		# 	( np.ndarray.flatten(conduitsolver.elem_helpers.x_elems[:,:,0]),
+		# 		np.ndarray.flatten(conduitsolver.elem_helpers.x_elems[:,:,1]) 
+		# 	),
+		# 	  np.ndarray.flatten(normgrad_prhoA),
+		# 	samplePointsConduit,
+		# 	method='cubic'
+		# 	# method='nearest' # plot.get_sample_points(
+		# 	# mesh, solver, physics, solver.basis, True), method='cubic')
+		# ), 2))
+
+		def interp_grad(quant):
+			# Inteprolate gradient to quadrature points of state coefficients
+			return scipy.interpolate.griddata(
+				np.ndarray.flatten(conduitsolver.elem_helpers.x_elems[:,:,0]),
+				np.ndarray.flatten(quant),
+				samplePointsConduit,
+				method='cubic'
+			)
+		
+		normgrad_prhoA = np.linalg.norm(
+				np.einsum('ijnl, ink -> ijkl',
+					conduitsolver.elem_helpers.basis_phys_grad_elems,
+					conduitsolver.state_coeffs)[:, :, 0],
+				axis=2) # [ne, nq]
+		normgrad_prhoAConduit.append(interp_grad(normgrad_prhoA))
+		
+		normgrad_p = np.linalg.norm(conduitphysics.compute_pressure_gradient(conduitsolver.state_coeffs, np.einsum('ijnl, ink -> ijkl',
+					conduitsolver.elem_helpers.basis_phys_grad_elems,
+					conduitsolver.state_coeffs)), axis=2)
+		normgrad_pConduit.append(interp_grad(normgrad_prhoA))
 
 		xConduit.append(samplePointsConduit)
 		pConduit.append(getns_conduit("Pressure"))
@@ -168,6 +231,8 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 		"uConduit": uConduit,
 		"TConduit": TConduit,
 		"aConduit": aConduit,
+		"normgrad_prhoAConduit": normgrad_prhoAConduit,
+		"normgrad_pConduit": normgrad_pConduit,
 		"t": t,
 	})
 	
@@ -445,3 +510,6 @@ else:
 	# 		[],
 	# 		outputfname=(output_fname),
 	# 		verbose=False)
+
+	for i in range(dataSize):
+		pkl2mat_multiconduit(t_indexed_fnames(i), outputfname + f"{i}")

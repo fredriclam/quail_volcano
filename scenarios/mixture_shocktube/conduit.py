@@ -3,8 +3,8 @@ import copy
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 2.0, #0.1 @ meter scale
-	"NumTimeSteps" : 20000*4,#5000*2, #13000*2, #5000 @ meter scale
+	"FinalTime" : 2*2.0, #0.1 @ meter scale
+	"NumTimeSteps" : 2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
   # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
@@ -28,7 +28,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "mixture_shocktube_conduit",
-	"WriteInterval" : 200,
+	"WriteInterval" : 4*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
