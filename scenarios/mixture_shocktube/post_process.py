@@ -192,7 +192,7 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 		normgrad_p = np.linalg.norm(conduitphysics.compute_pressure_gradient(conduitsolver.state_coeffs, np.einsum('ijnl, ink -> ijkl',
 					conduitsolver.elem_helpers.basis_phys_grad_elems,
 					conduitsolver.state_coeffs)), axis=2)
-		normgrad_pConduit.append(interp_grad(normgrad_prhoA))
+		normgrad_pConduit.append(interp_grad(normgrad_p))
 
 		xConduit.append(samplePointsConduit)
 		pConduit.append(getns_conduit("Pressure"))

@@ -15,7 +15,7 @@ Numerics = {
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 500, #150, #50, #1e-5, #1e3, 5e3,
+	"AVParameter" : 100, #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
