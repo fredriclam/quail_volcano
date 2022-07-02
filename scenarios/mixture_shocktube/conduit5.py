@@ -4,7 +4,7 @@ import copy
 # TimeStepping is not included in linked solvers
 
 Numerics = {
-    "SolutionOrder" : 2,
+    "SolutionOrder" : 0,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -14,7 +14,7 @@ Numerics = {
     "FaceQuadrature" : "GaussLegendre",
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-    "ArtificialViscosity" : True,
+    "ArtificialViscosity" : False,
 	"AVParameter" : 100, #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
@@ -29,7 +29,7 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 301, #151,#351,
+    "NumElemsX" : 30*301, #151,#351,
     "xmin" : 1800.0,
     "xmax" : 3000.0,
 }

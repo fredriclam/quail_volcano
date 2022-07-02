@@ -46,21 +46,18 @@ from dataclasses import dataclass
 
 class MultiphasevpT(base.PhysicsBase):
 	'''
-	This class corresponds to the compressible Euler equations for a
-	calorically perfect gas. It inherits attributes and methods from the
-	PhysicsBase class. See PhysicsBase for detailed comments of attributes
-	and methods. This class should not be instantiated directly. Instead,
-	the 1D and 2D variants, which inherit from this class (see below),
-	should be instantiated.
+	This class corresponds to a set of multiphase equations for:
+		0. mass per total volume, air
+		1. mass per total volume, water, exsolved
+		2. mass per total volume, magma
+		3. momentum per total volume
+		4. total energy per total volume, including kinetic
+		5. mass per total volume, water, dissolved
+		6. crystallinity
+	where the last two states are passive tracers for the conservation equations
+	(pressure is not dependent on these states), but enter in the source term.
 
-	Additional methods and attributes are commented below.
-
-	Attributes:
-	-----------
-	R: float
-		mass-specific gas constant
-	gamma: float
-		specific heat ratio
+	Abstract class. Inherited by MultiphasevpT1D and MultiphasevpT2D.
 	'''
 	PHYSICS_TYPE = general.PhysicsType.MultiphasevpT
 
@@ -86,10 +83,12 @@ class MultiphasevpT(base.PhysicsBase):
 													Liquid={"K": 10e9, "rho0": 2.5e3, "p0": 5e6,
 																	"E_m0": 0, "c_m": 3e3},
 													Solubility={"k": 5e-6, "n": 0.5},
-													mu = 3e5,
+													Viscosity={"mu0": 3e5},
 													tau_d = 0.5):
 		'''
-		This method sets physical parameters. Given two of the four ideal gas
+		This method sets physical parameters. Gas1 and Gas2 are ideal gas parameters
+		(R, gamma, c_v, c_p). Given two of the four ideal gas properties, this
+		method computes the other two.
 		properties, this method computes the remaining two. Redundant parameters are
 		replaced.
 
@@ -99,7 +98,7 @@ class MultiphasevpT(base.PhysicsBase):
 			Gas2: dict representing soluble ideal gas (water vapor) w/ two gas params
 			Liquid: dict representing the linearized barotropic liquid
 			Solubility: dict with Henry's law parameters
-			mu: Constant Poiseuille viscosity
+			Viscosity: dict with viscosity parameters (mu0 for constant-Poiseuille)
 			tau_d: dissolution/exsolution timescale
 
 		Outputs:
@@ -109,8 +108,10 @@ class MultiphasevpT(base.PhysicsBase):
 		self.Gas = [Gas1, Gas2]
 		self.Liquid = Liquid
 		self.Solubility = Solubility
-		self.mu = mu
+		self.Viscosity = Viscosity
 		self.tau_d = tau_d
+
+		''' Compute remaining ideal gas parameters for Gas1, Gas2'''
 		for i in range(2):
 			if self.Gas[i].get("gamma") is not None:
 				if self.Gas[i].get("c_v") is not None:
@@ -144,13 +145,17 @@ class MultiphasevpT(base.PhysicsBase):
 		Velocity = "|u|"
 		XVelocity = "u"
 		YVelocity = "v"
-		Psi1 = "Psi1"
-		beta = "beta"
-		pi1 = "pi1"
-		pi2 = "pi2"
-		pi3 = "pi3"
-		Enthalpy = "Enthalpy"
-		Gamma = "Gamma"
+		Psi1 = "Psi1" # Thermodynamic parameter (liquid-related)
+		beta = "beta" # Thermodynamic parameter
+		pi1 = "pi1"   # Thermodynamic parameter (Psi1 * Gas1-related quantity)
+		pi2 = "pi2"   # Thermodynamic parameter (Psi1 * Gas2-related quantity)
+		pi3 = "pi3"   # Thermodynamic parameter (Psi1 * Liquid-related quantity)
+		Enthalpy = "Enthalpy" # Enthalpy excluding kinetic energy contribution
+		Gamma = "Gamma"       # Pseudogas Gamma (mixture heat capacity ratio)
+		phi = "phi"                   # Sum of gas volume fractions
+		volFracA = "\\alpha_a"				# Volume fraction, air
+		volFracWv = "\\alpha_\{wv\}"	# Volume fraction, exsolved water vapour
+		volFracM = "\\alpha_m"				# Volume fraction, magma
 
 	def compute_additional_variable(self, var_name, Uq, flag_non_physical):
 		''' Extract state variables '''
@@ -159,14 +164,19 @@ class MultiphasevpT(base.PhysicsBase):
 		arhoM = Uq[:, :, self.get_state_slice("pDensityM")]
 		mom = Uq[:, :, self.get_momentum_slice()]
 		e = Uq[:, :, self.get_state_slice("Energy")]
+		arhoWt = Uq[:, :, self.get_state_slice("pDensityWt")]
+		arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
 
 		''' Flag non-physical state '''
 		if flag_non_physical:
-			if np.any(arhoA < 0.) or np.any(arhoWv < 0.) or np.any(arhoM < 0.):
+			if np.any(arhoA < 0.) or np.any(arhoWv < 0.) or np.any(arhoM < 0.) \
+				 or np.any(arhoWt < 0.) or np.any(arhoC < 0.):
 				raise errors.NotPhysicalError
 
-		''' Nested functions for common quantities '''
-		# Captures states arhoA, ..., mom, e
+		''' Nested functions for common quantities 
+		Common routines that may be called for computing several outputs.
+		States arhoA, mom, e, etc. are captured by nested functions at this point.
+		'''
 		def get_temperature():
 			kinetic = 0.5*np.sum(mom*mom, axis=2, keepdims=True) \
 				/(arhoA + arhoWv + arhoM)
@@ -265,6 +275,24 @@ class MultiphasevpT(base.PhysicsBase):
 			varq = get_Psi1(T=T,p=p) * (p / rhoM
 													 - (get_Gamma() - 1) * (
 														 self.Liquid["c_m"] * T + self.Liquid["E_m0"]))
+		elif vname is self.AdditionalVariables["phi"].name:
+			varq = get_porosity()
+		elif vname is self.AdditionalVariables["volFracA"].name:
+			phi = get_porosity()
+			# Compute gas partial pressures except where total gas mass is zero
+			ppA = arhoA[np.where(phi > 0)] * self.Gas[0]["R"]
+			ppWv = arhoWv[np.where(phi > 0)] * self.Gas[1]["R"]
+			varq = phi
+			varq[np.where(phi > 0)] = phi[np.where(phi > 0)] * (ppA / (ppA + ppWv))
+		elif vname is self.AdditionalVariables["volFracWv"].name:
+			phi = get_porosity()
+			# Compute gas partial pressures except where total gas mass is zero
+			ppA = arhoA[np.where(phi > 0)] * self.Gas[0]["R"]
+			ppWv = arhoWv[np.where(phi > 0)] * self.Gas[1]["R"]
+			varq = phi
+			varq[np.where(phi > 0)] = phi[np.where(phi > 0)] * (ppWv / (ppA + ppWv))
+		elif vname is self.AdditionalVariables["volFracM"].name:
+			varq = 1.0 - get_porosity()
 		else:
 			raise NotImplementedError
 
@@ -287,12 +315,12 @@ class MultiphasevpT(base.PhysicsBase):
 			array: gradient of pressure with respected to physical space
 				[ne, nq, ndims]
 		'''
+		# Extract quantities that determine pressure
 		slarhoA = self.get_state_slice("pDensityA")
 		slarhoWv = self.get_state_slice("pDensityWv")
 		slarhoM = self.get_state_slice("pDensityM")
 		slmom = self.get_momentum_slice()
 		sle = self.get_state_slice("Energy")
-		
 		arhoA = Uq[:, :, slarhoA]
 		arhoWv = Uq[:, :, slarhoWv]
 		arhoM = Uq[:, :, slarhoM]
@@ -303,30 +331,74 @@ class MultiphasevpT(base.PhysicsBase):
 		beta = self.compute_additional_variable("beta", Uq, True)
 		bu2 = beta*np.sum(mom**2, axis=2, keepdims=True)/np.power(
 			arhoA + arhoWv + arhoM,2.)
-		dpdU = np.empty_like(Uq)
+		dpdU = np.zeros_like(Uq)
 		dpdU[:, :, slarhoA] = bu2 + self.compute_additional_variable("pi1", Uq, True)
 		dpdU[:, :, slarhoWv] = bu2 + self.compute_additional_variable("pi2", Uq, True)
 		dpdU[:, :, slarhoM] = bu2 + self.compute_additional_variable("pi3", Uq, True)
 		dpdU[:, :, slmom] = -2.*beta*mom/(arhoA + arhoWv + arhoM)
 		dpdU[:, :, sle] = 2.*beta
-		
-
-		# Compute dp/dU
-		# dpdU = np.empty_like(Uq)
-		# dpdU[:, :, srho] = (.5 * (gamma - 1) * np.sum(mom**2, axis = 2,
-		# 	keepdims=True) / rho) # rho^2?
-		# dpdU[:, :, smom] = (1 - gamma) * mom / rho
-		# dpdU[:, :, srhoE] = gamma - 1
 
 		# Multiply with dU/dx
 		return np.einsum('ijk, ijkl -> ijl', dpdU, grad_Uq)
+	
+	def compute_phi_sgradient(self, Uq):
+		'''
+		Compute the state-gradient of porosity phi with respect to physical space.
+		This is needed for source gradients (for backward stepping of sources involving
+		volume-fraction-based fragmentation criteria).
+
+		This is a gradient with respect to the state vector. A commented line
+		computes the gradient with respect to space.
+
+		Inputs:
+		-------
+			Uq: solution in each element evaluated at quadrature points [ne, nq, ns]
+
+		Outputs:
+		--------
+			array: gradient of phi with respected to state [ne, nq, ns]
+		'''
+		if self.NDIMS != 1:
+			raise NotImplementedError(f"compute_phi_gradient called for" +
+																f"NDIMS=={self.NDIMS}, which is not 1.")
+		# Extract quantities
+		slarhoA = self.get_state_slice("pDensityA")
+		slarhoWv = self.get_state_slice("pDensityWv")
+		slarhoM = self.get_state_slice("pDensityM")
+		slmom = self.get_momentum_slice()
+		sle = self.get_state_slice("Energy")
+		# Retrieve auxiliary quantities
+		Gamma = self.compute_additional_variable("Gamma", Uq, True)
+		phi = self.compute_additional_variable("phi", Uq, True)
+		T = self.compute_additional_variable("Temperature", Uq, True)
+		unorm = self.compute_additional_variable("Velocity", Uq, True)
+		unorm2 = unorm * unorm
+		p = self.compute_additional_variable("Pressure", Uq, True)
+		u = self.compute_additional_variable("XVelocity", Uq, True)
+		denom = p + phi*(self.Liquid["K"] - self.Liquid["p0"])
+		coeff = (1/denom) * (1.0-phi)
+
+		dphidU = np.zeros_like(Uq)
+		dphidU[:, :, slarhoA] =  coeff * (self.Gas[0]["R"]*T + \
+			(Gamma-1)*(0.5*unorm2 - self.Gas[0]["c_v"]*T))
+		dphidU[:, :, slarhoWv] = coeff * (self.Gas[1]["R"]*T + \
+			(Gamma-1)*(0.5*unorm2 - self.Gas[1]["c_v"]*T))
+		dphidU[:, :, slarhoM] = coeff * ((Gamma-1)*(0.5*unorm2 - \
+			 self.Liquid["c_m"]*T - self.Liquid["E_m0"])) - \
+				 phi*(self.Liquid["K"]/self.Liquid["rho0"])
+		dphidU[:, :, slmom] = -coeff * (Gamma-1) * u
+		dphidU[:, :, sle] = coeff * (Gamma-1)
+
+		# # Multiply with dU/dx for spatial gradient (function of grad_Uq)
+		# dphidx = np.einsum('ijk, ijkl -> ijl', dphidU, grad_Uq)
+		return dphidU
 
 
 class MultiphasevpT1D(MultiphasevpT):
 	'''
 	This class corresponds to 1D vpT-equations for a two-gas, one liquid mixture.
 	'''
-	NUM_STATE_VARS = 5
+	NUM_STATE_VARS = 5+2 # (essential states + tracer states)
 	NDIMS = 1
 
 	def set_maps(self):
@@ -342,8 +414,8 @@ class MultiphasevpT1D(MultiphasevpT):
 
 		self.source_map.update({
 			# SourceType.Exsolution: mpvpT_fcns.Exsolution,
-			# SourceType.FrictionVolFrac: mpvpT_fcns.FrictionVolFrac,
-			# SourceType.GravitySource: mpvpT_fcns.PorousSource,
+			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
+			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 		})
 
 		self.conv_num_flux_map.update({
@@ -352,10 +424,12 @@ class MultiphasevpT1D(MultiphasevpT):
 
 	class StateVariables(Enum):
 		pDensityA = "\\alpha_a \\rho_a"
-		pDensityWv = "\\alpha_\{wv\} \\rho_wv"
+		pDensityWv = "\\alpha_\{wv\} \\rho_\{wv\}"
 		pDensityM = "\\alpha_m \\rho_m"
 		XMomentum = "\\rho u"
-		Energy = "\\rho E"
+		Energy = "e"
+		pDensityWt = "\\alpha_\{wt\} \\rho_\{wt\}"
+		pDensityC = "\\alpha_c \\rho_c"
 
 	def get_state_indices(self):
 		iarhoA = self.get_state_index("pDensityA")
@@ -363,7 +437,9 @@ class MultiphasevpT1D(MultiphasevpT):
 		iarhoM = self.get_state_index("pDensityM")
 		imom = self.get_state_index("XMomentum")
 		ie = self.get_state_index("Energy")
-		return iarhoA, iarhoWv, iarhoM, imom, ie
+		iarhoWt = self.get_state_index("pDensityWt")
+		iarhoC = self.get_state_index("pDensityC")
+		return iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC
 
 	def get_state_slices(self):
 		slarhoA = self.get_state_slice("pDensityA")
@@ -371,7 +447,17 @@ class MultiphasevpT1D(MultiphasevpT):
 		slarhoM = self.get_state_slice("pDensityM")
 		slmom = self.get_state_slice("XMomentum")
 		sle = self.get_state_slice("Energy")
-		return slarhoA, slarhoWv, slarhoM, slmom, sle
+		slrhoWt = self.get_state_slice("pDensityWt")
+		slrhoC = self.get_state_slice("pDensityC")
+		return slarhoA, slarhoWv, slarhoM, slmom, sle, slrhoWt, slrhoC
+
+	def get_mass_slice(self):
+		# Get mass component indices
+		mass_indices = [self.get_state_index("pDensityA"),
+										self.get_state_index("pDensityWv"),
+										self.get_state_index("pDensityM")]
+		ifirst = np.min(mass_indices)
+		return slice(np.min(mass_indices), np.min(mass_indices)+len(mass_indices))
 
 	def get_momentum_slice(self):
 		irhou = self.get_state_index("XMomentum")
@@ -380,19 +466,15 @@ class MultiphasevpT1D(MultiphasevpT):
 
 	def get_conv_flux_interior(self, Uq):
 		# Get indices of state variables
-		iarhoA, iarhoWv, iarhoM, imom, ie = self.get_state_indices()
-		# Get slices for state variables
-		slarhoA = self.get_state_slice("pDensityA")
-		slarhoWv = self.get_state_slice("pDensityWv")
-		slarhoM = self.get_state_slice("pDensityM")
-		slmom = self.get_momentum_slice()
-		sle = self.get_state_slice("Energy")
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = self.get_state_indices()
 		# Extract data of size # [n, nq]
 		arhoA  = Uq[:, :, iarhoA]
 		arhoWv = Uq[:, :, iarhoWv]
 		arhoM  = Uq[:, :, iarhoM]
 		mom    = Uq[:, :, imom]
 		e      = Uq[:, :, ie]
+		arhoWt = Uq[:, :, iarhoWt]
+		arhoC  = Uq[:, :, iarhoC]
 
 		# Compute mixture (total) density
 		rho = arhoA + arhoWv + arhoM
@@ -409,8 +491,10 @@ class MultiphasevpT1D(MultiphasevpT):
 		F[:, :, iarhoA,  0] = arhoA * u
 		F[:, :, iarhoWv, 0] = arhoWv * u
 		F[:, :, iarhoM,  0] = arhoM * u
-		F[:, :, imom,    0] = rho * u2 + p # Flux of momentum
-		F[:, :, ie,      0] = (e + p) * u        # Flux of energy
+		F[:, :, imom,    0] = rho * u2 + p
+		F[:, :, ie,      0] = (e + p) * u
+		F[:, :, iarhoWt,  0] = arhoWt * u
+		F[:, :, iarhoC,   0] = arhoC * u
 		# Compute sound speed
 		a = self.compute_additional_variable("SoundSpeed", Uq, True)
 		a = np.squeeze(a, axis=2)
@@ -433,6 +517,10 @@ class MultiphasevpT1D(MultiphasevpT):
 			right_eigen: Right eigenvector matrix [ne, 1, ns, ns]
 			left_eigen: Left eigenvector matrix [ne, 1, ns, ns]
 		'''
+
+		raise NotImplementedError(
+			"Eigenvectors for convective flux are not implemented for class "
+			+ f"{type(self).__name__} with tracer quantities.")
 
 		# Unpack
 		ne = U_bar.shape[0]
@@ -514,7 +602,7 @@ class MultiphasevpT2D(MultiphasevpT):
 
 	Additional methods and attributes are commented below.
 	'''
-	NUM_STATE_VARS = 6
+	NUM_STATE_VARS = 6+2 # (essential states + tracer states)
 	NDIMS = 2
 
 	def __init__(self, mesh):
@@ -524,9 +612,10 @@ class MultiphasevpT2D(MultiphasevpT):
 		super().set_maps()
 
 		d = {
-			euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
-			euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
-			euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
+			FcnType.Ambient: lambda:(blah for blah in ()).throw(NotImplementedError("Nothing in Ambient.")),
+			# euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
+			# euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
+			# euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -534,74 +623,82 @@ class MultiphasevpT2D(MultiphasevpT):
 		self.BC_fcn_map.update(d)
 
 		self.source_map.update({
-			euler_source_type.StiffFriction : euler_fcns.StiffFriction,
-			euler_source_type.TaylorGreenSource :
-					euler_fcns.TaylorGreenSource,
-			euler_source_type.GravitySource : euler_fcns.GravitySource,
+			SourceType.GravitySource: lambda:(blah for blah in ()).throw(NotImplementedError("Nothing in Ambient.")),
 		})
 
 		self.conv_num_flux_map.update({
-			base_conv_num_flux_type.LaxFriedrichs :
-				euler_fcns.LaxFriedrichs2D,
-			euler_conv_num_flux_type.Roe : euler_fcns.Roe2D,
+			base_conv_num_flux_type.LaxFriedrichs:
+				mpvpT_fcns.mpvpT_fcns.LaxFriedrichs1D,
 		})
 
 	class StateVariables(Enum):
 		pDensityA = "\\alpha_a \\rho_a"
-		pDensityWv = "\\alpha_\{wv\} \\rho_wv"
+		pDensityWv = "\\alpha_\{wv\} \\rho_\{wv\}"
 		pDensityM = "\\alpha_m \\rho_m"
 		XMomentum = "\\rho u"
 		YMomentum = "\\rho v"
-		Energy = "\\rho E"
+		Energy = "e"
+		pDensityWt = "\\alpha_\{wt\} \\rho_\{wt\}"
+		pDensityC = "\\alpha_c \\rho_c"
 
 	def get_state_indices(self):
-		irho = self.get_state_index("Density")
+		iarhoA = self.get_state_index("pDensityA")
+		iarhoWv = self.get_state_index("pDensityWv")
+		iarhoM = self.get_state_index("pDensityM")
 		irhou = self.get_state_index("XMomentum")
 		irhov = self.get_state_index("YMomentum")
-		irhoE = self.get_state_index("Energy")
-
-		return irho, irhou, irhov, irhoE
+		ie = self.get_state_index("Energy")
+		iarhoWt = self.get_state_index("pDensityWt")
+		iarhoC = self.get_state_index("pDensityC")
+		return iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC
 
 	def get_momentum_slice(self):
 		irhou = self.get_state_index("XMomentum")
 		irhov = self.get_state_index("YMomentum")
 		smom = slice(irhou, irhov + 1)
-
 		return smom
 
 	def get_conv_flux_interior(self, Uq):
 		# Get indices/slices of state variables
-		irho, irhou, irhov, irhoE = self.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = self.get_state_indices()
 		smom = self.get_momentum_slice()
+		# Extract data of size [n, nq]
+		arhoA  = Uq[:, :, iarhoA]
+		arhoWv = Uq[:, :, iarhoWv]
+		arhoM  = Uq[:, :, iarhoM]
+		rhou   = Uq[:, :, irhou]
+		rhov   = Uq[:, :, irhov]
+		e      = Uq[:, :, ie]
+		arhoWt = Uq[:, :, iarhoWt]
+		arhoC  = Uq[:, :, iarhoC]
+		# Extract momentum in vector form ([n, nq, ndims])
+		mom    = Uq[:, :, smom]
 
-		rho  = Uq[:, :, irho]  # [n, nq]
-		rhou = Uq[:, :, irhou] # [n, nq]
-		rhov = Uq[:, :, irhov] # [n, nq]
-		rhoE = Uq[:, :, irhoE] # [n, nq]
-		mom  = Uq[:, :, smom]  # [n, nq, ndims]
-
-		# Get velocity in each dimension
+		# Compute intermediate quantities
 		u = rhou / rho
 		v = rhov / rho
-		# Get squared velocities
 		u2 = u**2
 		v2 = v**2
+		vel = mom / rho
+		rhouv = rhou * v
+		# Compute mixture (total) density
+		rho = arhoA + arhoWv + arhoM
+		p = self.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
 
-		# Calculate pressure using the Ideal Gas Law
-		p = (self.gamma - 1.)*(rhoE - 0.5 * rho * (u2 + v2)) # [n, nq]
-		# Get off-diagonal momentum
-		rhouv = rho * u * v
-		# Get total enthalpy
-		H = rhoE + p
-
-		# Assemble flux matrix
+		# Construct physical flux
 		F = np.empty(Uq.shape + (self.NDIMS,)) # [n, nq, ns, ndims]
-		F[:,:,irho,  :] = mom          # Flux of mass in all directions
-		F[:,:,irhou, 0] = rho * u2 + p # x-flux of x-momentum
-		F[:,:,irhov, 0] = rhouv        # x-flux of y-momentum
-		F[:,:,irhou, 1] = rhouv        # y-flux of x-momentum
-		F[:,:,irhov, 1] = rho * v2 + p # y-flux of y-momentum
-		F[:,:,irhoE, 0] = H * u        # x-flux of energy
-		F[:,:,irhoE, 1] = H * v        # y-flux of energy
+		F[:, :, iarhoA,  :] = arhoA * vel         # Flux of massA in all directions
+		F[:, :, iarhoWv, :] = arhoWv * vel        # Flux of massWv in all directions
+		F[:, :, iarhoM,  :] = arhoM * vel         # Flux of massM in all directions
+		F[:, :, irhou,   0] = rho * u2 + p        # x-flux of x-momentum
+		F[:, :, irhov,   0] = rhouv               # x-flux of y-momentum
+		F[:, :, irhou,   1] = rhouv               # y-flux of x-momentum
+		F[:, :, irhov,   1] = rho * v2 + p        # y-flux of y-momentum
+		F[:, :, ie,      :] = (e + p) * vel       # Flux of energy in all directions
+		F[:, :, iarhoWt, :] = arhoWt * vel        # Flux of massWt in all directions
+		F[:, :, iarhoC,  :] = arhoC * vel         # Flux of massC in all directions
 
-		return F, (u2, v2, rho, p)
+		# Compute sound speed
+		a = self.compute_additional_variable("SoundSpeed", Uq, True).squeeze(axis=2)
+
+		return F, (u2, v2, rho, p, a)

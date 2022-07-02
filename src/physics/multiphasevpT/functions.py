@@ -62,7 +62,7 @@ class SourceType(Enum):
 	source terms are specific to the available Euler equation sets.
 	'''
 	Exsolution = auto()
-	FrictionVolFrac = auto()
+	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 
 
@@ -85,12 +85,7 @@ correspond to the FcnType enum members above.
 '''
 class RiemannProblem(FcnBase):
 	'''
-	Riemann problem. Exact solution included (with time dependence),
-	obtained using the method of characteristics. Detailed derivation not
-	discussed here. Region 1 is to the right of the shock, region 2 between
-	the shock and the contact discontinuity, region 3 is between the contact
-	discontinuity and the expansion fan, and region 4 is to the left of the
-	expansion fan.
+	Riemann problem.
 
 	Attributes:
 	-----------
@@ -109,8 +104,8 @@ class RiemannProblem(FcnBase):
 	xd: float
 		location of initial discontinuity
 	'''
-	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0., TL=1000., 
-	             arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=0.0, uR=0., TR=300., xd=0.):
+	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0., TL=1000., arhoWtL=10.0, arhoCL=100.0, 
+	             arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=0.0, uR=0., TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0.):
 		'''
 		This method initializes the attributes.
 
@@ -128,28 +123,35 @@ class RiemannProblem(FcnBase):
 		self.arhoML = arhoML
 		self.uL = uL
 		self.TL = TL
+		self.arhoWtL = arhoWtL
+		self.arhoCL = arhoCL
 		self.arhoAR = arhoAR
 		self.arhoWvR = arhoWvR
 		self.arhoMR = arhoMR
 		self.uR = uR
 		self.TR = TR
 		self.xd = xd
+		self.arhoWtR = arhoWtR
+		self.arhoCR = arhoCR
 
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, imom, ie = physics.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
 		arhoAL = self.arhoAL
 		arhoWvL = self.arhoWvL
 		arhoML = self.arhoML
 		uL = self.uL
 		TL = self.TL
+		arhoWtL = self.arhoWtL
+		arhoCL = self.arhoCL
 		arhoAR = self.arhoAR
 		arhoWvR = self.arhoWvR
 		arhoMR = self.arhoMR
 		uR = self.uR
 		TR = self.TR
-
+		arhoWtR = self.arhoWtR
+		arhoCR = self.arhoCR
 
 		rhoL = arhoAL+arhoWvL+arhoML
 		eL = (arhoAL * physics.Gas[0]["c_v"] * TL + 
@@ -178,6 +180,11 @@ class RiemannProblem(FcnBase):
 			# Energy
 			Uq[elem_ID, ileft, ie] = eL
 			Uq[elem_ID, iright, ie] = eR
+			# Tracer quantities
+			Uq[elem_ID, ileft, iarhoWt] = arhoWtL
+			Uq[elem_ID, iright, iarhoWt] = arhoWtR
+			Uq[elem_ID, ileft, iarhoC] = arhoCL
+			Uq[elem_ID, iright, iarhoC] = arhoCR
 		return Uq # [ne, nq, ns]
 
 class GravityRiemann(FcnBase):
@@ -1048,206 +1055,166 @@ corresponding child classes can be found below. These classes should
 correspond to the SourceType enum members above.
 '''
 
-class StiffFriction(SourceBase):
+class FrictionVolFracConstMu(SourceBase):
 	'''
-	Stiff source term (1D) of the form:
-	S = [0, nu*rho*u, nu*rho*u^2]
+	Friction term for a volume fraction fragmentation criterion, equipped with a
+	constant viscosity.
 
 	Attributes:
 	-----------
-	nu: float
-		stiffness parameter
+	mu: viscosity (units Pa s)
+	conduit_radius: conduit radius used in Poiseuille approximation (units m)
+	crit_volfrac: critical volume fraction at which friction model transitions (-)
+	logistic_scale: scale of logistic function (-)
 	'''
-	def __init__(self, nu=-1, **kwargs):
+	def __init__(self, mu:float=1e5, conduit_radius:float=50.0,
+							 crit_volfrac:float=0.8, logistic_scale:float=0.01,**kwargs):
 		super().__init__(kwargs)
+		self.mu = mu
+		self.conduit_radius = conduit_radius
+		self.crit_volfrac = crit_volfrac
+		self.logistic_scale = logistic_scale
+
+	def compute_indicator(self, phi):
+		''' Defines smoothed indicator for turning on friction. Takes value 1
+		when friction should be maximized, and value 0 when friction should be off.
 		'''
-		This method initializes the attributes.
-
-		Inputs:
-		-------
-			nu: source term parameter
-
-		Outputs:
-		--------
-		    self: attributes initialized
+		return 1.0 / (
+			1.0 + np.exp((phi - self.crit_volfrac) / self.logistic_scale))
+	
+	def get_indicator_deriv(self, phi):
+		''' Defines derivative of the smoothed indicator.
 		'''
-		self.nu = nu
+		return (1.0/self.logistic_scale) * self.compute_indicator(phi) \
+			* (self.compute_indicator(phi) - 1.0)
 
 	def get_source(self, physics, Uq, x, t):
-		nu = self.nu
+		'''
+		Output:
+		-----------
+		source vector S [ne, nd, ns]
+		'''
+		if physics.NDIMS != 1:
+			raise Exception(f"Conduit friction source not suitable for use in " +
+										  f"{physics.NDIMS} spatial dimensions.")
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
 
-		irho, irhou, irhoE = physics.get_state_indices()
-
+		''' Compute mixture density, u, friction coefficient '''
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+		fric_coeff = 8.0 * self.mu / self.conduit_radius**2.0
+		''' Compute indicator based on magma porosity '''
+		I = self.compute_indicator( \
+			physics.compute_additional_variable("phi", Uq, True))
+		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-
-		eps = general.eps
-		S[:, :, irho] = 0.0
-		S[:, :, irhou] = nu*(Uq[:, :, irhou])
-		S[:, :, irhoE] = nu*((Uq[:, :, irhou])**2/(eps + Uq[:, :, irho]))
-
+		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
+		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
 		return S
+
+	def get_phi_gradient():
+		''' Compute gradient of total gas volume fraction with respect to state
+		vector.
+
+		The gradient of total gas volume fraction (appearing as a negative) is
+		needed in gradients of friction terms with volume fraction fragmentation
+		criteria, e.g., friction source terms that contain smoothed indicators of
+		magma volume fraction. Here magma volume fraction is 1 - phi, and phi is the
+		sum of volume fractions of all exsolved gas components.
+		'''
+		pass
 
 	def get_jacobian(self, physics, Uq, x, t):
-		nu = self.nu
+		''' Computes the Jacobian of the source vector f_i = s_i I(phi(U)), where I
+		is a smoothed indicator dependent on the complete state U. Using the product
+		rule, we write
+				d_j(f_i) = I * d_j(s_i) + I' * s_i * d_j(phi),
+		where d_j is the j-th partial and I' is the ordinary derivative of I.
 
-		irho, irhou, irhoE = physics.get_state_indices()
+		Evaluation and inversions of jacobians are likely to be a comp. bottleneck
+		(repeated construction for implicit source steps, followed by inversion).
+		'''
 
-		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
-		vel = Uq[:, :, 1]/(general.eps + Uq[:, :, 0])
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
 
-		jac[:, :, irhou, irhou] = nu
-		jac[:, :, irhoE, irho] = -nu*vel**2
-		jac[:, :, irhoE, irhou] = 2.0*nu*vel
+		phi = physics.compute_additional_variable("phi", Uq, True)
 
-		return jac
+		''' Compute Jacobian of physical expression for friction, times I '''
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+		fric_coeff = 8.0 * self.mu / self.conduit_radius**2.0		
+		friction_jacobian = np.zeros(
+			[Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+		# friction_jacobian[:, :, imom, physics.get_mass_slice()] = u / rho
+		# friction_jacobian[:, :, imom, imom] = -1.0 / rho
+		# friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2*u**2.0 / rho
+		# friction_jacobian[:, :, ie, ie] = -2.0 * u / rho
+		# Broadcasted multiplication
+		# friction_jacobian *= fric_coeff * self.compute_indicator( \
+		# 	physics.compute_additional_variable("phi", Uq, True))
+		''' Optimized construction '''
+		coeffinvrho = fric_coeff / rho * self.compute_indicator(phi)
+		coeffuinvrho = u * coeffinvrho
+		friction_jacobian[:, :, imom, physics.get_mass_slice()] = coeffuinvrho
+		friction_jacobian[:, :, imom, physics.get_momentum_slice()] = -coeffinvrho
+		friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2.0 * u * coeffuinvrho
+		friction_jacobian[:, :, ie, physics.get_momentum_slice()] = -2.0 * coeffuinvrho		
 
-class CouplingSource(SourceBase):
-	def __init__(self, **kwargs):
-		super().__init__(kwargs)
+		''' Compute Jacobian of indicator, times max amount of friction '''
+		friction_vec = self.get_source(physics, Uq, x, t)
+		indicator_jacobian = self.get_indicator_deriv(phi) \
+			* physics.compute_phi_sgradient(Uq)
 
-	def get_source(self, physics, Uq, x, t):
-		if physics.NDIMS > 1:
-			raise Exception(f"Called PorousSource for 1D in a" + 
-											f"{physics.NDIMS}-dim physics context.")
-		irho, irhou, irhoE = physics.get_state_indices()
-		S = np.zeros_like(Uq)
-
-		# Compute temperature
-		KE =  0.5*np.power(Uq[:, :, irhou],2.0) \
-					/ Uq[:, :, irho]
-		c_v = physics.R / (physics.gamma - 1.0)
-		T = (Uq[:, :, irhoE] - KE) / (Uq[:, :, irho] * c_v)
-
-		eps = general.eps
-		S[:, :, irho] = 0.0
-		S[:, :, irhou] = self.nu*(2.0*KE)
-		S[:, :, irhoE] = self.alpha*(self.T_m - T)
-
-		return S
-
-	def get_jacobian(self, physics, Uq, x, t):
-		raise Exception("Not implemented.")
-
-class PorousSource(SourceBase):
-	'''
-	Stiff source term (1D) of the form:
-	S = [0, nu*rho*u^2, alpha*(T_m-T)]
-
-	Attributes:
-	-----------
-	nu: float
-		stiffness parameter
-	'''
-	def __init__(self, nu:float=0.0, alpha:float=0.0, T_m:float=300.0, **kwargs):
-		super().__init__(kwargs)
-		self.nu = nu
-		self.alpha = alpha
-		self.T_m = T_m
-
-	def get_source(self, physics, Uq, x, t):
-		if physics.NDIMS > 1:
-			raise Exception(f"Called PorousSource for 1D in a" + 
-											f"{physics.NDIMS}-dim physics context.")
-		irho, irhou, irhoE = physics.get_state_indices()
-		S = np.zeros_like(Uq)
-
-		# Compute temperature
-		KE =  0.5*np.power(Uq[:, :, irhou],2.0) \
-					/ Uq[:, :, irho]
-		c_v = physics.R / (physics.gamma - 1.0)
-		T = (Uq[:, :, irhoE] - KE) / (Uq[:, :, irho] * c_v)
-
-		eps = general.eps
-		S[:, :, irho] = 0.0
-		S[:, :, irhou] = self.nu*(2.0*KE)
-		S[:, :, irhoE] = self.alpha*(self.T_m - T)
-
-		return S
-
-	def get_jacobian(self, physics, Uq, x, t):
-		irho, irhou, irhoE = physics.get_state_indices()
-
-		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
-		c_v = physics.R / (physics.gamma - 1.0)
-		vel = Uq[:, :, 1]/(general.eps + Uq[:, :, 0])
-
-		jac[:, :, irhou, irho] = -self.nu*vel**2
-		jac[:, :, irhou, irhou] = 2.0*self.nu*vel
-		jac[:, :, irhoE, irho] = (self.alpha / c_v) \
-			* (Uq[:, :, irhoE] / np.power(Uq[:, :, irho], 2.0)
-				 - np.power(Uq[:, :, irhou], 2.0) / np.power(Uq[:, :, irho], 3.0))
-		jac[:, :, irhoE, irhou] = (self.alpha / c_v) \
-			* Uq[:, :, irhou] / np.power(Uq[:, :, irho], 2.0)
-		jac[:, :, irhoE, irhoE] = -(self.alpha / c_v) \
-			/ Uq[:, :, irho]
-
-		return jac
-
-
-class TaylorGreenSource(SourceBase):
-	'''
-	Source term for 2D Taylor-Green vortex (see above). Reference:
-		[1] C. Wang, "Reconstructed discontinous Galerkin method for the
-		compressible Navier-Stokes equations in arbitrary Langrangian and
-		Eulerian formulation", PhD Thesis, North Carolina State University,
-		2017.
-	'''
-	def get_source(self, physics, Uq, x, t):
-		gamma = physics.gamma
-
-		irho, irhou, irhov, irhoE = physics.get_state_indices()
-
-		S = np.zeros_like(Uq)
-
-		S[:, :, irhoE] = np.pi/(4.*(gamma - 1.))*(np.cos(3.*np.pi*x[:, :, 0])*
-				np.cos(np.pi*x[:, :, 1]) - np.cos(np.pi*x[:, :, 0])*np.cos(3.*
-				np.pi*x[:, :, 1]))
-
-		return S
-
+		''' Return product derivative '''
+		return friction_jacobian + np.einsum('lmi, lmj -> lmij',
+			friction_vec, indicator_jacobian)
 
 class GravitySource(SourceBase):
 	'''
-	Gravity source term used with the GravityRiemann problem defined above. 
-	Adds gravity to the inviscid Euler equations. See the following reference
-	for further details:
-		[1] X. Zhang, C.-W. Shu, "Positivity-preserving high-order 
-		discontinuous Galerkin schemes for compressible Euler equations
-		with source terms, Journal of Computational Physics 230 
-		(2011) 1238–1248.
+	Gravity source term. Applies gravity for 1D in negative x-direction, and for
+	2D in negative y-direction.
 	'''
 	def __init__(self, gravity=0., **kwargs):
 		super().__init__(kwargs)
-		'''
-		This method initializes the attributes.
-
-		Inputs:
-		-------
-			gravity: gravity constant
-
-		Outputs:
-		--------
-		    self: attributes initialized
-		'''
 		self.gravity = gravity
 
 	def get_source(self, physics, Uq, x, t):
-		# Unpack
-		gamma = physics.gamma
-		g = self.gravity
-		
-		irho, irhou, irhov, irhoE = physics.get_state_indices()
-
 		S = np.zeros_like(Uq)
-
-		rho = Uq[:, :, irho]
-		rhov = Uq[:, :, irhov]
-
-		S[:, :, irhov] = -rho * g
-		S[:, :, irhoE] = -rhov * g
-
+		# Compute mixture density
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2)
+		if physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+			# Orient gravity in axial direction
+			S[:, :, imom] = -rho * self.gravity
+			S[:, :, ie]   = -Uq[:, :, imom] * self.gravity # rhou * g (gravity work)
+		elif physics.NDIMS == 2:
+			# Orient gravity in y direction
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = physics.get_state_indices()
+			S[:, :, irhov] = -rho * self.gravity
+			S[:, :, ie] = -Uq[:, :, irhov] * self.gravity
+		else:
+			raise Exception("Unexpected physics num dimension in GravitySource.")
 		return S # [ne, nq, ns]
-
+	
+	def get_jacobian(self, physics, Uq, x, t):
+		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+		if physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+				physics.get_state_indices()
+			# Orient gravity in axial direction
+			jac[:, :, imom, [iarhoA, iarhoWv, iarhoM]] = -self.gravity
+			jac[:, :, ie, imom] = -self.gravity
+		elif physics.NDIMS == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+				physics.get_state_indices()
+			# Orient gravity in y-direction
+			jac[:, :, irhov, [iarhoA, iarhoWv, iarhoM]] = -self.gravity
+			jac[:, :, ie, irhov] = -self.gravity
+		else:
+			raise Exception("Unexpected physics num dimension in GravitySource.")
+		return jac
 
 '''
 ------------------------
@@ -1286,7 +1253,6 @@ class LaxFriedrichs1D(ConvNumFluxBase):
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)
 
-
 class LaxFriedrichs2D(ConvNumFluxBase):
 	'''
 	This class corresponds to the local Lax-Friedrichs flux function for the
@@ -1319,7 +1285,6 @@ class LaxFriedrichs2D(ConvNumFluxBase):
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - aL*dUq)
-
 
 class Roe1D(ConvNumFluxBase):
 	'''
@@ -1360,6 +1325,7 @@ class Roe1D(ConvNumFluxBase):
 		--------
 		    self: attributes initialized
 		'''
+		raise NotImplementedError("Roe flux not implemented for multiphase.")
 		if Uq is not None:
 			n = Uq.shape[0]
 			nq = Uq.shape[1]
@@ -1635,7 +1601,6 @@ class Roe1D(ConvNumFluxBase):
 		FR, _ = physics.get_conv_flux_projected(UqR_std, n_hat)
 
 		return .5*n_mag*(FL + FR - FRoe) # [nf, nq, ns]
-
 
 class Roe2D(Roe1D):
 	'''

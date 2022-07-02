@@ -1,16 +1,27 @@
 import numpy as np
 import copy
 
-TimeStepping = {
+# Brute force P0 setting
+use_P0_detailed = False
+if use_P0_detailed:
+    TimeStepping = {
+        "InitialTime" : 0.0,
+        "FinalTime" : 0.5*2*2.0, #0.1 @ meter scale
+        "NumTimeSteps" : 2*10*20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+    # 100000 for generalB1, 400~K
+        "TimeStepper" : "FE",
+    }
+else:
+    TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 2*2.0, #0.1 @ meter scale
-	"NumTimeSteps" : 2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-  # 100000 for generalB1, 400~K
-	"TimeStepper" : "FE",
+	"FinalTime" : 0.050, #0.1 @ meter scale
+	"NumTimeSteps" : 500, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+     # 100000 for generalB1, 400~K
+	"TimeStepper" : "Strang",
 }
 
 Numerics = {
-    "SolutionOrder" : 2,
+    "SolutionOrder" : 0,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -21,25 +32,34 @@ Numerics = {
     "FaceQuadrature" : "GaussLegendre",
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-    "ArtificialViscosity" : True,
+    "ArtificialViscosity" : False,
 	"AVParameter" : 100, # 150 ~ 500 is ok for this commit #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
 Output = {
 	"Prefix" : "mixture_shocktube_conduit",
-	"WriteInterval" : 4*200,
+	"WriteInterval" : 10,#4*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
 
-Mesh = {
-    "File" : None,
-    "ElementShape" : "Segment",
-    "NumElemsX" : 301, #151,#351,
-    "xmin" : -600.0,
-    "xmax" : 600.0,
-}
+if use_P0_detailed:
+    Mesh = {
+        "File" : None,
+        "ElementShape" : "Segment",
+        "NumElemsX" : 30*301, #151,#351,
+        "xmin" : -600.0,
+        "xmax" : 600.0,
+    }
+else: 
+    Mesh = {
+        "File" : None,
+        "ElementShape" : "Segment",
+        "NumElemsX" : 3*301, #151,#351,
+        "xmin" : -600.0,
+        "xmax" : 600.0,
+    }
 
 Physics = {
     "Type" : "MultiphasevpT",
@@ -83,6 +103,18 @@ InitialCondition = {
 	            #  arhoAR=10., arhoWvR=0., arhoMR=0.125, uR=0., TR=300., xd=0.)
 }
 
+SourceTerms = {
+	"source1": {
+		"Function" : "GravitySource",
+		"gravity": 9.8,
+        "source_treatment" : "Explicit",
+	},
+    "source2": {
+        "Function": "FrictionVolFracConstMu",
+        "source_treatment" : "Explicit",
+    },
+}
+
 if False:
     InitialCondition = {
         "Function" : "MixtureRiemann1",
@@ -97,7 +129,7 @@ if False:
 # Fake exact solution
 ExactSolution = InitialCondition.copy()
 
-IsDecoupled = False
+IsDecoupled = True
 if IsDecoupled:
     BoundaryConditions = {
         "x1" : {

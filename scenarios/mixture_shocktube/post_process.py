@@ -16,6 +16,8 @@ import os
 # fnameRadical = "pocket_atmos_mushroom" + "_"
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
+dataSize = 50+1
+
 single_fname = "mixture_shocktube_conduit_final.pkl"
 # single_fname = "mixture_shocktube_conduit_126.pkl"
 solver = readwritedatafiles.read_data_file(single_fname)
@@ -34,12 +36,15 @@ input_fname_conduit_list = [
 	"mixture_shocktube_conduit5_final.pkl",
 ]
 
+# t_indexed_fnames = lambda i : [
+# 	f"mixture_shocktube_conduit_{i}.pkl",
+# 	f"mixture_shocktube_conduit2_{i}.pkl",
+# 	f"mixture_shocktube_conduit3_{i}.pkl",
+# 	f"mixture_shocktube_conduit4_{i}.pkl",
+# 	f"mixture_shocktube_conduit5_{i}.pkl",
+# ]
 t_indexed_fnames = lambda i : [
 	f"mixture_shocktube_conduit_{i}.pkl",
-	f"mixture_shocktube_conduit2_{i}.pkl",
-	f"mixture_shocktube_conduit3_{i}.pkl",
-	f"mixture_shocktube_conduit4_{i}.pkl",
-	f"mixture_shocktube_conduit5_{i}.pkl",
 ]
 
 fname_radical_conduit = "mixture_shocktube_conduit"
@@ -93,7 +98,8 @@ if use_multidomain:
 		if not fnameRadicals[key].endswith("_"):
 			fnameRadicals[key] += "_"
 else:
-	dataSize = 200+1
+	# dataSize moved to top of file
+	# dataSize = 50+1
 	verbose = False
 	# fnameRadicals = [fname_radical_conduit]
 
@@ -133,11 +139,14 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 	prhoMConduit = []
 	rhoConduit = []
 	EConduit = []
+	prhoWtConduit = []
+	prhoCConduit = []
 	uConduit = []
 	TConduit = []
 	aConduit = []
 	normgrad_prhoAConduit = []
 	normgrad_pConduit = []
+	phiConduit = []
 
 	for fname in input_fname_conduit_list:
 		# Get conduit state
@@ -205,8 +214,11 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 		uConduit.append(getns_conduit("XMomentum") / (getns_conduit("pDensityA") 
 									+ getns_conduit("pDensityWv")
 			            + getns_conduit("pDensityM")))
+		prhoWtConduit.append(getns_conduit("pDensityWt"))
+		prhoCConduit.append(getns_conduit("pDensityC"))
 		TConduit.append(getns_conduit("Temperature"))
 		aConduit.append(getns_conduit("SoundSpeed"))
+		phiConduit.append(getns_conduit("phi"))
 		Ne_per_domain.append(conduitmesh.num_elems)
 		# t should be the same for each coupled domain
 		t = conduitsolver.time
@@ -229,10 +241,13 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 		"rhoConduit": rhoConduit,
 		"EConduit": EConduit,
 		"uConduit": uConduit,
+		"prhoWtConduit": prhoWtConduit,
+		"prhoCConduit": prhoCConduit,
 		"TConduit": TConduit,
 		"aConduit": aConduit,
 		"normgrad_prhoAConduit": normgrad_prhoAConduit,
 		"normgrad_pConduit": normgrad_pConduit,
+		"phiConduit": phiConduit,
 		"t": t,
 	})
 	
@@ -503,7 +518,7 @@ if use_multidomain:
 			outputfname=(outputfname + f"{i}"),
 			verbose=False)
 else:
-	pkl2mat_multiconduit(input_fname_conduit_list, "mixture_shocktube_conduit")
+	# pkl2mat_multiconduit(input_fname_conduit_list, "mixture_shocktube_conduit")
 	# pkl2mat(
 	# 		[],
 	# 		single_fname,
