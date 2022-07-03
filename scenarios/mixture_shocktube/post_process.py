@@ -16,7 +16,7 @@ import os
 # fnameRadical = "pocket_atmos_mushroom" + "_"
 # fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
 
-dataSize = 50+1
+dataSize = 100+1
 
 single_fname = "mixture_shocktube_conduit_final.pkl"
 # single_fname = "mixture_shocktube_conduit_126.pkl"

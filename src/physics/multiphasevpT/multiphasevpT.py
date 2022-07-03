@@ -315,6 +315,23 @@ class MultiphasevpT(base.PhysicsBase):
 			array: gradient of pressure with respected to physical space
 				[ne, nq, ndims]
 		'''
+		# Multiply dp/dU with dU/dx
+		return np.einsum('ijk, ijkl -> ijl',
+			self.compute_pressure_sgradient(Uq), grad_Uq)
+
+	def compute_pressure_sgradient(self, Uq):
+		'''
+		Compute the state-gradient of pressure.
+		The spatial gradient pressure is a different function.
+
+		Inputs:
+		-------
+			Uq: solution in each element evaluated at quadrature points [ne, nq, ns]
+
+		Outputs:
+		--------
+			array: gradient of pressure with respected to state [ne, nq, ns]
+		'''
 		# Extract quantities that determine pressure
 		slarhoA = self.get_state_slice("pDensityA")
 		slarhoWv = self.get_state_slice("pDensityWv")
@@ -338,14 +355,13 @@ class MultiphasevpT(base.PhysicsBase):
 		dpdU[:, :, slmom] = -2.*beta*mom/(arhoA + arhoWv + arhoM)
 		dpdU[:, :, sle] = 2.*beta
 
-		# Multiply with dU/dx
-		return np.einsum('ijk, ijkl -> ijl', dpdU, grad_Uq)
+		return dpdU
 	
 	def compute_phi_sgradient(self, Uq):
 		'''
-		Compute the state-gradient of porosity phi with respect to physical space.
-		This is needed for source gradients (for backward stepping of sources involving
-		volume-fraction-based fragmentation criteria).
+		Compute the state-gradient of porosity phi.
+		This is needed for source gradients (for backward stepping of sources
+		involving volume-fraction-based fragmentation criteria).
 
 		This is a gradient with respect to the state vector. A commented line
 		computes the gradient with respect to space.
@@ -393,7 +409,6 @@ class MultiphasevpT(base.PhysicsBase):
 		# dphidx = np.einsum('ijk, ijkl -> ijl', dphidU, grad_Uq)
 		return dphidU
 
-
 class MultiphasevpT1D(MultiphasevpT):
 	'''
 	This class corresponds to 1D vpT-equations for a two-gas, one liquid mixture.
@@ -406,6 +421,7 @@ class MultiphasevpT1D(MultiphasevpT):
 
 		d = {
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
+			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -416,6 +432,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			# SourceType.Exsolution: mpvpT_fcns.Exsolution,
 			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
+			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
 		})
 
 		self.conv_num_flux_map.update({

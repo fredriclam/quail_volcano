@@ -14,8 +14,8 @@ if use_P0_detailed:
 else:
     TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 0.050, #0.1 @ meter scale
-	"NumTimeSteps" : 500, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+	"FinalTime" : 1.0, #0.1 @ meter scale
+	"NumTimeSteps" : 1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
      # 100000 for generalB1, 400~K
 	"TimeStepper" : "Strang",
 }
@@ -56,7 +56,7 @@ else:
     Mesh = {
         "File" : None,
         "ElementShape" : "Segment",
-        "NumElemsX" : 3*301, #151,#351,
+        "NumElemsX" : 10, #3*301, #151,#351,
         "xmin" : -600.0,
         "xmax" : 600.0,
     }
@@ -92,7 +92,7 @@ if False:
 # UQuiescent = np.array([rhoAmbient, 0.0, eAmbient])
 
 InitialCondition = {
-	"Function" : "RiemannProblem",
+	"Function" : "UniformExsolutionTest",
     # "rhoL": 12.5,
     # "uL": 0.0,
     # "pL": 10*1e5,
@@ -104,14 +104,18 @@ InitialCondition = {
 }
 
 SourceTerms = {
-	"source1": {
-		"Function" : "GravitySource",
-		"gravity": 9.8,
-        "source_treatment" : "Explicit",
-	},
+	# "source1": {
+	# 	"Function" : "GravitySource",
+	# 	"gravity": 9.8,
+    #     "source_treatment" : "Explicit",
+	# },
     "source2": {
         "Function": "FrictionVolFracConstMu",
         "source_treatment" : "Explicit",
+    },
+    "source3": {
+        "Function": "ExsolutionSource",
+        "source_treatment" : "Implicit",
     },
 }
 

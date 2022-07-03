@@ -42,6 +42,7 @@ class FcnType(Enum):
 	'''
 	RiemannProblem = auto()
 	GravityRiemann = auto()
+	UniformExsolutionTest = auto()
 
 class BCType(Enum):
 	'''
@@ -64,6 +65,7 @@ class SourceType(Enum):
 	Exsolution = auto()
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
+	ExsolutionSource = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -187,48 +189,47 @@ class RiemannProblem(FcnBase):
 			Uq[elem_ID, iright, iarhoC] = arhoCR
 		return Uq # [ne, nq, ns]
 
-class GravityRiemann(FcnBase):
+class UniformExsolutionTest(FcnBase):
 	'''
-	2D time dependent riemann problem to test the PPL on a low density
-	and pressure case. For more details see the following reference:
-		[1] X. Zhang, C.-W. Shu, "Positivity-preserving high-order 
-		discontinuous Galerkin schemes for compressible Euler equations
-		with source terms, Journal of Computational Physics 230 
-		(2011) 1238–1248.
+	Uniform n-dimensional box for testing exsolution.
 	'''
+
+	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=2500.0, u=0., T=1000.,
+		arhoWt=100.0, arhoC=100.0):
+		self.arhoA = arhoA
+		self.arhoWv = arhoWv
+		self.arhoM = arhoM
+		self.u = u
+		self.T = T
+		self.arhoWt = arhoWt
+		self.arhoC = arhoC
+
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		gamma = physics.gamma
-		Rg = physics.R
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+		arhoA = self.arhoA
+		arhoWv = self.arhoWv
+		arhoM = self.arhoM
+		u = self.u
+		T = self.T
+		arhoWt = self.arhoWt
+		arhoC = self.arhoC
 
-		irho, irhou, irhov, irhoE = physics.get_state_indices()
-
-		# State 1
-		rhoL = 7.
-		uL = -1.
-		pL = .2
-
-		# State 2 
-		rhoR = 7.
-		uR = 1.
-		pR = .2
-
-		for elem_ID in range(Uq.shape[0]):
-			ileft = (x[elem_ID, :, 0] <= 1.).reshape(-1)
-			iright = (x[elem_ID, :, 0] > 1.).reshape(-1)
-			# Density
-			Uq[elem_ID, ileft, irho] = rhoL
-			Uq[elem_ID, iright, irho] = rhoR
-			# XMomentum
-			Uq[elem_ID, ileft, irhou] = rhoL*uL
-			Uq[elem_ID, iright, irhou] = rhoR*uR
-			# YMomentum
-			Uq[elem_ID, ileft, irhov] = 0.
-			Uq[elem_ID, iright, irhov] = 0.
-			# Energy
-			Uq[elem_ID, ileft, irhoE] = pL/(gamma - 1.) + 0.5*rhoL*uL*uL
-			Uq[elem_ID, iright, irhoE] = pR/(gamma - 1.) + 0.5*rhoR*uR*uR
+		rho = arhoA+arhoWv+arhoM
+		e = (arhoA * physics.Gas[0]["c_v"] * T + 
+			arhoWv * physics.Gas[1]["c_v"] * T + 
+			arhoM * (physics.Liquid["c_m"] * T + physics.Liquid["E_m0"])
+			+ 0.5 * rho * u**2.)
+		
+		Uq[:, :, iarhoA] = arhoA
+		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoM] = arhoM
+		Uq[:, :, imom] = rho * u
+		Uq[:, :, ie] = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoC
 
 		return Uq # [ne, nq, ns]
 
@@ -1215,6 +1216,118 @@ class GravitySource(SourceBase):
 		else:
 			raise Exception("Unexpected physics num dimension in GravitySource.")
 		return jac
+
+class ExsolutionSource(SourceBase):
+	'''
+	Exsolution source term.
+	Equilibrium concentration and dissolution timescales are saved in the physics
+	object (those quantities are also used to set up initial conditions).
+	Dynamic parameters (tau_d) are attributes of this class.
+	'''
+	def __init__(self, tau_d:float=1.0, **kwargs):
+		super().__init__(kwargs)
+		self.tau_d = tau_d
+
+	@staticmethod
+	def get_eq_conc(physics, p):
+			''' Compute Henry equilibrium concentration '''
+			k = physics.Solubility["k"]
+			n = physics.Solubility["n"]
+			return k * p ** n
+
+	@staticmethod
+	def get_eq_conc_deriv(physics, p):
+		''' Compute equilibrium concentration derivative'''
+		k = physics.Solubility["k"]
+		n = physics.Solubility["n"]
+		return (k * n) * p ** (n-1)
+
+	def get_source(self, physics, Uq, x, t):
+		S = np.zeros_like(Uq)
+		if physics.NDIMS == 1:
+			# Extract variables
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+				physics.get_state_indices()
+			slarhoWv = physics.get_state_slice("pDensityWv")
+			slarhoM = physics.get_state_slice("pDensityM")
+			slarhoWt = physics.get_state_slice("pDensityWt")
+			arhoWv = Uq[:, :, slarhoWv]
+			arhoM = Uq[:, :, slarhoM]
+			arhoWt = Uq[:, :, slarhoWt]
+			p = physics.compute_additional_variable("Pressure", Uq, True)
+			
+			eq_conc = ExsolutionSource.get_eq_conc(physics, p)
+			S_scalar = (1.0/self.tau_d) * (
+        (1.0+eq_conc) * arhoWt 
+				- (1.0+eq_conc) * arhoWv
+				- eq_conc * arhoM)
+			S_scalar[np.where(np.logical_and(
+				arhoWt-arhoWv <= general.eps,
+				arhoM <= general.eps
+			))] = 0.0
+			S[:, :, slarhoWv] =  S_scalar
+			S[:, :, slarhoM]  = -S_scalar
+		else:
+			raise Exception("Unexpected physics num dimension in GravitySource.")
+		return S # [ne, nq, ns]
+	
+	def get_jacobian(self, physics, Uq, x, t):
+		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+		if physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+				physics.get_state_indices()
+			dSdU = self.compute_exsolution_source_sgradient(physics, Uq)
+			jac[:, :, iarhoWv, :] = dSdU
+			jac[:, :, iarhoM, :] = -dSdU
+		else:
+			raise Exception("Unexpected physics num dimension in GravitySource.")
+		return jac
+
+	def compute_exsolution_source_sgradient(self, physics, Uq):
+		'''
+		Compute the state-gradient of the exsolution scalar source function.
+
+		Inputs:
+		-------
+			Uq: solution in each element evaluated at quadrature points [ne, nq, ns]
+
+		Outputs:
+		--------
+			array: state-gradient of the scalar source function [ne, nq, ns]
+		'''
+		if physics.NDIMS != 1:
+			raise NotImplementedError(f"compute_exsolution_source_sgradient called for" +
+																f"NDIMS=={self.NDIMS}, which is not 1.")
+		
+		# Extract variables
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
+		slarhoWv = physics.get_state_slice("pDensityWv")
+		slarhoM = physics.get_state_slice("pDensityM")
+		slarhoWt = physics.get_state_slice("pDensityWt")
+		arhoWv = Uq[:, :, slarhoWv]
+		arhoM = Uq[:, :, slarhoM]
+		arhoWt = Uq[:, :, slarhoWt]
+		p = physics.compute_additional_variable("Pressure", Uq, True)
+
+		# Compute source gradient
+		dSdU = np.zeros_like(Uq)
+		# Change in source term due to pressure-related solubility change
+		dSdU = (arhoM - arhoWt + arhoWv) \
+			* ExsolutionSource.get_eq_conc_deriv(physics, p) \
+			* physics.compute_pressure_sgradient(Uq)
+		# Chemical potential change
+		dSdU[:, :, slarhoWv] += (1.0+ExsolutionSource.get_eq_conc(physics, p))
+		dSdU[:, :, slarhoM] += ExsolutionSource.get_eq_conc(physics, p)
+		# Apply tau_d
+		dSdU /= -self.tau_d
+		# Remove vacuum-related spurious values at quadrature points
+		dSdU[np.where(np.logical_and(
+			arhoWt-arhoWv <= general.eps,
+			arhoM <= general.eps
+			))] = 0.0
+
+		return dSdU
 
 '''
 ------------------------
