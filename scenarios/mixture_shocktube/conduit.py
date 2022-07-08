@@ -107,8 +107,7 @@ InitialCondition = {
 
 # List of functions to inject in custom user function
 def hydrostatic_solve(solver):
-    pass
-    # GlobalDG()
+    GlobalDG(solver).set_initial_condition(p_bdry=1e5)
 
 Inject = [
     {
