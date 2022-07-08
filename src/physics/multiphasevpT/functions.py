@@ -44,6 +44,7 @@ class FcnType(Enum):
 	GravityRiemann = auto()
 	UniformExsolutionTest = auto()
 
+
 class BCType(Enum):
 	'''
 	Enum class that stores the types of boundary conditions. These
@@ -85,6 +86,7 @@ comments of attributes and methods. Information specific to the
 corresponding child classes can be found below. These classes should
 correspond to the FcnType enum members above.
 '''
+
 class RiemannProblem(FcnBase):
 	'''
 	Riemann problem.
@@ -189,12 +191,13 @@ class RiemannProblem(FcnBase):
 			Uq[elem_ID, iright, iarhoC] = arhoCR
 		return Uq # [ne, nq, ns]
 
+
 class UniformExsolutionTest(FcnBase):
 	'''
 	Uniform n-dimensional box for testing exsolution.
 	'''
 
-	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=2500.0, u=0., T=1000.,
+	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=1000.0, u=0., T=1000., #arhoM=2496.3
 		arhoWt=100.0, arhoC=100.0):
 		self.arhoA = arhoA
 		self.arhoWv = arhoWv
@@ -232,6 +235,7 @@ class UniformExsolutionTest(FcnBase):
 		Uq[:, :, iarhoC] = arhoC
 
 		return Uq # [ne, nq, ns]
+
 
 class MultipleRiemann(FcnBase):
 	'''
@@ -623,6 +627,7 @@ class CustomInlet(BCWeakPrescribed):
 
 		return UqB
 
+
 class CouplingBC(BCWeakRiemann):
 	'''
 	This class corresponds to an coupled boundary that allows inflow or outflow.
@@ -692,6 +697,7 @@ class CouplingBC(BCWeakRiemann):
 		''' Called when computing states at shared boundaries. '''
 		raise NotImplementedError("Abstract CouplingBC class was instantiated. " +
 															" Implement get_boundary_state.")
+
 
 class Euler2D1D(CouplingBC):
 	'''
@@ -1172,6 +1178,7 @@ class FrictionVolFracConstMu(SourceBase):
 		return friction_jacobian + np.einsum('lmi, lmj -> lmij',
 			friction_vec, indicator_jacobian)
 
+
 class GravitySource(SourceBase):
 	'''
 	Gravity source term. Applies gravity for 1D in negative x-direction, and for
@@ -1216,6 +1223,7 @@ class GravitySource(SourceBase):
 		else:
 			raise Exception("Unexpected physics num dimension in GravitySource.")
 		return jac
+
 
 class ExsolutionSource(SourceBase):
 	'''
@@ -1366,6 +1374,7 @@ class LaxFriedrichs1D(ConvNumFluxBase):
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)
 
+
 class LaxFriedrichs2D(ConvNumFluxBase):
 	'''
 	This class corresponds to the local Lax-Friedrichs flux function for the
@@ -1398,6 +1407,7 @@ class LaxFriedrichs2D(ConvNumFluxBase):
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - aL*dUq)
+
 
 class Roe1D(ConvNumFluxBase):
 	'''
@@ -1714,6 +1724,7 @@ class Roe1D(ConvNumFluxBase):
 		FR, _ = physics.get_conv_flux_projected(UqR_std, n_hat)
 
 		return .5*n_mag*(FL + FR - FRoe) # [nf, nq, ns]
+
 
 class Roe2D(Roe1D):
 	'''

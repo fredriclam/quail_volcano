@@ -8,11 +8,15 @@
 
 import numpy as np
 import numerics.helpers.helpers as helpers
+from dataclasses import dataclass
+from typing import Callable, Union
 import logging
+
 
 _global_timeout_seconds = 615.0
 
 # TODO: typing of input args
+# TODO: parallel setup of domains
 
 class Domain():
   ''' Subprocess wrapper for a solver object. '''
@@ -31,6 +35,7 @@ class Domain():
     self.bdry_data_net = None
     self.domain_output = None
     self.verbose = verbose
+    self.user_functions = Domain.UserFunctionSeq()
   
   def set_network(self, glight_condition, ready_queue,
                   bdry_data_net, domain_output_dict):
@@ -51,15 +56,27 @@ class Domain():
     return f"{edge_sorted[0]}-{edge_sorted[1]}-{node_id}"
 
   def solve(self):
-    ''' Start synchronized solve, injecting to self.solver.solve via the
-     customuserfunction API.
+    ''' Start synchronized solve, adding routines to self.solver.solve via
+        Quail's custom_user_function API.
     '''
-    # Check validity of object
+    
+    ''' Check validity of this object. '''
     if None in [self.glight_condition, self.ready_queue,
                 self.bdry_data_net, self.domain_output_dict]:
       raise Exception('Initialization of Domain object incomplete.')
-    # Set post-await as user function in solve API
-    self.solver.custom_user_function = self.post_await
+    
+    ''' Custom user function injection. '''
+    # Get Quail-style custom user function loaded by input file
+    if self.solver.custom_user_function is not None:
+      # Append function to sequence of functions as a single callable
+      self.user_functions.append_always(self.solver.custom_user_function)
+    # Set post-await as user function
+    self.user_functions.append_always(self.post_await)
+
+    # Provide sequence of custom users functions to Quail API
+    self.solver.custom_user_function = self.user_functions
+
+    ''' Run solver.solve'''
     # Call solver solve
     self.solver.solve()
     # Send output to main process
@@ -68,6 +85,75 @@ class Domain():
   def pprint(self, msg):
     if self.verbose:
       print(f"<Process {self.id}>: {msg}")
+
+  class UserFunctionSeq(Callable):
+    '''  Sequence of functions with call order as specified. 
+
+    Functions are wrapped in callables of type UserFunctionSeq.CallbackType
+    that allow user to specify whether the function should be called the first
+    time UserFunctionSeq is called, and whether the function should be called
+    every subsequent time.
+
+    Returns of functions are discarded.
+    '''
+
+    def __init__(self):
+      self.callbacks = []
+      self.call_count = 0
+    
+    class CallbackType():
+      ''' Wrapper for callback with state.
+        
+        function: the function to wrap
+        initial: flags whether callback is designated for 1st call to user funcs
+        postinitial: flag whether callback is designated for > 1st call
+      '''
+      def __init__(self, function:Callable,
+          initial:bool=True, postinitial:bool=True):
+        self.function = function
+        self.initial = initial
+        self.postinitial = postinitial
+
+      def __call__(self, solver):
+        return self.function(solver)
+      
+
+    def __call__(self, solver):
+      ''' Calls each function in sequence, accounting for initials and
+      postinitials. Supports funtions with positional arg (solver).'''
+      for callback in self.callbacks:
+        if self.call_count == 0 and callback.initial or \
+           self.call_count >= 1 and callback.postinitial:
+          callback(solver)
+      self.call_count += 1
+
+    def append(self, functions:Union[Callable,list[Callable]],
+      initial:bool=True, postinitial:bool=True):
+      ''' Add function to function sequence, specifying whether active for
+      initial call and post initial call.'''
+
+      try:
+        for value in functions:
+          self.callbacks.append(
+            __class__.CallbackType(value, initial, postinitial))
+      except TypeError:
+        self.callbacks.append(
+            __class__.CallbackType(functions, initial, postinitial))
+ 
+    def append_always(self, functions:Union[Callable,list[Callable]]):
+      ''' Add function to function sequence, and have it execute every time
+      sequence is called.'''
+      self.append(functions, initial=True, postinitial=True)
+
+    def append_initial(self, functions:Union[Callable,list[Callable]]):
+      ''' Add function to function sequence, and have it execute only the first
+      time the sequence is called. '''
+      self.append(functions, initial=True, postinitial=False)
+
+    def append_noninitial(self, functions:Union[Callable,list[Callable]]):
+      ''' Add function to function sequence, and have it execute except the
+      first time the sequence is called. '''
+      self.append(functions, initial=False, postinitial=True)
 
   def post_await(self, solver):
     ''' Post data and await green light signal from observer node.'''

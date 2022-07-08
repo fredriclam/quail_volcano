@@ -469,6 +469,8 @@ def dom_recursive_build(deck, domain_list,
 												domain_edges, global_timestepping,
 												domain_edge_list=None,
 												edge_name_to_loc_bdry=None):
+	''' Builds Domain object. Called recursively to build the linked set of
+	domains. '''
 	if edge_name_to_loc_bdry is None:
 		edge_name_to_loc_bdry = {}
 	# Check global timestep settings
@@ -478,8 +480,27 @@ def dom_recursive_build(deck, domain_list,
 		deck.TimeStepping = global_timestepping
 	# Build domain
 	solver, physics, mesh = driver(deck)
+	dom = Domain(solver, physics, mesh, deck.__name__)
 
-	domain_list.append(Domain(solver, physics, mesh, deck.__name__))
+	''' Add injections
+	Injections are specified in the run parameter file by specifying
+		list[dict("Function": Callable[solver, None](,
+							"Initial": bool, "Postinitial", bool))] 
+	where optional boolean arguments Initial and Postinitial specify respectively
+	whether the function is called on the first invokation of custom_user_function
+	and on subsequent invokations. Unlike default Quail functions, the provided
+	function is directly callable and not a string that is looked up in an
+	internal map. The function takes as argument solver and has no return args.
+	The argument solver can be modified as a side effect.
+	'''
+	for func_spec in deck.__dict__.get("Inject", []):
+		# Append injected function to multidomain's user function list
+		dom.user_functions.append(func_spec["Function"],
+			deck.__dict__.get("Initial", True),
+			deck.__dict__.get("Postinitial", True))
+
+	# Add built domain to domain_list
+	domain_list.append(dom)
 	# Add edge set for node to graph
 	domain_edges[deck.__name__] = {}
 	# Process any linked domains

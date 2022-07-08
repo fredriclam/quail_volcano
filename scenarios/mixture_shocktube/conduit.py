@@ -1,5 +1,6 @@
 import numpy as np
 import copy
+from physics.multiphasevpT.hydrostatic import GlobalDG
 
 # Brute force P0 setting
 use_P0_detailed = False
@@ -15,13 +16,13 @@ else:
     TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+	"NumTimeSteps" : 1,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
      # 100000 for generalB1, 400~K
 	"TimeStepper" : "Strang",
 }
 
 Numerics = {
-    "SolutionOrder" : 0,
+    "SolutionOrder" : 2,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -93,6 +94,7 @@ if False:
 
 InitialCondition = {
 	"Function" : "UniformExsolutionTest",
+    # "Function" : "RiemannProblem",
     # "rhoL": 12.5,
     # "uL": 0.0,
     # "pL": 10*1e5,
@@ -103,12 +105,25 @@ InitialCondition = {
 	            #  arhoAR=10., arhoWvR=0., arhoMR=0.125, uR=0., TR=300., xd=0.)
 }
 
+# List of functions to inject in custom user function
+def hydrostatic_solve(solver):
+    pass
+    # GlobalDG()
+
+Inject = [
+    {
+        "Function": hydrostatic_solve,
+        "Initial": True,
+        "Postinitial": False,
+    }
+]
+
 SourceTerms = {
-	# "source1": {
-	# 	"Function" : "GravitySource",
-	# 	"gravity": 9.8,
-    #     "source_treatment" : "Explicit",
-	# },
+	"source1": {
+		"Function" : "GravitySource",
+		"gravity": 9.8,
+        "source_treatment" : "Explicit",
+	},
     "source2": {
         "Function": "FrictionVolFracConstMu",
         "source_treatment" : "Explicit",
