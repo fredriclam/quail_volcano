@@ -1,7 +1,12 @@
 # ------------------------------------------------------------------------ #
 #
 #       Compute hydrostatic initial condition for barotropic description of
-#       the conduit.
+#       the conduit. Defines a GlobalDG object that has reference to
+#       a `solver`, and a method `set_initial_condition` to override the
+#       initial condition of `solver`. Typical usage is by injection through
+#       Multidomain.Domain; provide in input file the list Inject, with field
+#       dict("function":GlobalDG(solver).set_initial_condition(...),
+#       "Initial": True, "Postinitial": False,). 
 #
 # ------------------------------------------------------------------------ #
 
@@ -19,8 +24,16 @@ from scipy.sparse import dok_array
 from typing import Callable
 from physics.multiphasevpT.functions import GravitySource
 
-# TODO: allow tolerance on total water > dissolved? but adds noise in exsoln term
+# Suggested improvements:
+# TODO: Consider adding a tolerance on total water partial density. Useful to
+#       have total water > dissolved for positivity of dissolved water during
+#       the unsteady solve, at the price of adding noise in exsolution source.
 # TODO: Check if overintegration perturbs the unsteady residual
+#       In unsteady residual, local momentum residual > 1e1 to the right of test
+#       jump due to magma partial density reaching ~2500, and then plateauing to
+#       the left.
+# TODO: Consider factorizations that increase FPI precision (currently plateaus
+#       at 1e-8).
 
 class GlobalDG():
   def __init__(self, solver):
