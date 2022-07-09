@@ -22,7 +22,7 @@ else:
 }
 
 Numerics = {
-    "SolutionOrder" : 0,
+    "SolutionOrder" : 2,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -107,7 +107,10 @@ InitialCondition = {
 
 # List of functions to inject in custom user function
 def hydrostatic_solve(solver):
-    GlobalDG(solver).set_initial_condition(p_bdry=1e5)
+    GlobalDG(solver).set_initial_condition(
+        p_bdry=1e5,
+        is_jump_included=True,
+        traction_fn=lambda x: (-1e5)*np.exp(-((x-500.0)/50.0)**2.0))
 
 Inject = [
     {

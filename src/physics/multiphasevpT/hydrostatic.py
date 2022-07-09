@@ -5,7 +5,6 @@
 #
 # ------------------------------------------------------------------------ #
 
-from cmath import e
 import numpy as np
 
 import numerics.helpers.helpers as helpers
@@ -13,17 +12,15 @@ import meshing.tools as mesh_tools
 import solver.tools as solver_tools
 import numerics.basis.tools as basis_tools
 import scipy
-import copy
-from scipy.sparse import dok_array
-from physics.multiphasevpT.functions import GravitySource
 import processing.readwritedatafiles as readwritedatafiles
-
 import matplotlib.pyplot as plt
 
-# TODO: Traction source
-# TODO: specify jump alignment and round to nearest face
-# TODO: test the unsteady residual
+from scipy.sparse import dok_array
+from typing import Callable
+from physics.multiphasevpT.functions import GravitySource
+
 # TODO: allow tolerance on total water > dissolved? but adds noise in exsoln term
+# TODO: Check if overintegration perturbs the unsteady residual
 
 class GlobalDG():
   def __init__(self, solver):
@@ -47,16 +44,21 @@ class GlobalDG():
     self.ne = mesh.num_elems
     # Compute size of system for global weak form
     self.N = mesh.num_elems*len(nodal_pts)
-    
     # Compute elementwise shape
     self.eltwise_shape  = (mesh.num_elems, self.nb, 1)
     # Compute unraveled shape
     self.vec_shape = (self.N, 1)
 
+    # Fixed point iteration parameters
     self.FPI_TOL = 1e-7
     self.N_iter = 20
+
+    # Allocate error metrics
     self.residuals = None
     self.pError = None
+    self.unsteady_residuals_elements = None
+    self.unsteady_residuals_face = None
+    self.unsteady_residuals = None
 
   def inv_ravel(self, data:np.array):
     ''' Inverse of ravel operation: (N,1) -> (ne, nb, 1) '''
@@ -171,12 +173,19 @@ class GlobalDG():
    
     return constrained_state
 
-  def set_initial_condition(self, p_bdry:float=1e5, p_bc_loc:str="x2"):
+  def set_initial_condition(self, p_bdry:float=1e5, p_bc_loc:str="x2",
+    is_jump_included:bool=False, x_jump:float=0.0, is_x_jump_exact:bool=False,
+    traction_fn:Callable=None):
     ''' Replace the initial condition in self.solver with hydrostatic
     condition.
     
+    Inputs:
     p_bdry: pressure at boundary
     p_bc_loc: location of pressure boundary condition
+    is_jump_included: whether a pressure jump is included in the initial cond
+    x_jump: nominal position for placing the pressure jump
+    is_x_jump_exact: whether to force x_jump to be exact (True not recommended)
+    traction_fn: function that specifies traction (momentum source term)
     '''
 
     solver = self.solver
@@ -209,40 +218,59 @@ class GlobalDG():
     b[BC_index] = BC_normal_sign * 0.5 * p_bdry
     b = b.tocsr()
 
-    ''' Construct designated jumps close to target position
+    ''' Construct designated pressure jumps close to target position
     Algorithm: Map x -> phi(x) assuming 1D Lagrange segment by mapping from phys
     coordinate to reference space and evaluating phi(x) in reference space. '''
-    target_pressure = self.solver.physics.compute_additional_variable(
-      "Pressure", self.origin_state, True)
-    p_jump = -(np.max(target_pressure) - p_bdry)
-
-    x_target = 0.0
-    # Bracket elements to find subset intersecting x_target
-    indicated_indices =  [i for i in range(solver.mesh.num_elems)
-      if x_target > np.min(solver.mesh.elements[i].node_coords) 
-      and x_target <= np.max(solver.mesh.elements[i].node_coords)]
-    # Select first index to place Dirac mass
-    target_elem_ID = indicated_indices[0]
-    # Get Jacobian, assume const geometric Jacobian (affine transformation only)
-    _, jac, _ = basis_tools.element_jacobian(solver.mesh, 0,
-					np.array([0]), get_djac=False, get_jac=True, get_ijac=False)
-    # Squeeze jacobian from [nq=1,ndims=1,ndims=1]
-    J = jac[0,0,0]
-    # Compute distance from min_x node in ref space
-    ref_dist = (x_target - np.min(solver.mesh.elements[target_elem_ID].node_coords))/jac[0,0,0]
-    # Assume ref space is [-1, 1]
-    ref_coord = -1.0 + ref_dist
-    # Evaluate test functions at reference coordinate
-    integrated_val = solver.basis.get_values(np.array(ref_coord,ndmin=2))
-    # Create sparse vector, add values at corresponding indices in vector form
+    
     delta_source = scipy.sparse.dok_array(b.shape)
-    # delta_source[self.nb*target_elem_ID:self.nb*(target_elem_ID+1)] = p_jump*integrated_val
-    # # Regularize source
-    # integrated_val[:] = np.mean(integrated_val)
-    # delta_source[self.nb*target_elem_ID:self.nb*(target_elem_ID+1)] = p_jump*integrated_val
-    # Place delta at a boundary
-    delta_source[self.nb*target_elem_ID-1] = p_jump/2
-    delta_source[self.nb*target_elem_ID] = p_jump/2
+
+    if is_jump_included:
+      # Compute single pressure jump based on maximum pressure in unequilibrated
+      # initial condition
+      p_jump = -(np.max(self.solver.physics.compute_additional_variable(
+        "Pressure", self.origin_state, True)) - p_bdry)
+      self.x_jump_actual = x_jump
+
+      if is_x_jump_exact:
+        ''' Evaluate test function at target location.
+        Delta distribution applied to test function evaluates the test function.
+        The solution is locally discontinuous, and is thus not contained in the
+        local polynomial space. It is recommended to not force the delta
+        distribution to the desired location, but rather place it at an element
+        boundary.
+        '''
+        # Find element intersecting x_jump
+        indicated_indices =  [i for i in range(solver.mesh.num_elems)
+          if x_jump > np.min(solver.mesh.elements[i].node_coords) 
+          and x_jump <= np.max(solver.mesh.elements[i].node_coords)]
+        # Select first element index to place Dirac mass
+        target_elem_ID = indicated_indices[0]
+
+        # Get Jacobian, assume const geometric Jacobian (affine transformation only)
+        _, jac, _ = basis_tools.element_jacobian(solver.mesh, 0,
+              np.array([0]), get_djac=False, get_jac=True, get_ijac=False)
+        # Squeeze jacobian from [nq=1,ndims=1,ndims=1]
+        J = jac[0,0,0]
+        # Compute distance from min_x node in ref space
+        ref_dist = (x_jump - np.min(solver.mesh.elements[target_elem_ID].node_coords))/J
+        # Assume ref space is [-1, 1]
+        ref_coord = -1.0 + ref_dist
+        # Evaluate test functions at reference coordinate
+        integrated_val = solver.basis.get_values(np.array(ref_coord,ndmin=2))
+        # Add the test of source to interior of affected element
+        delta_source[self.nb*target_elem_ID:self.nb*(target_elem_ID+1)] = p_jump*integrated_val
+      else:
+        '''Place delta mass at closest element boundary, splitting in half
+        the mass to both neighbouring (1D) elements.'''
+        # Find face closest to x_jump
+        face = solver.mesh.interior_faces[
+          np.argmin(np.abs(x_jump - solver.mesh.node_coords))]
+        # Save x_jump snapped to closest face
+        self.x_jump_actual = np.min(np.abs(x_jump - solver.mesh.node_coords))
+        # Add pressure jump source
+        target_idx = max(face.elemL_ID, face.elemR_ID)
+        delta_source[self.nb*target_idx-1] = p_jump/2
+        delta_source[self.nb*target_idx] = p_jump/2
 
     ''' Assemble local Lax-Friedrichs numerical flux matrix A '''
     A = dok_array((self.N, self.N,))
@@ -276,9 +304,6 @@ class GlobalDG():
       B[nb*i:nb*(i+1), nb*i:nb*(i+1)] = B_vec[i,:,:]
     B = B.tocsr()
 
-    Uq = helpers.evaluate_state(solver.state_coeffs, solver.elem_helpers.basis_val,
-            skip_interp=solver.basis.skip_interp)
-
     ''' Assemble interior mass matrix M '''
     # [nq, nb] x [nq, 1] x [ne, nq, 1] -> [ne, nq, nb]
     u = np.einsum('jn, jm, ijm -> ijn', 
@@ -289,10 +314,6 @@ class GlobalDG():
     M_vec = np.einsum('jm, ijn -> imn',
       solver.basis.get_values(solver.elem_helpers.quad_pts),
       u)
-    # TODO: Looks like mass matrix here is 1/2 as large as it should be? But it
-    # works. The following
-    # gives the integral over [-1,1] (segment with length 2, rather than 1):
-    # M_vec[0,:,:] / (gdg.x[1] - gdg.x[0])
     M = dok_array((self.N, self.N,))
     nb = self.nb
     for i in range(self.ne):
@@ -303,20 +324,23 @@ class GlobalDG():
     gsource = [s for s in solver.physics.source_terms if
       type(s) is GravitySource][0]
     # Barotropic gravity source function [ne, nq]
-    S_fn = lambda p: gsource.get_source(
+    g_fn = lambda p: gsource.get_source(
         self.solver.physics,
         self.eval_barotropic_state(p),
         self.solver.elem_helpers.x_elems,
         self.solver.time)[
           :,:,self.solver.physics.get_state_index("XMomentum")]
     vec_cast = lambda S: np.expand_dims(S.ravel(),axis=1)
-    # Load vector
+
+    # Build source function
+    S_fn = lambda p: g_fn(p)
+    # Add traction
+    if traction_fn is not None:
+      S_fn = lambda p: g_fn(p) \
+        + traction_fn(self.solver.elem_helpers.x_elems.squeeze(axis=2))
+    
+    # Define load vector function
     f_fn = lambda p: -b + M @ vec_cast(S_fn(p)) + delta_source
-    # # Calculate source term quadrature [ne, nq, ns]
-    # Sq_quad = np.einsum('ijk, jm, ijm -> ijk', 
-    #     Sq, 
-    #     solver.elem_helpers.quad_wts,
-    #     solver.elem_helpers.djac_elems)
 
     ''' Compute initial guess '''
     rho0 = np.sum(
@@ -331,11 +355,10 @@ class GlobalDG():
     ''' Fixed point iteration '''
     fixedpointiter = lambda p: scipy.sparse.linalg.spsolve(A-B,
       f_fn(np.expand_dims(p,axis=1)))
-
-    # Residual in algebraic equation
     evalresidual = lambda p : np.linalg.norm(
       (A-B)@np.expand_dims(p,axis=1) - f_fn(np.expand_dims(p,axis=1)), 'fro')
     residuals = np.array([evalresidual(p)])
+    # Start fixed point iteration
     for i in range(self.N_iter):
       p = fixedpointiter(p)
       fpi_res = evalresidual(p)
@@ -350,6 +373,16 @@ class GlobalDG():
       self.solver.physics.compute_additional_variable("Pressure",
         self.eval_barotropic_state(p) ,True).ravel()
     )
+    # Evaluate Quail-ready state
+    U = self.eval_barotropic_state(p)
+    # Check unsteady problem residual
+    self.unsteady_residuals_face = np.zeros_like(U)
+    self.solver.get_boundary_face_residuals(U, self.unsteady_residuals_face)
+    self.solver.get_interior_face_residuals(U, self.unsteady_residuals_face)
+    self.unsteady_residuals_elements = np.zeros_like(U)
+    self.solver.get_element_residuals(U, self.unsteady_residuals_elements)
+    self.unsteady_residuals = self.unsteady_residuals_face\
+      + self.unsteady_residuals_elements
 
     # plt.plot(self.x, p)
 
