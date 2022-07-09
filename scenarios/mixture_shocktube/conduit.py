@@ -22,7 +22,7 @@ else:
 }
 
 Numerics = {
-    "SolutionOrder" : 2,
+    "SolutionOrder" : 0,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -57,7 +57,7 @@ else:
     Mesh = {
         "File" : None,
         "ElementShape" : "Segment",
-        "NumElemsX" : 10, #3*301, #151,#351,
+        "NumElemsX" : 30, #3*301, #151,#351,
         "xmin" : -600.0,
         "xmax" : 600.0,
     }

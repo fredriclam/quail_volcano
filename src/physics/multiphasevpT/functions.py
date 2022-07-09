@@ -197,8 +197,8 @@ class UniformExsolutionTest(FcnBase):
 	Uniform n-dimensional box for testing exsolution.
 	'''
 
-	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=1000.0, u=0., T=1000., #arhoM=2496.3
-		arhoWt=100.0, arhoC=100.0):
+	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=2500.0, u=0., T=1000., #arhoM=2496.3
+		arhoWt=50.0, arhoC=100.0):
 		self.arhoA = arhoA
 		self.arhoWv = arhoWv
 		self.arhoM = arhoM

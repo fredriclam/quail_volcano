@@ -11,10 +11,19 @@ import numpy as np
 import numerics.helpers.helpers as helpers
 import meshing.tools as mesh_tools
 import solver.tools as solver_tools
+import numerics.basis.tools as basis_tools
 import scipy
 import copy
 from scipy.sparse import dok_array
 from physics.multiphasevpT.functions import GravitySource
+import processing.readwritedatafiles as readwritedatafiles
+
+import matplotlib.pyplot as plt
+
+# TODO: Traction source
+# TODO: specify jump alignment and round to nearest face
+# TODO: test the unsteady residual
+# TODO: allow tolerance on total water > dissolved? but adds noise in exsoln term
 
 class GlobalDG():
   def __init__(self, solver):
@@ -31,6 +40,7 @@ class GlobalDG():
       # Fill coordinates in physical space
       xphys[elem_ID] = mesh_tools.ref_to_phys(mesh, elem_ID, nodal_pts)
     self.x = xphys.ravel()
+    self.xphys = xphys
 
     # Compute size of block corresponding to element
     self.nb = len(nodal_pts)
@@ -43,59 +53,111 @@ class GlobalDG():
     # Compute unraveled shape
     self.vec_shape = (self.N, 1)
 
+    self.FPI_TOL = 1e-7
+    self.N_iter = 20
+    self.residuals = None
+    self.pError = None
+
   def inv_ravel(self, data:np.array):
     ''' Inverse of ravel operation: (N,1) -> (ne, nb, 1) '''
     return data.reshape(self.eltwise_shape)
   
-  def eval_barotropic_state(self, p:np.array):
-    ''' Evaluate state with N-1 constraints and known pressure:
-    * (4 states) arhoA, arhoWt, arhoC, xmomentum are held constant
-    * (3 states) arhoWv, arhoM, e may vary subject to two constraints:
-      1. T held constant
-      2. rhoWv, rhoM at equilibrium dissolved concentration 
-    These 6 constraints allow the state to be parametrized by pressure p.
-    Given p, the algorithm is:
-      0. Compute T, arhoWt (total water) from origin state
-      1. Compute solubility
-        arhoWd/(arhoM - arhoWd) == k*p^n
-        arhoWd == arhoWt - arhoWv
-        implying arhoM == arhoWd * (1/(k*p^n) + 1) == (arhoWt - arhoWv) * (1/(k*p^n) + 1)
-      2. Compute phasic densities
-        rhoWv == p / (R_wv * T)
-        rhoM == rho0 + (rho0 / K) * (p - p0)
-        rhoA == p / (R_a * T)
-      3. Compute air volume fraction
-        alphaA = arhoA / rhoA
-        implying alpha_m = (1 - alpha_a) - alpha_wv
-      4. Resubstitute into solubility equation for affine and solve
-        alpha_m * rhoM == (arhoWt - alpha_wv*rhoWv) * (1/(k*p^n) + 1)
+  def eval_barotropic_state(self, p:np.array, constr_key:str="MEq"):
+    ''' Evaluate state with ns-1 constraints and known pressure. The quantities
+    T, arhoA, arhoC, xmomentum provided by the unequilibrated initial condition
+    are computed from the latter and held constant. For the remaining three
+    quantities, two constraints are required (besides for input pressure);
+    several strategies are provided, accessed by providing const_key:
+      - WtEq: Fixed total water arhoWt, equilibrium dissolved water content.
+        Typically difficult to use (volume fraction calculated may not be valid)
+      - WvEq: Fixed exsolved water, equilibrium dissolved water content. Low
+        pressures may cause problems with the magma density. Invalid volume
+        fractions are clipped to [0,1].
+      - MEq (default): Fixed magma, equilibrium dissolved water content. Invalid
+        volume fractions are clipped to [0,1].
     
-    Input: p in vector form
-    Output: state in Quail's format (ne, nb, ns)
+    Inputs:
+      p: array of pressures in raveled vector form
+      constr_key: key for constraints
+    Side-effects:
+      self.solver.state_coeffs (shape: ne, nb, ns) is modified to equilibrium
     '''
+
     physics = self.solver.physics
     iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
       physics.get_state_indices()
-    
+
     # Copy origin state
-    constrained_state = self.origin_state
+    constrained_state = self.origin_state.copy()
     # Rearrange p to Quail format
     p = self.inv_ravel(p)
-    
+
     # Constrained states
     T = self.solver.physics.compute_additional_variable(
       "Temperature", constrained_state, flag_non_physical=True)
-    arhoWt = self.origin_state[:,:,physics.get_state_slice("pDensityWt")]
-
+    # Compute equilibrium mass-concentration
     conc_eq = physics.Solubility["k"] * p ** physics.Solubility["n"]
+    # Compute phasic densities
     rhoA = p / (physics.Gas[0]["R"]*T)
     rhoWv = p / (physics.Gas[1]["R"]*T)
     rhoM = physics.Liquid["rho0"] + (physics.Liquid["rho0"] 
       / physics.Liquid["K"]) * (p - physics.Liquid["p0"])
     alphaA = self.origin_state[:,:,physics.get_state_slice("pDensityA")] / rhoA
-    alphaWv = (arhoWt * conc_eq - (1.0 - alphaA) * rhoM) \
-      / (conc_eq * rhoWv - rhoM)
-    alphaM = 1.0 - alphaA - alphaWv
+
+    # Compute alphaWv, alphaM, arhoWt based on constraints specified
+    if constr_key == "WtEq":
+      ''' Algorithm 1: fixed wt (invalid for some values of initial condition)
+      * (4 states) arhoA, arhoWt, arhoC, xmomentum are held constant
+      * (3 states) arhoWv, arhoM, e may vary subject to two constraints:
+        1. T held constant
+        2. rhoWv, rhoM at equilibrium dissolved concentration 
+      These 6 constraints allow the state to be parametrized by pressure p.
+      Given p, the algorithm is:
+        0. Compute T, arhoWt (total water) from origin state
+        1. Compute solubility
+          arhoWd/(arhoM - arhoWd) == k*p^n
+          arhoWd == arhoWt - arhoWv
+          implying arhoM == arhoWd * (1/(k*p^n) + 1) == (arhoWt - arhoWv) * (1/(k*p^n) + 1)
+        2. Compute phasic densities
+          rhoWv == p / (R_wv * T)
+          rhoM == rho0 + (rho0 / K) * (p - p0)
+          rhoA == p / (R_a * T)
+        3. Compute air volume fraction
+          alphaA = arhoA / rhoA
+          implying alpha_m = (1 - alpha_a) - alpha_wv
+        4. Resubstitute into solubility equation for affine and solve
+          alpha_m * rhoM == (arhoWt - alpha_wv*rhoWv) * (1/(k*p^n) + 1)
+        '''
+      arhoWt = self.origin_state[:,:,physics.get_state_slice("pDensityWt")]
+      C = 1.0 + 1.0 / conc_eq
+      alphaWv = (C * arhoWt - (1.0 - alphaA) * rhoM) \
+        / (C * rhoWv - rhoM)
+      alphaM = 1.0 - alphaA - alphaWv
+    elif constr_key == "WvEq":
+      ''' Algorithm 2: fixed Wv (adjust wt based on equilibrium dissolution)'''
+      # Preserve water vapor content
+      alphaWv = self.origin_state[:,:,physics.get_state_slice("pDensityWv")] \
+         / rhoWv
+      alphaM = 1.0 - alphaA - alphaWv
+      # Forward computation of dissolved water content
+      arhoWd = conc_eq / (1.0 + conc_eq) * alphaM * rhoM
+      arhoWt = arhoWd + alphaWv * rhoWv
+      # Force positivity
+      alphaM[np.where(alphaM < 0)] = 0.0
+      alphaWv = 1.0 - alphaA - alphaM
+    elif constr_key == "MEq":
+      ''' Algorithm 3: fixed M (adjust wt based on equilibrium dissolution) '''
+      alphaM = self.origin_state[:,:,physics.get_state_slice("pDensityM")] \
+        / rhoM
+      alphaWv = 1.0 - alphaA - alphaM
+      # Force positivity
+      alphaWv[np.where(alphaWv < 0)] = 0
+      alphaM = 1.0 - alphaA - alphaWv
+      arhoWd = conc_eq / (1.0 + conc_eq) * alphaM * rhoM
+      arhoWt = arhoWd + alphaWv * rhoWv
+    else:
+      raise NotImplementedError(f"Unknown constraint key: {constr_key}." + 
+        "Implemented constraints are WtEq, WvEq, MEq (default).")
 
     # Compute volumetric energy
     e = alphaA * rhoA * physics.Gas[0]["c_v"] * T \
@@ -105,6 +167,7 @@ class GlobalDG():
     constrained_state[:,:,physics.get_state_slice("pDensityWv")] = alphaWv * rhoWv
     constrained_state[:,:,physics.get_state_slice("pDensityM")] = alphaM * rhoM
     constrained_state[:,:,physics.get_state_slice("Energy")] = e
+    constrained_state[:,:,physics.get_state_slice("pDensityWt")] = arhoWt
    
     return constrained_state
 
@@ -125,9 +188,18 @@ class GlobalDG():
           solver.mesh.elem_to_node_IDs[
             solver.mesh.boundary_groups[p_bc_loc].boundary_faces[0].elem_ID]
           [solver.mesh.boundary_groups[p_bc_loc].boundary_faces[0].face_ID]])]
-    if len(filtered) != 1:
-      raise Exception("Multiple nodes at to specified pressure BC location.")
-    BC_index = filtered[0]
+    if len(filtered) > 1:
+      raise Exception("Multiple nodes at specified pressure BC location.")
+    
+    if len(filtered) >= 1:
+      BC_index = filtered[0]
+    else:
+      # Take BC index corresponding to node closest to BC
+      BC_index = np.argmin(np.abs(self.x - solver.mesh.node_coords[
+          solver.mesh.elem_to_node_IDs[
+            solver.mesh.boundary_groups[p_bc_loc].boundary_faces[0].elem_ID]
+          [solver.mesh.boundary_groups[p_bc_loc].boundary_faces[0].face_ID]]))
+    
     BC_normal_sign = solver.elem_helpers.normals_elems[
       solver.mesh.boundary_groups[p_bc_loc].boundary_faces[0].elem_ID,:,0,0][
         solver.mesh.boundary_groups[p_bc_loc].boundary_faces[0].face_ID]
@@ -137,21 +209,56 @@ class GlobalDG():
     b[BC_index] = BC_normal_sign * 0.5 * p_bdry
     b = b.tocsr()
 
+    ''' Construct designated jumps close to target position
+    Algorithm: Map x -> phi(x) assuming 1D Lagrange segment by mapping from phys
+    coordinate to reference space and evaluating phi(x) in reference space. '''
+    target_pressure = self.solver.physics.compute_additional_variable(
+      "Pressure", self.origin_state, True)
+    p_jump = -(np.max(target_pressure) - p_bdry)
+
+    x_target = 0.0
+    # Bracket elements to find subset intersecting x_target
+    indicated_indices =  [i for i in range(solver.mesh.num_elems)
+      if x_target > np.min(solver.mesh.elements[i].node_coords) 
+      and x_target <= np.max(solver.mesh.elements[i].node_coords)]
+    # Select first index to place Dirac mass
+    target_elem_ID = indicated_indices[0]
+    # Get Jacobian, assume const geometric Jacobian (affine transformation only)
+    _, jac, _ = basis_tools.element_jacobian(solver.mesh, 0,
+					np.array([0]), get_djac=False, get_jac=True, get_ijac=False)
+    # Squeeze jacobian from [nq=1,ndims=1,ndims=1]
+    J = jac[0,0,0]
+    # Compute distance from min_x node in ref space
+    ref_dist = (x_target - np.min(solver.mesh.elements[target_elem_ID].node_coords))/jac[0,0,0]
+    # Assume ref space is [-1, 1]
+    ref_coord = -1.0 + ref_dist
+    # Evaluate test functions at reference coordinate
+    integrated_val = solver.basis.get_values(np.array(ref_coord,ndmin=2))
+    # Create sparse vector, add values at corresponding indices in vector form
+    delta_source = scipy.sparse.dok_array(b.shape)
+    # delta_source[self.nb*target_elem_ID:self.nb*(target_elem_ID+1)] = p_jump*integrated_val
+    # # Regularize source
+    # integrated_val[:] = np.mean(integrated_val)
+    # delta_source[self.nb*target_elem_ID:self.nb*(target_elem_ID+1)] = p_jump*integrated_val
+    # Place delta at a boundary
+    delta_source[self.nb*target_elem_ID-1] = p_jump/2
+    delta_source[self.nb*target_elem_ID] = p_jump/2
+
     ''' Assemble local Lax-Friedrichs numerical flux matrix A '''
     A = dok_array((self.N, self.N,))
     nb = self.nb
     for i in range(self.ne):
-        A[nb*i, nb*i] = -0.5
-        A[nb*(i+1)-1, nb*(i+1)-1] = 0.5
-        if i > 0:
-            A[nb*i, nb*i-1] = -0.5
-        if i < self.ne-1:
-            A[nb*(i+1)-1, nb*(i+1)] = 0.5
+          A[nb*i, nb*i] += -0.5
+          A[nb*(i+1)-1, nb*(i+1)-1] += 0.5
+          if i > 0:
+              A[nb*i, nb*i-1] += -0.5
+          if i < self.ne-1:
+              A[nb*(i+1)-1, nb*(i+1)] += 0.5
     # Check for one-sided numerical fluxes where BC is absent
     if BC_index == 0:
-      A[-1,-1] = 1.0
+      A[-1,-1] += 0.5
     elif BC_index == self.N-1:
-      A[0,0] = -1.0
+      A[0,0] += -0.5
     A = A.tocsr()
 
     ''' Assemble interior flux matrix B '''
@@ -204,7 +311,7 @@ class GlobalDG():
           :,:,self.solver.physics.get_state_index("XMomentum")]
     vec_cast = lambda S: np.expand_dims(S.ravel(),axis=1)
     # Load vector
-    f_fn = lambda p: -b + M @ vec_cast(S_fn(p))
+    f_fn = lambda p: -b + M @ vec_cast(S_fn(p)) + delta_source
     # # Calculate source term quadrature [ne, nq, ns]
     # Sq_quad = np.einsum('ijk, jm, ijm -> ijk', 
     #     Sq, 
@@ -216,8 +323,10 @@ class GlobalDG():
       solver.state_coeffs[:,:,solver.physics.get_mass_slice()],axis=2) \
       .ravel()[BC_index]
     p_like = 0.0*b.todense() + 1.0
-    f = -b + (-rho0*gsource.gravity) * M @ p_like
+    f = -b + (-rho0*gsource.gravity) * M @ p_like + delta_source
     p = scipy.sparse.linalg.spsolve(A-B, f)
+    # Copy for internal debugging
+    p_guess = p
 
     ''' Fixed point iteration '''
     fixedpointiter = lambda p: scipy.sparse.linalg.spsolve(A-B,
@@ -226,11 +335,28 @@ class GlobalDG():
     # Residual in algebraic equation
     evalresidual = lambda p : np.linalg.norm(
       (A-B)@np.expand_dims(p,axis=1) - f_fn(np.expand_dims(p,axis=1)), 'fro')
-    N_iter = 30
-    residuals = np.zeros(N_iter)
-    for i in range(N_iter):
+    residuals = np.array([evalresidual(p)])
+    for i in range(self.N_iter):
       p = fixedpointiter(p)
-      residuals[i] = evalresidual(p)
-    
+      fpi_res = evalresidual(p)
+      residuals = np.append(residuals, fpi_res)
+      if fpi_res < self.FPI_TOL:
+        break
+
+    # Save residual history
+    self.residuals = residuals
+    # Compute difference in pressure between pressure vector and eval'd state
+    self.pError = np.linalg.norm(p - 
+      self.solver.physics.compute_additional_variable("Pressure",
+        self.eval_barotropic_state(p) ,True).ravel()
+    )
+
+    # plt.plot(self.x, p)
+
     # Replace solver state coefficients with hydrostatic state
-    # self.solver.state_coeffs = self.eval_barotropic_state(p)
+    self.solver.state_coeffs = self.eval_barotropic_state(p)
+
+    # Replace output initial condition with equilibrated condition
+    if self.solver.params["WriteInitialSolution"]:
+      readwritedatafiles.write_data_file(self.solver, 0)
+    
