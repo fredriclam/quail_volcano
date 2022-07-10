@@ -109,7 +109,7 @@ class RiemannProblem(FcnBase):
 		location of initial discontinuity
 	'''
 	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0., TL=1000., arhoWtL=10.0, arhoCL=100.0, 
-	             arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=0.0, uR=0., TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0.):
+	             arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-8, uR=0., TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0.):
 		'''
 		This method initializes the attributes.
 
@@ -169,8 +169,13 @@ class RiemannProblem(FcnBase):
 			+ 0.5 * rhoR * uR**2.)
 
 		for elem_ID in range(Uq.shape[0]):
-			ileft = (x[elem_ID, :, 0] <= 1.).reshape(-1)
-			iright = (x[elem_ID, :, 0] > 1.).reshape(-1)
+			ileft = (x[elem_ID, :, 0] <= self.xd).reshape(-1)
+			iright = (x[elem_ID, :, 0] > self.xd).reshape(-1)
+			# Replacement to prevent quadratic approximation of in-element
+			# discontinuity sending the state negative
+			if np.all(x[elem_ID, :, 0] >= 0.0):
+				ileft = (x[elem_ID, :, 0] < 0.).reshape(-1)
+				iright = (x[elem_ID, :, 0] >= 0.).reshape(-1)
 			# Fill left/right mass-related quantities
 			Uq[elem_ID, ileft, iarhoA] = arhoAL
 			Uq[elem_ID, iright, iarhoA] = arhoAR
@@ -198,7 +203,7 @@ class UniformExsolutionTest(FcnBase):
 	'''
 
 	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=2500.0, u=0., T=1000., #arhoM=2496.3
-		arhoWt=50.0, arhoC=100.0):
+		arhoWt=2500.0*0.04, arhoC=100.0):
 		self.arhoA = arhoA
 		self.arhoWv = arhoWv
 		self.arhoM = arhoM

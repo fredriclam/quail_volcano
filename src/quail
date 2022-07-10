@@ -496,8 +496,9 @@ def dom_recursive_build(deck, domain_list,
 	for func_spec in deck.__dict__.get("Inject", []):
 		# Append injected function to multidomain's user function list
 		dom.user_functions.append(func_spec["Function"],
-			deck.__dict__.get("Initial", True),
-			deck.__dict__.get("Postinitial", True))
+			initial=func_spec.get("Initial", True),
+			postinitial=func_spec.get("Postinitial", True),
+			owner_domain=dom)
 
 	# Add built domain to domain_list
 	domain_list.append(dom)

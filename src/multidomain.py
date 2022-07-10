@@ -70,7 +70,7 @@ class Domain():
     if self.solver.custom_user_function is not None:
       # Append function to sequence of functions as a single callable
       self.user_functions.append_always(self.solver.custom_user_function)
-    # Set post-await as user function
+    # Set post-await as user function as last function
     self.user_functions.append_always(self.post_await)
 
     # Provide sequence of custom users functions to Quail API
@@ -109,13 +109,17 @@ class Domain():
         postinitial: flag whether callback is designated for > 1st call
       '''
       def __init__(self, function:Callable,
-          initial:bool=True, postinitial:bool=True):
+          initial:bool=True, postinitial:bool=True, owner_domain=None):
         self.function = function
         self.initial = initial
         self.postinitial = postinitial
+        self.owner_domain = owner_domain
 
       def __call__(self, solver):
-        return self.function(solver)
+        if self.owner_domain is None:
+          return self.function(solver)
+        else:
+          return self.function(solver, owner_domain=self.owner_domain)
       
 
     def __call__(self, solver):
@@ -128,17 +132,18 @@ class Domain():
       self.call_count += 1
 
     def append(self, functions:Union[Callable,list[Callable]],
-      initial:bool=True, postinitial:bool=True):
+      initial:bool=True, postinitial:bool=True, owner_domain=None):
       ''' Add function to function sequence, specifying whether active for
       initial call and post initial call.'''
 
       try:
         for value in functions:
           self.callbacks.append(
-            __class__.CallbackType(value, initial, postinitial))
+            __class__.CallbackType(value, initial, postinitial, owner_domain))
       except TypeError:
+        # `functions` as a single Callable
         self.callbacks.append(
-            __class__.CallbackType(functions, initial, postinitial))
+            __class__.CallbackType(functions, initial, postinitial, owner_domain))
  
     def append_always(self, functions:Union[Callable,list[Callable]]):
       ''' Add function to function sequence, and have it execute every time

@@ -19,6 +19,8 @@ import numerics.basis.tools as basis_tools
 import scipy
 import processing.readwritedatafiles as readwritedatafiles
 import matplotlib.pyplot as plt
+import copy
+import logging
 
 from scipy.sparse import dok_array
 from typing import Callable
@@ -72,6 +74,16 @@ class GlobalDG():
     self.unsteady_residuals_elements = None
     self.unsteady_residuals_face = None
     self.unsteady_residuals = None
+
+    # Initalize logger
+    self.logger = logging.getLogger(__name__)
+    self.logger.setLevel(logging.DEBUG)
+    h = logging.FileHandler(
+      filename=f"hydrostatic_{hash(solver)}.log",
+      encoding="utf-8")
+    h.setFormatter(logging.Formatter(
+      '[%(asctime)s][%(levelname)s] Logger <%(name)s> : %(message)s'))
+    self.logger.addHandler(h)
 
   def inv_ravel(self, data:np.array):
     ''' Inverse of ravel operation: (N,1) -> (ne, nb, 1) '''
@@ -188,12 +200,12 @@ class GlobalDG():
 
   def set_initial_condition(self, p_bdry:float=1e5, p_bc_loc:str="x2",
     is_jump_included:bool=False, x_jump:float=0.0, is_x_jump_exact:bool=False,
-    traction_fn:Callable=None):
+    traction_fn:Callable=None, owner_domain=None):
     ''' Replace the initial condition in self.solver with hydrostatic
     condition.
     
     Inputs:
-    p_bdry: pressure at boundary
+    p_bdry: pressure at boundary. If None, awaits and retrieves data from bnet
     p_bc_loc: location of pressure boundary condition
     is_jump_included: whether a pressure jump is included in the initial cond
     x_jump: nominal position for placing the pressure jump
@@ -202,6 +214,27 @@ class GlobalDG():
     '''
 
     solver = self.solver
+
+    ''' Comms '''
+    if p_bdry is None:
+      if owner_domain is None:
+        raise Exception("Boundary pressure value not provided, but owner "
+          + "of domain in data network is unknown.")
+      # Await boundary pressure 
+      # Get id string of adjacent domain from domain graph (local)
+      physics = self.solver.physics
+      bkey = physics.BCs[p_bc_loc].bkey
+      adjacent_domain_id = [
+        key for key in 
+        physics.domain_edges[physics.domain_id][bkey] 
+        if key != physics.domain_id][0]
+      # Get key for boundary state in shared memory (via Manager.dict)
+      data_net_key = physics.edge_to_key(
+                      physics.domain_edges[physics.domain_id][bkey],
+                      adjacent_domain_id)
+      # Return orientation-corrected exterior state
+      Ub = physics.bdry_data_net[data_net_key]["bdry_face_state"]
+      p_bdry = physics.compute_additional_variable("Pressure", Ub, True)[0,0,0]
 
     ''' Identify index and normal corresponding to bc loc '''
     filtered = [i for i in range(self.N) 
@@ -281,9 +314,12 @@ class GlobalDG():
         # Save x_jump snapped to closest face
         self.x_jump_actual = np.min(np.abs(x_jump - solver.mesh.node_coords))
         # Add pressure jump source
-        target_idx = max(face.elemL_ID, face.elemR_ID)
+        # Adjust index by 1 due to INTERIOR face indexing (excludes bdry faces)
+        target_idx = max(face.elemL_ID-1, face.elemR_ID-1)
         delta_source[self.nb*target_idx-1] = p_jump/2
         delta_source[self.nb*target_idx] = p_jump/2
+
+        # Process origin state
 
     ''' Assemble local Lax-Friedrichs numerical flux matrix A '''
     A = dok_array((self.N, self.N,))
@@ -389,18 +425,26 @@ class GlobalDG():
     # Evaluate Quail-ready state
     U = self.eval_barotropic_state(p)
     # Check unsteady problem residual
-    self.unsteady_residuals_face = np.zeros_like(U)
-    self.solver.get_boundary_face_residuals(U, self.unsteady_residuals_face)
-    self.solver.get_interior_face_residuals(U, self.unsteady_residuals_face)
-    self.unsteady_residuals_elements = np.zeros_like(U)
-    self.solver.get_element_residuals(U, self.unsteady_residuals_elements)
-    self.unsteady_residuals = self.unsteady_residuals_face\
-      + self.unsteady_residuals_elements
+    try:
+      self.unsteady_residuals_face = np.zeros_like(U)
+      self.solver.get_boundary_face_residuals(U, self.unsteady_residuals_face)
+      self.solver.get_interior_face_residuals(U, self.unsteady_residuals_face)
+      self.unsteady_residuals_elements = np.zeros_like(U)
+      self.solver.get_element_residuals(U, self.unsteady_residuals_elements)
+      self.unsteady_residuals = self.unsteady_residuals_face\
+        + self.unsteady_residuals_elements
+    except KeyError as err:
+      # Data not found in boundary data net
+      self.logger.info(f'''The following exception occurred due to evaluating
+        residuals before boundary data was posted. If the residual is not needed
+        for computation and is only used for verification, then this error can
+        be safely ignored.''')
+      self.logger.error(f"KeyError: {err}",stack_info=True)
 
     # plt.plot(self.x, p)
 
     # Replace solver state coefficients with hydrostatic state
-    self.solver.state_coeffs = self.eval_barotropic_state(p)
+    self.solver.state_coeffs = U
 
     # Replace output initial condition with equilibrated condition
     if self.solver.params["WriteInitialSolution"]:

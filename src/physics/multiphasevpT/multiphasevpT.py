@@ -170,7 +170,7 @@ class MultiphasevpT(base.PhysicsBase):
 		''' Flag non-physical state '''
 		if flag_non_physical:
 			if np.any(arhoA < 0.) or np.any(arhoWv < 0.) or np.any(arhoM < 0.) \
-				 or np.any(arhoWt < 0.) or np.any(arhoC < 0.):
+				 or np.any(arhoWt < 0.): # or np.any(arhoC < 0.):
 				raise errors.NotPhysicalError
 
 		''' Nested functions for common quantities 

@@ -1,5 +1,4 @@
 import numpy as np
-import copy
 from physics.multiphasevpT.hydrostatic import GlobalDG
 
 # Brute force P0 setting
@@ -15,8 +14,8 @@ if use_P0_detailed:
 else:
     TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 1,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+	"FinalTime" : 0.9,#0.030,#1.0, #0.1 @ meter scale
+	"NumTimeSteps" : 4500,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
      # 100000 for generalB1, 400~K
 	"TimeStepper" : "Strang",
 }
@@ -33,14 +32,14 @@ Numerics = {
     "FaceQuadrature" : "GaussLegendre",
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-    "ArtificialViscosity" : False,
+    "ArtificialViscosity" : True,
 	"AVParameter" : 100, # 150 ~ 500 is ok for this commit #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
 Output = {
 	"Prefix" : "mixture_shocktube_conduit",
-	"WriteInterval" : 10,#4*200,
+	"WriteInterval" : 100,#4*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
@@ -57,7 +56,7 @@ else:
     Mesh = {
         "File" : None,
         "ElementShape" : "Segment",
-        "NumElemsX" : 30, #3*301, #151,#351,
+        "NumElemsX" : 150, #3*301, #151,#351, # Use even number if using p_jump IC
         "xmin" : -600.0,
         "xmax" : 600.0,
     }
@@ -93,8 +92,8 @@ if False:
 # UQuiescent = np.array([rhoAmbient, 0.0, eAmbient])
 
 InitialCondition = {
-	"Function" : "UniformExsolutionTest",
-    # "Function" : "RiemannProblem",
+	# "Function" : "UniformExsolutionTest",
+    "Function" : "RiemannProblem",
     # "rhoL": 12.5,
     # "uL": 0.0,
     # "pL": 10*1e5,
@@ -106,11 +105,13 @@ InitialCondition = {
 }
 
 # List of functions to inject in custom user function
-def hydrostatic_solve(solver):
+def hydrostatic_solve(solver, owner_domain=None):
     GlobalDG(solver).set_initial_condition(
         p_bdry=1e5,
         is_jump_included=True,
-        traction_fn=lambda x: (-1e5)*np.exp(-((x-500.0)/50.0)**2.0))
+        owner_domain=owner_domain,
+        # traction_fn=lambda x: (-1e5)*np.exp(-((x-0.0)/50.0)**2.0)
+    )
 
 Inject = [
     {
@@ -154,12 +155,21 @@ IsDecoupled = True
 if IsDecoupled:
     BoundaryConditions = {
         "x1" : {
-            "BCType" : "SlipWall"
+            # "BCType" : "SlipWall"
+            "BCType" : "MultiphasevpT1D1D",
+            "bkey": "interface_-1",
         },
         "x2" : { 
             "BCType" : "SlipWall",
         },
     }
+
+    LinkedSolvers = [
+        {
+            "DeckName": "conduit2.py",
+            "BoundaryName": "interface_-1",
+        },
+    ]
 else:
     BoundaryConditions = {
         "x1" : {
