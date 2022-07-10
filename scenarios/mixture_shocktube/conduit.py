@@ -14,8 +14,8 @@ if use_P0_detailed:
 else:
     TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 0.9,#0.030,#1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 4500,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+	"FinalTime" : 1.3,#0.030,#1.0, #0.1 @ meter scale
+	"NumTimeSteps" : 6500,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
      # 100000 for generalB1, 400~K
 	"TimeStepper" : "Strang",
 }
@@ -110,7 +110,7 @@ def hydrostatic_solve(solver, owner_domain=None):
         p_bdry=1e5,
         is_jump_included=True,
         owner_domain=owner_domain,
-        # traction_fn=lambda x: (-1e5)*np.exp(-((x-0.0)/50.0)**2.0)
+        # traction_fn=lambda x: (-1e7/(50.0*np.sqrt(np.pi)))*np.exp(-((x-0.0)/50.0)**2.0)
     )
 
 Inject = [

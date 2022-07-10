@@ -36,6 +36,16 @@ class Domain():
     self.domain_output = None
     self.verbose = verbose
     self.user_functions = Domain.UserFunctionSeq()
+
+    # Initalize logger
+    self.logger = logging.getLogger(__name__)
+    self.logger.setLevel(logging.DEBUG)
+    h = logging.FileHandler(
+      filename=f"multidomain_id{id}_{hash(solver)}.log",
+      encoding="utf-8")
+    h.setFormatter(logging.Formatter(
+      '[%(asctime)s][%(levelname)s] Logger <%(name)s> : %(message)s'))
+    self.logger.addHandler(h)
   
   def set_network(self, glight_condition, ready_queue,
                   bdry_data_net, domain_output_dict):
