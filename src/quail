@@ -108,6 +108,8 @@ def set_physics(mesh, physics_type):
 		physics_class = chemistry.Chemistry1D
 	elif PhysicsType[physics_type] == PhysicsType.MultiphasevpT and ndims == 1:
 		physics_class = multiphasevpT.MultiphasevpT1D
+	elif PhysicsType[physics_type] == PhysicsType.MultiphasevpT and ndims == 2:
+		physics_class = multiphasevpT.MultiphasevpT2D
 	else:
 			raise NotImplementedError
 

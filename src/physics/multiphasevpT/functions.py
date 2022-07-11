@@ -43,6 +43,8 @@ class FcnType(Enum):
 	RiemannProblem = auto()
 	GravityRiemann = auto()
 	UniformExsolutionTest = auto()
+	IsothermalAtmosphere = auto()
+	LinearAtmosphere = auto()
 
 
 class BCType(Enum):
@@ -234,6 +236,123 @@ class UniformExsolutionTest(FcnBase):
 		Uq[:, :, iarhoWv] = arhoWv
 		Uq[:, :, iarhoM] = arhoM
 		Uq[:, :, imom] = rho * u
+		Uq[:, :, ie] = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoC
+
+		return Uq # [ne, nq, ns]
+
+
+class IsothermalAtmosphere(FcnBase):
+	'''
+	Isothermal air atmosphere as an initial condition.
+	'''
+
+	def __init__(self,T:float=300., p_atm:float=1e5,
+		h0:float=0.0, gravity:float=9.8):
+		''' Set atmosphere temperature, pressure, and location of pressure.
+		Pressure distribution is computed as hydrostatic profile with p = p_atm
+		at elevation h0.
+		'''
+		self.T = T
+		self.p_atm = p_atm
+		self.h0 = h0
+		self.gravity = gravity
+
+	def get_state(self, physics, x, t):
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
+
+		# Compute scale height
+		hs = physics.Gas[0]["R"]*self.T/self.gravity
+		# Compute pressure
+		p = self.p_atm * np.exp(-(x[:,:,1:2] - self.h0)/hs).squeeze(axis=2)
+		# Pure air density
+		arhoA = p / (physics.Gas[0]["R"]*self.T)
+		# Zero or trace amounts of Wv, M and tracers
+		arhoWv = np.zeros_like(p)
+		arhoM = np.zeros_like(p)
+		arhoWt = np.zeros_like(p)
+		arhoC = np.zeros_like(p)
+		# Zero velocity
+		u = np.zeros_like(p)
+		v = np.zeros_like(p)
+
+		rho = arhoA + arhoWv + arhoM
+
+		e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
+			arhoWv * physics.Gas[1]["c_v"] * self.T + 
+			arhoM * (physics.Liquid["c_m"] * self.T + physics.Liquid["E_m0"])
+			+ 0.5 * rho * u**2.)
+		
+		Uq[:, :, iarhoA] = arhoA
+		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoM] = arhoM
+		Uq[:, :, irhou] = rho * u
+		Uq[:, :, irhov] = rho * v
+		Uq[:, :, ie] = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoC
+
+		return Uq # [ne, nq, ns]
+
+class LinearAtmosphere(FcnBase):
+	'''
+	Constant-density atmosphere (isopycnic) as an initial condition. The
+	Temperature is adjusted to keep the density constant (and thus the pressure
+	a linear function of elevation).
+	'''
+
+	def __init__(self,T0:float=300., p_atm:float=1e5,
+		h0:float=0.0, gravity:float=9.8):
+		''' Set atmosphere temperature, pressure, and location of pressure.
+		Pressure distribution is computed as hydrostatic profile with p = p_atm
+		at elevation h0.
+		'''
+		self.T0 = T0
+		self.p_atm = p_atm
+		self.h0 = h0
+		self.gravity = gravity
+
+	def get_state(self, physics, x, t):
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
+
+		# Compute scale height at reference temperature T0
+		hs0 = physics.Gas[0]["R"]*self.T0/self.gravity
+		# Compute pressure linear in elevation
+		p = self.p_atm * (1.0 - (x[:,:,1:2] - self.h0)/hs0).squeeze(axis=2)
+		# Constant pure air density at h0
+		arhoA = self.p_atm / (physics.Gas[0]["R"]*self.T0)
+		# Compute temperature
+		T = p / (arhoA * physics.Gas[0]["R"])
+		# Zero or trace amounts of Wv, M and tracers
+		arhoWv = np.zeros_like(p)
+		arhoM = np.zeros_like(p)
+		arhoWt = np.zeros_like(p)
+		arhoC = np.zeros_like(p)
+		# Zero velocity
+		u = np.zeros_like(p)
+		v = np.zeros_like(p)
+
+		rho = arhoA + arhoWv + arhoM
+
+		e = (arhoA * physics.Gas[0]["c_v"] * T + 
+			arhoWv * physics.Gas[1]["c_v"] * T + 
+			arhoM * (physics.Liquid["c_m"] * T + physics.Liquid["E_m0"])
+			+ 0.5 * rho * u**2.)
+		
+		Uq[:, :, iarhoA] = arhoA
+		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoM] = arhoM
+		Uq[:, :, irhou] = rho * u
+		Uq[:, :, irhov] = rho * v
 		Uq[:, :, ie] = e
 		# Tracer quantities
 		Uq[:, :, iarhoWt] = arhoWt
@@ -1024,7 +1143,7 @@ class Euler2D2D(BCWeakRiemann):
 class MultiphasevpT1D1D(BCWeakRiemann):
 	'''
 	This class implements a 1D-1D coupling boundary condition.
-	The interior convective flux and the artifical viscosity diffusion integral
+	TODO: The numerical flux for the artifical viscosity diffusion integral
 	need to be dealt with.
 
 	Attributes:
@@ -1056,6 +1175,41 @@ class MultiphasevpT1D1D(BCWeakRiemann):
 			copy.copy(physics.bdry_data_net[data_net_key]["bdry_face_state"]),
 			axis=(0,1))
 
+
+class MultiphasevpT2D2D(BCWeakRiemann):
+	'''
+	This class implements a 2D-2D coupling boundary condition.
+	TODO: The numerical flux for the artifical viscosity diffusion integral
+	need to be dealt with.
+
+	Attributes:
+	-----------
+	bkey (str): Key corresponding to boundary as edge in domain graph; typically
+	            the name of the boundary.
+	'''
+
+	def __init__(self, bkey):
+		self.bkey = bkey
+
+	def get_extrapolated_state(self, physics, UqI, normals, x, t):
+		''' Called when computing states at shared boundaries. '''
+		return UqI
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Get shared state UqI and return (BCWeakRiemann) '''
+		# Get id string of adjacent domain from domain graph (local)
+		adjacent_domain_id = [
+			key for key in 
+			physics.domain_edges[physics.domain_id][self.bkey] 
+			if key != physics.domain_id][0]
+		# Get key for boundary state in shared memory (via Manager.dict)
+		data_net_key = physics.edge_to_key(
+										 physics.domain_edges[physics.domain_id][self.bkey],
+										 adjacent_domain_id)
+		# Return orientation-corrected exterior state
+		return np.flip(
+			copy.copy(physics.bdry_data_net[data_net_key]["bdry_face_state"]),
+			axis=(0,1))
 
 '''
 ---------------------
@@ -1392,26 +1546,24 @@ class LaxFriedrichs2D(ConvNumFluxBase):
 		n_hat = normals/n_mag
 
 		# Left flux
-		FqL, (u2L, v2L, rhoL, pL) = physics.get_conv_flux_projected(UqL,
+		FqL, (u2L, v2L, aL) = physics.get_conv_flux_projected(UqL,
 				n_hat)
 
 		# Right flux
-		FqR, (u2R, v2R, rhoR, pR) = physics.get_conv_flux_projected(UqR,
+		FqR, (u2R, v2R, aR) = physics.get_conv_flux_projected(UqR,
 				n_hat)
 
 		# Jump
 		dUq = UqR - UqL
 
 		# Max wave speeds at each point
-		aL = np.empty(pL.shape + (1,))
-		aR = np.empty(pR.shape + (1,))
-		aL[:, :, 0] = np.sqrt(u2L + v2L) + np.sqrt(physics.gamma * pL / rhoL)
-		aR[:, :, 0] = np.sqrt(u2R + v2R) + np.sqrt(physics.gamma * pR / rhoR)
-		idx = aR > aL
-		aL[idx] = aR[idx]
+		wL = np.empty(u2L.shape + (1,))
+		wR = np.empty(u2R.shape + (1,))
+		wL[:, :, 0] = np.sqrt(u2L + v2L) + aL
+		wR[:, :, 0] = np.sqrt(u2R + v2R) + aR
 
 		# Put together
-		return 0.5 * n_mag * (FqL + FqR - aL*dUq)
+		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)
 
 
 class Roe1D(ConvNumFluxBase):

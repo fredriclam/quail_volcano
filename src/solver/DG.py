@@ -926,6 +926,12 @@ class DG(base.SolverBase):
 		resR = np.zeros([nifR, nq, ns])
 		resL_diff = np.zeros([nifL, nq, ns])
 		resR_diff = np.zeros([nifR, nq, ns])
+		# >>> HACK: Change to Quail when fluxes is False: replace nq with nb <<<
+		nb = faces_to_basisL[0].shape[-1]
+		resL = np.zeros([nifL, nb, ns])
+		resR = np.zeros([nifR, nb, ns])
+		resL_diff = np.zeros([nifL, nb, ns])
+		resR_diff = np.zeros([nifR, nb, ns])
 
 		if physics.diff_flux_fcn:
 			# Calculate diffusion flux helpers

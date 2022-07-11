@@ -11,6 +11,7 @@ import numerics.helpers.helpers as helpers
 from dataclasses import dataclass
 from typing import Callable, Union
 import logging
+import queue
 
 
 _global_timeout_seconds = 615.0
@@ -209,9 +210,16 @@ class Domain():
     # Await green light
     with self.glight_condition:
         self.ready_queue.put(self.id)
-        is_success = self.glight_condition.wait(timeout=Domain.wait_timeout)
-        if not is_success:
-          raise Exception("Waiting for green-light timed out.")
+        try:
+          is_success = self.glight_condition.wait(timeout=Domain.wait_timeout)
+          if not is_success:
+            raise Exception("Waiting for green-light timed out.")
+        except queue.Empty as err:
+          self.logger.info(f'''The following exception occurred due to
+          multidomain.Domain timing out while waiting for the green light
+          condition from boundary data network. If this occured while the
+          code is paused in a debugger, this error can be ignored.''')
+          self.logger.error(f"KeyError: {err}",stack_info=True)
 
 class Observer():
   ''' Observer that oversees synchronization of multiple domains. '''

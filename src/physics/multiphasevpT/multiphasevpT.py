@@ -25,6 +25,7 @@
 # ------------------------------------------------------------------------ #
 from enum import Enum
 import numpy as np
+from pkg_resources import NullProvider
 
 import errors
 import general
@@ -73,7 +74,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.SlipWall : mpvpT_fcns.SlipWall,
 			# BCType.PressureOutlet : mpvpT_fcns.PressureOutlet,
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
-			# BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
+			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 		})
 
@@ -473,7 +474,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		mass_indices = [self.get_state_index("pDensityA"),
 										self.get_state_index("pDensityWv"),
 										self.get_state_index("pDensityM")]
-		ifirst = np.min(mass_indices)
+		# TODO: implement for non-contiguous states
 		return slice(np.min(mass_indices), np.min(mass_indices)+len(mass_indices))
 
 	def get_momentum_slice(self):
@@ -495,12 +496,9 @@ class MultiphasevpT1D(MultiphasevpT):
 
 		# Compute mixture (total) density
 		rho = arhoA + arhoWv + arhoM
-		p = self.compute_additional_variable("Pressure", Uq, True)
-		p = np.squeeze(p, axis=2)
-		# Compute velocity vector
+		p = self.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
 		u = mom / rho
-		# Compute squared norm of velocity
-		u2 = u**2.
+		u2 = u**2.0
 		# u2 = np.sum(mom**2, axis=2, keepdims=True) / np.power(rho, 2.)
 		
 		# Construct physical flux
@@ -629,7 +627,8 @@ class MultiphasevpT2D(MultiphasevpT):
 		super().set_maps()
 
 		d = {
-			FcnType.Ambient: lambda:(blah for blah in ()).throw(NotImplementedError("Nothing in Ambient.")),
+			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
+			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
 			# euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
 			# euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
 			# euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
@@ -640,12 +639,12 @@ class MultiphasevpT2D(MultiphasevpT):
 		self.BC_fcn_map.update(d)
 
 		self.source_map.update({
-			SourceType.GravitySource: lambda:(blah for blah in ()).throw(NotImplementedError("Nothing in Ambient.")),
+			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 		})
 
 		self.conv_num_flux_map.update({
 			base_conv_num_flux_type.LaxFriedrichs:
-				mpvpT_fcns.mpvpT_fcns.LaxFriedrichs1D,
+				mpvpT_fcns.LaxFriedrichs2D,
 		})
 
 	class StateVariables(Enum):
@@ -669,6 +668,13 @@ class MultiphasevpT2D(MultiphasevpT):
 		iarhoC = self.get_state_index("pDensityC")
 		return iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC
 
+	def get_mass_slice(self):
+		# Get mass component indices
+		mass_indices = [self.get_state_index("pDensityA"),
+										self.get_state_index("pDensityWv"),
+										self.get_state_index("pDensityM")]
+		return slice(np.min(mass_indices), np.min(mass_indices)+len(mass_indices))
+
 	def get_momentum_slice(self):
 		irhou = self.get_state_index("XMomentum")
 		irhov = self.get_state_index("YMomentum")
@@ -691,31 +697,31 @@ class MultiphasevpT2D(MultiphasevpT):
 		# Extract momentum in vector form ([n, nq, ndims])
 		mom    = Uq[:, :, smom]
 
-		# Compute intermediate quantities
-		u = rhou / rho
-		v = rhov / rho
-		u2 = u**2
-		v2 = v**2
-		vel = mom / rho
-		rhouv = rhou * v
 		# Compute mixture (total) density
 		rho = arhoA + arhoWv + arhoM
 		p = self.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
+		u = rhou / rho
+		v = rhov / rho
+		u2 = u**2.0
+		v2 = v**2.0
+		rhouv = rhou * v
+		# Vector
+		vel = mom / np.expand_dims(rho,axis=2)
 
 		# Construct physical flux
 		F = np.empty(Uq.shape + (self.NDIMS,)) # [n, nq, ns, ndims]
-		F[:, :, iarhoA,  :] = arhoA * vel         # Flux of massA in all directions
-		F[:, :, iarhoWv, :] = arhoWv * vel        # Flux of massWv in all directions
-		F[:, :, iarhoM,  :] = arhoM * vel         # Flux of massM in all directions
+		# Compute flux of non-tracer mass quantities in all directions
+		F[:, :, self.get_mass_slice(),  :] = np.einsum(
+			"ijk, ijl -> ijkl", Uq[:,:,self.get_mass_slice()], vel)
 		F[:, :, irhou,   0] = rho * u2 + p        # x-flux of x-momentum
 		F[:, :, irhov,   0] = rhouv               # x-flux of y-momentum
 		F[:, :, irhou,   1] = rhouv               # y-flux of x-momentum
 		F[:, :, irhov,   1] = rho * v2 + p        # y-flux of y-momentum
-		F[:, :, ie,      :] = (e + p) * vel       # Flux of energy in all directions
-		F[:, :, iarhoWt, :] = arhoWt * vel        # Flux of massWt in all directions
-		F[:, :, iarhoC,  :] = arhoC * vel         # Flux of massC in all directions
+		F[:, :, ie,      :] = np.expand_dims(e + p,axis=2)    # Flux of energy in all directions
+		F[:, :, iarhoWt, :] = np.expand_dims(arhoWt,axis=2)   # Flux of massWt in all directions
+		F[:, :, iarhoC,  :] = np.expand_dims(arhoC,axis=2)    # Flux of massC in all directions
 
 		# Compute sound speed
 		a = self.compute_additional_variable("SoundSpeed", Uq, True).squeeze(axis=2)
 
-		return F, (u2, v2, rho, p, a)
+		return  F, (u2, v2, a)

@@ -1,5 +1,5 @@
 import numpy as np
-from physics.multiphasevpT.hydrostatic import GlobalDG
+from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 # Brute force P0 setting
 use_P0_detailed = False
@@ -33,7 +33,7 @@ Numerics = {
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 100, # 150 ~ 500 is ok for this commit #150, #50, #1e-5, #1e3, 5e3,
+	"AVParameter" : 150, # 150 ~ 500 is ok for this commit #150, #50, #1e-5, #1e3, 5e3,
     'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
