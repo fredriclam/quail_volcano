@@ -3,22 +3,22 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 # Brute force P0 setting
 use_P0_detailed = False
-if use_P0_detailed:
-    TimeStepping = {
-        "InitialTime" : 0.0,
-        "FinalTime" : 0.5*2*2.0, #0.1 @ meter scale
-        "NumTimeSteps" : 2*10*20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-    # 100000 for generalB1, 400~K
-        "TimeStepper" : "FE",
-    }
-else:
-    TimeStepping = {
-	"InitialTime" : 0.0,
-	"FinalTime" : 1.3,#0.030,#1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 6500,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-     # 100000 for generalB1, 400~K
-	"TimeStepper" : "Strang",
-}
+# if use_P0_detailed:
+#     TimeStepping = {
+#         "InitialTime" : 0.0,
+#         "FinalTime" : 0.5*2*2.0, #0.1 @ meter scale
+#         "NumTimeSteps" : 2*10*20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+#     # 100000 for generalB1, 400~K
+#         "TimeStepper" : "FE",
+#     }
+# else:
+#     TimeStepping = {
+# 	"InitialTime" : 0.0,
+# 	"FinalTime" : 1.3,#0.030,#1.0, #0.1 @ meter scale
+# 	"NumTimeSteps" : 6500,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+#      # 100000 for generalB1, 400~K
+# 	"TimeStepper" : "Strang",
+# }
 
 Numerics = {
     "SolutionOrder" : 2,
@@ -39,7 +39,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "mixture_shocktube_conduit",
-	"WriteInterval" : 100,#4*200,
+	"WriteInterval" : 30,#4*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
@@ -56,9 +56,9 @@ else:
     Mesh = {
         "File" : None,
         "ElementShape" : "Segment",
-        "NumElemsX" : 150, #3*301, #151,#351, # Use even number if using p_jump IC
-        "xmin" : -600.0,
-        "xmax" : 600.0,
+        "NumElemsX" : 120, #3*301, #151,#351, # Use even number if using p_jump IC
+        "xmin" : -600.0-400,
+        "xmax" : 600.0-400,
     }
 
 Physics = {
@@ -160,7 +160,9 @@ if IsDecoupled:
             "bkey": "interface_-1",
         },
         "x2" : { 
-            "BCType" : "SlipWall",
+            # "BCType" : "SlipWall",
+            "BCType" : "MultiphasevpT2D1D",
+            "bkey": "vent",
         },
     }
 

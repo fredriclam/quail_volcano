@@ -76,6 +76,7 @@ class MultiphasevpT(base.PhysicsBase):
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
+			BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 		})
 
 	def set_physical_params(self, 
@@ -717,9 +718,9 @@ class MultiphasevpT2D(MultiphasevpT):
 		F[:, :, irhov,   0] = rhouv               # x-flux of y-momentum
 		F[:, :, irhou,   1] = rhouv               # y-flux of x-momentum
 		F[:, :, irhov,   1] = rho * v2 + p        # y-flux of y-momentum
-		F[:, :, ie,      :] = np.expand_dims(e + p,axis=2)    # Flux of energy in all directions
-		F[:, :, iarhoWt, :] = np.expand_dims(arhoWt,axis=2)   # Flux of massWt in all directions
-		F[:, :, iarhoC,  :] = np.expand_dims(arhoC,axis=2)    # Flux of massC in all directions
+		F[:, :, ie,      :] = np.expand_dims(e + p,axis=2) * vel    # Flux of energy in all directions
+		F[:, :, iarhoWt, :] = np.expand_dims(arhoWt,axis=2) * vel   # Flux of massWt in all directions
+		F[:, :, iarhoC,  :] = np.expand_dims(arhoC,axis=2) * vel    # Flux of massC in all directions
 
 		# Compute sound speed
 		a = self.compute_additional_variable("SoundSpeed", Uq, True).squeeze(axis=2)

@@ -21,15 +21,17 @@
 #       terms for the multiphase vpT relaxation equations.
 #
 # ------------------------------------------------------------------------ #
+from abc import abstractmethod
 from enum import Enum, auto
 import numpy as np
 from scipy.optimize import fsolve, root
 
 import errors
 import general
+import logging
 
-from physics.base.data import (FcnBase, BCWeakRiemann, BCWeakPrescribed,
-        SourceBase, ConvNumFluxBase)
+from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
+				SourceBase, ConvNumFluxBase)
 
 from dataclasses import dataclass
 import copy
@@ -111,7 +113,7 @@ class RiemannProblem(FcnBase):
 		location of initial discontinuity
 	'''
 	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0., TL=1000., arhoWtL=10.0, arhoCL=100.0, 
-	             arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-8, uR=0., TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0.):
+							 arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-6, uR=0., TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0.):
 		'''
 		This method initializes the attributes.
 
@@ -122,7 +124,7 @@ class RiemannProblem(FcnBase):
 
 		Outputs:
 		--------
-		    self: attributes initialized
+				self: attributes initialized
 		'''
 		self.arhoAL = arhoAL
 		self.arhoWvL = arhoWvL
@@ -308,7 +310,7 @@ class LinearAtmosphere(FcnBase):
 	'''
 
 	def __init__(self,T0:float=300., p_atm:float=1e5,
-		h0:float=0.0, gravity:float=9.8):
+		h0:float=-150.0, gravity:float=9.8, arhoWv=1.161*5e-3, arhoMR=1e-9):
 		''' Set atmosphere temperature, pressure, and location of pressure.
 		Pressure distribution is computed as hydrostatic profile with p = p_atm
 		at elevation h0.
@@ -317,6 +319,8 @@ class LinearAtmosphere(FcnBase):
 		self.p_atm = p_atm
 		self.h0 = h0
 		self.gravity = gravity
+		self.arhoWv = arhoWv
+		self.arhoMR = arhoMR
 
 	def get_state(self, physics, x, t):
 		# Unpack
@@ -333,9 +337,9 @@ class LinearAtmosphere(FcnBase):
 		# Compute temperature
 		T = p / (arhoA * physics.Gas[0]["R"])
 		# Zero or trace amounts of Wv, M and tracers
-		arhoWv = np.zeros_like(p)
-		arhoM = np.zeros_like(p)
-		arhoWt = np.zeros_like(p)
+		arhoWv = self.arhoWv*np.ones_like(p)
+		arhoM = self.arhoMR*np.ones_like(p)
+		arhoWt = arhoWv
 		arhoC = np.zeros_like(p)
 		# Zero velocity
 		u = np.zeros_like(p)
@@ -444,7 +448,7 @@ class PressureOutlet(BCWeakPrescribed):
 
 		Outputs:
 		--------
-		    self: attributes initialized
+				self: attributes initialized
 		'''
 		self.p = p
 
@@ -752,7 +756,69 @@ class CustomInlet(BCWeakPrescribed):
 		return UqB
 
 
-class CouplingBC(BCWeakRiemann):
+class BCWeakLLF(BCBase):
+	'''
+	This class computes the boundary numerical local Lax-Friedrichs flux using the
+	exterior state.
+	'''
+
+	def __init__(self):
+		pass
+		# Initalize logger
+		# self.logger = logging.getLogger(f"{__name__}{hash(self)}")
+		# self.logger.setLevel(logging.DEBUG)
+		# h = logging.FileHandler(
+		# 	filename=f"BCWeakLLF_{hash(self)}.log",
+		# 	encoding="utf-8")
+		# h.setFormatter(logging.Formatter(
+		# 	'[%(asctime)s][%(levelname)s] Logger <%(name)s> : %(message)s'))
+		# self.logger.addHandler(h)
+
+	def get_boundary_flux(self, physics, UqI, normals, x, t, gUq=None):
+		UqB = self.get_boundary_state(physics, UqI, normals, x, t)
+		# F = physics.get_conv_flux_numerical(UqI, UqB, normals)
+		# UqB = self.get_boundary_state(physics, UqI, normals, x, t)
+		# F,_ = physics.get_conv_flux_projected(UqB, normals)
+		
+		if physics.NDIMS == 2:
+			F = physics.get_conv_flux_numerical(UqI, UqB, normals)
+		else:
+			# TODO: replace averaging with proper quadrature
+			mask_omit_xmomentum = [i for i in np.array(range(UqB.shape[2]))
+				if not i == physics.get_state_index("XMomentum")]
+			# Squish 2D state to 1D face-averaged state
+			UqB_down = np.mean(UqB,axis=(0,1),keepdims=True)[:,:,mask_omit_xmomentum]
+			F = physics.get_conv_flux_numerical(UqI, UqB_down, normals)
+			UqB = UqB_down
+
+		# Initalize logger
+		self.logger = logging.getLogger(f"{__name__}{hash(self)}")
+		self.logger.setLevel(logging.DEBUG)
+		h = logging.FileHandler(
+			filename=f"BCWeakLLF_{hash(self)}.log",
+			encoding="utf-8")
+		h.setFormatter(logging.Formatter(
+			'[%(asctime)s][%(levelname)s] Logger <%(name)s> : %(message)s'))
+		# Hack: logging (conflicts when multiple proesses)
+		if len(self.logger.handlers)== 0:
+			self.logger.addHandler(h)
+
+		self.logger.info(f"t = {t}")
+		self.logger.info(f"UqI (interior) = {UqI}")
+		self.logger.info(f"UqB (outboundary) = {UqB}")
+		self.logger.info(f"F = {F}")
+
+		# Compute diffusive boundary fluxes if needed
+		if physics.diff_flux_fcn:
+			raise NotImplementedError
+			Fv, FvB = physics.get_diff_boundary_flux_numerical(UqI, UqB, 
+					gUq, normals) # [nf, nq, ns]
+			F -= Fv
+			return F, FvB # [nf, nq, ns], [nf, nq, ns, ndims]
+		else:
+			return F, None
+
+class CouplingBC(BCWeakLLF):
 	'''
 	This class corresponds to an coupled boundary that allows inflow or outflow.
 
@@ -766,25 +832,27 @@ class CouplingBC(BCWeakRiemann):
 	@dataclass
 	class LocalState:
 		''' Data namespace for states at a point in the boundary sequence'''
-		U: np.array = np.array(np.nan)       # State in native domain
-		Ucast: np.array = np.array(np.nan)   # State U, casted to common dim
-		vel: np.array = np.array(np.nan)
-		veln: np.array = np.array(np.nan)
-		velt: np.array = np.array(np.nan)
-		Mn: np.array = np.array(np.nan)
-		p: np.array = np.array(np.nan)
-		c: np.array = np.array(np.nan)
-		rho: np.array = np.array(np.nan)
-		x: np.array = np.array(np.nan)
-		n_hat: np.array = np.array(np.nan)
+		U: np.array     = np.array([])   # State in native domain
+		Ucast: np.array = np.array([])   # State U, casted to n-t coords
+		Ulift: np.array = np.array([])   # State U, lifted to common dim
+		vel: np.array   = np.array([])
+		veln: np.array  = np.array([])
+		velt: np.array  = np.array([])
+		# Mn: np.array    = np.array([])
+		# p: np.array     = np.array([])
+		a: np.array     = np.array([])
+		# rho: np.array   = np.array([])
+		x: np.array     = np.array([])
+		n_hat: np.array = np.array([])
 
 	# (Debug) Seconds to wait for bdry data before raising exception
-	maxWaitTime = 2.0
+	maxWaitTime = 5.0
 	
 	class NetworkTimeoutError(Exception):
 		pass
 
 	def __init__(self, bkey):
+		super().__init__()
 		self.bkey = bkey
 		self.bstate = CouplingBC.LocalState()
 
@@ -795,35 +863,34 @@ class CouplingBC(BCWeakRiemann):
 		'''
 		self.bstate = CouplingBC.LocalState()
 		# Unpack
-		srho = physics.get_state_slice("Density")
-		srhoE = physics.get_state_slice("Energy")
-		smom = physics.get_momentum_slice()
+		# srho = physics.get_state_slice("Density")
+		# srhoE = physics.get_state_slice("Energy")
+		# smom = physics.get_momentum_slice()
 		# Compute unit normals
 		self.bstate.n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
 		self.bstate.U = UqI
-		self.bstate.rho = UqI[:, :, srho]
-		self.bstate.vel = UqI[:, :, smom] / self.bstate.rho
+		self.bstate.vel = UqI[:, :, physics.get_momentum_slice()] / \
+			np.sum(UqI[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		self.bstate.veln = np.sum(self.bstate.vel*self.bstate.n_hat[:, :, :],
-													 axis=2,
-													 keepdims=True)
-		self.bstate.p = physics.compute_variable("Pressure", UqI)[:, :, :]
-		if np.any(self.bstate.p < 0.0):
-			raise errors.NotPhysicalError
-		self.bstate.c = physics.compute_variable("SoundSpeed", UqI)[:, :, :]
-		self.bstate.Mn = self.bstate.veln / self.bstate.c
+			axis=2, keepdims=True)
+		# self.bstate.p = physics.compute_variable("Pressure", UqI)[:, :, :]
+		self.bstate.a = physics.compute_variable("SoundSpeed", UqI)[:, :, :]
+		# self.bstate.Mn = self.bstate.veln / self.bstate.c
 		# Interior tangential velocity
 		self.bstate.velt = self.bstate.vel - self.bstate.veln*self.bstate.n_hat[:, :, :]
 		self.bstate.x = x[:,:,:]
 
 		return self.bstate
 
+	@abstractmethod
 	def get_boundary_state(self, physics, UqI, normals, x, t):
-		''' Called when computing states at shared boundaries. '''
-		raise NotImplementedError("Abstract CouplingBC class was instantiated. " +
-															" Implement get_boundary_state.")
+		pass
+		# ''' Called when computing states at shared boundaries. '''
+		# raise NotImplementedError("Abstract CouplingBC class was instantiated. " +
+		# 													" Implement get_boundary_state.")
 
 
-class Euler2D1D(CouplingBC):
+class MultiphasevpT2D1D(CouplingBC):
 	'''
 	This class couples a 2D Euler domain to a 1D Euler domain.
 	Broadcasts 1D states to 2D
@@ -835,31 +902,46 @@ class Euler2D1D(CouplingBC):
 
 	def __init__(self, bkey):
 		super().__init__(bkey)
-		self.bdry_flux_fcn = Roe2D()
+		self.bdry_flux_fcn = LaxFriedrichs2D()
 
 	def get_extrapolated_state(self, physics, UqI, normals, x, t):
 		''' Called when computing states at shared boundaries. '''
+
 		super().get_extrapolated_state(physics, UqI, normals, x, t)
 		self.bstate.Ucast = self.bstate.U.copy()
-		# Broadcast state U to 2D
+		
 		if physics.NDIMS == 1:
-			# Expand array shape
+			# Lift boundary state U to 2D
+			self.bstate.Ulift = np.copy(self.bstate.U)
+			# Insert XMomentum(1D) -> YMomentum(2D)
+			self.bstate.Ulift = np.insert(self.bstate.Ulift,
+				physics.get_momentum_slice(),
+				self.bstate.Ulift[:,:,physics.get_momentum_slice()], axis=2)
+			# Set XMomentum(1D) = 0
+			self.bstate.Ulift[:,:,physics.get_momentum_slice()] = 0.0
+			
+			np.append(self.bstate.Ucast, 
+								self.bstate.Ucast[:,:,-1:], axis=2)
 			self.bstate.Ucast = np.append(self.bstate.Ucast, 
 								self.bstate.Ucast[:,:,-1:], axis=2)
 			# Set tangential momentum to zero
-			self.bstate.Ucast[:,:,2] *= 0.0
+			self.bstate.Ucast[:,:,physics.get_momentum_slice()] = 0.0
 		elif physics.NDIMS == 2:
-			# Project to [rho, rho vel_n, rho vel_t, rho e]
-			self.bstate.Ucast[:,:,1:2] = self.bstate.rho * self.bstate.veln
+			# Project to [rho, ... , rho vel_n, rho vel_t, rho e, ...]
+			rho = self.bstate.Ucast[:,:,physics.get_mass_slice()].sum(
+				axis=2,keepdims=True)
+			self.bstate.Ucast[:,:,physics.get_momentum_slice()] = \
+				rho * self.bstate.veln
 			# TODO: check consistency of implementation. Tangentials are required to
 			# prevent self-amplification in the 2D domain
 			# TODO: check floating point cancellation 
 			rotation_cw = np.array([ [0, 1], [-1, 0], ])
-			t_hat = np.einsum('ijk, mk', self.bstate.n_hat, rotation_cw)
-			self.bstate.Ucast[:,:,2:3] = np.sum(
+			t_hat = np.einsum('mk, ijk', rotation_cw, self.bstate.n_hat)
+			self.bstate.Ucast[:,:,physics.get_momentum_slice()] = np.sum(
 				(self.bstate.vel - self.bstate.veln * self.bstate.n_hat) * t_hat,
 				axis=2,
 				keepdims=True)
+			self.bstate.Ulift = self.bstate.U.copy()
 		else:
 			raise Exception("Unhandled NDIMS in get_extrapolated_state. 0D?")
 		
@@ -942,6 +1024,9 @@ class Euler2D1D(CouplingBC):
 		# adjacent_bstate = copy.deepcopy(
 		# 	physics.bdry_data_net[physics.domain_id][self.bkey] \
 		# 	[adjacent_domain_id]["payload"])
+
+		#
+		return adjacent_bstate["bdry_face_state"].Ulift
 
 		# Prep useful parameters
 		gamma = physics.gamma
@@ -1113,7 +1198,7 @@ class Euler2D2D(BCWeakRiemann):
 	Attributes:
 	-----------
 	bkey (str): Key corresponding to boundary as edge in domain graph; typically
-	            the name of the boundary.
+							the name of the boundary.
 	'''
 
 	def __init__(self, bkey):
@@ -1149,7 +1234,7 @@ class MultiphasevpT1D1D(BCWeakRiemann):
 	Attributes:
 	-----------
 	bkey (str): Key corresponding to boundary as edge in domain graph; typically
-	            the name of the boundary.
+							the name of the boundary.
 	'''
 
 	def __init__(self, bkey):
@@ -1185,7 +1270,7 @@ class MultiphasevpT2D2D(BCWeakRiemann):
 	Attributes:
 	-----------
 	bkey (str): Key corresponding to boundary as edge in domain graph; typically
-	            the name of the boundary.
+							the name of the boundary.
 	'''
 
 	def __init__(self, bkey):
@@ -1262,7 +1347,7 @@ class FrictionVolFracConstMu(SourceBase):
 		'''
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
-										  f"{physics.NDIMS} spatial dimensions.")
+											f"{physics.NDIMS} spatial dimensions.")
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
 			physics.get_state_indices()
 
@@ -1425,7 +1510,7 @@ class ExsolutionSource(SourceBase):
 			
 			eq_conc = ExsolutionSource.get_eq_conc(physics, p)
 			S_scalar = (1.0/self.tau_d) * (
-        (1.0+eq_conc) * arhoWt 
+				(1.0+eq_conc) * arhoWt 
 				- (1.0+eq_conc) * arhoWv
 				- eq_conc * arhoM)
 			S_scalar[np.where(np.logical_and(
@@ -1603,7 +1688,7 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    self: attributes initialized
+				self: attributes initialized
 		'''
 		raise NotImplementedError("Roe flux not implemented for multiphase.")
 		if Uq is not None:
@@ -1635,7 +1720,7 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    Uq: momentum terms modified
+				Uq: momentum terms modified
 		'''
 		Uq[:, :, smom] *= n
 
@@ -1655,7 +1740,7 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    Uq: momentum terms modified
+				Uq: momentum terms modified
 		'''
 		Uq[:, :, smom] /= n
 
@@ -1680,9 +1765,9 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    rhoRoe: Roe-averaged density [nf, nq, 1]
-		    velRoe: Roe-averaged velocity [nf, nq, ndims]
-		    HRoe: Roe-averaged total enthalpy [nf, nq, 1]
+				rhoRoe: Roe-averaged density [nf, nq, 1]
+				velRoe: Roe-averaged velocity [nf, nq, ndims]
+				HRoe: Roe-averaged total enthalpy [nf, nq, 1]
 		'''
 		rhoL_sqrt = np.sqrt(UqL[:, :, srho])
 		rhoR_sqrt = np.sqrt(UqR[:, :, srho])
@@ -1714,9 +1799,9 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    drho: density jump [nf, nq, 1]
-		    dvel: velocity jump [nf, nq, ndims]
-		    dp: pressure jump [nf, nq, 1]
+				drho: density jump [nf, nq, 1]
+				dvel: velocity jump [nf, nq, ndims]
+				dp: pressure jump [nf, nq, 1]
 		'''
 		dvel = velR - velL
 		drho = UqR[:, :, srho] - UqL[:, :, srho]
@@ -1740,7 +1825,7 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    alphas: left eigenvectors multipled by dU [nf, nq, ns]
+				alphas: left eigenvectors multipled by dU [nf, nq, ns]
 		'''
 		alphas = self.alphas
 
@@ -1761,7 +1846,7 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    evals: eigenvalues [nf, nq, ns]
+				evals: eigenvalues [nf, nq, ns]
 		'''
 		evals = self.evals
 
@@ -1784,7 +1869,7 @@ class Roe1D(ConvNumFluxBase):
 
 		Outputs:
 		--------
-		    R: right eigenvectors [nf, nq, ns, ns]
+				R: right eigenvectors [nf, nq, ns, ns]
 		'''
 		R = self.R
 
