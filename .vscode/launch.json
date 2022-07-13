@@ -11,13 +11,14 @@
       "program": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\src\\quail",
        // "program": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\test\\volcano_models\\mp_execution.py",
       "console": "integratedTerminal",
-      // "args": ["vent_region.py"],
       // "args": ["p0.py"],
       // "args": ["-p", "conduit.py"],
       //
+      // "args": ["vent_region.py"],
       "args": ["conduit.py"],
       // "args": ["-p", "post_process.py"],
-      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\mixture_shocktube\\",
+      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\mixture_shocktube\\",
+      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit1D\\",
       "subProcess": true,
     }
   ]

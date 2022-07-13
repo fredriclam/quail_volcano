@@ -1,13 +1,5 @@
 import numpy as np
 
-TimeStepping = {
-	"InitialTime" : 0.0,
-	"FinalTime" : 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-     # 100000 for generalB1, 400~K
-	"TimeStepper" : "FE",
-}
-
 Numerics = {
 	"SolutionOrder" : 2,
 	"SolutionBasis" : "LagrangeTri",
@@ -24,12 +16,12 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoB1.msh",
+	"File" : "../meshes/volcanoB2.msh",
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_atm1",
-	"WriteInterval" : 50,
+	"Prefix" : "mixture_shocktube_atm2",
+	"WriteInterval" : 30,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
@@ -65,39 +57,32 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
+	"ground_far" : {
+		"BCType" : "SlipWall",
+	},
+	"symmetry_far" : {
+		"BCType" : "SlipWall",
+	},
+	# "r2" : {
+	# 	"BCType" : "SlipWall",
+	# },
+	"r2" : {
+		"BCType" : "SlipWall",
+	},
 	"r1" : {
-		# "BCType" : "SlipWall",
 		"BCType" : "MultiphasevpT2D2D",
 		"bkey": "r1",
-		# "BCType" : "SlipWall",
-	},
-	"ground" : {
-		"BCType" : "SlipWall",
-	},
-	"flare" : {
-		"BCType" : "SlipWall",
-	},
-	"pipewall" : {
-		"BCType" : "SlipWall",
-	},
-	"x2" : {
-		# "BCType" : "SlipWall",
-		"BCType" : "MultiphasevpT2D1D",
-		"bkey": "vent",
-	},
-	"symmetry" : {
-		"BCType" : "SlipWall",
 	},
 }
 
-# LinkedSolvers = []
-LinkedSolvers = [
-	{
-		"DeckName": "conduit.py",
-		"BoundaryName": "vent",
-	},
-	{
-		"DeckName": "r1r2_test.py",
-		"BoundaryName": "r1",
-	},
-]
+LinkedSolvers = []
+# LinkedSolvers = [
+# 	{
+# 		"DeckName": "conduit.py",
+# 		"BoundaryName": "x2",
+# 	},
+# 	{
+# 		"DeckName": "r1r2.py",
+# 		"BoundaryName": "r1",
+# 	},
+# ]

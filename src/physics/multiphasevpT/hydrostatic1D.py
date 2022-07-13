@@ -10,6 +10,7 @@
 #
 # ------------------------------------------------------------------------ #
 
+from msilib.schema import Error
 import numpy as np
 
 import numerics.helpers.helpers as helpers
@@ -21,6 +22,7 @@ import processing.readwritedatafiles as readwritedatafiles
 import matplotlib.pyplot as plt
 import copy
 import logging
+import warnings
 
 from scipy.sparse import dok_array
 from typing import Callable
@@ -309,8 +311,11 @@ class GlobalDG():
         '''Place delta mass at closest element boundary, splitting in half
         the mass to both neighbouring (1D) elements.'''
         # Find face closest to x_jump
-        face = solver.mesh.interior_faces[
-          np.argmin(np.abs(x_jump - solver.mesh.node_coords))]
+        try:
+          face = solver.mesh.interior_faces[
+            np.argmin(np.abs(x_jump - solver.mesh.node_coords))]
+        except IndexError as e:
+          raise Exception("Face closest to x_jump may be at the boundary") from e
         # Save x_jump snapped to closest face
         self.x_jump_actual = np.min(np.abs(x_jump - solver.mesh.node_coords))
         # Add pressure jump source
@@ -414,6 +419,9 @@ class GlobalDG():
       residuals = np.append(residuals, fpi_res)
       if fpi_res < self.FPI_TOL:
         break
+    
+    if fpi_res > self.FPI_TOL:
+      warnings.warn(f"Fixed point iteration in hydrostatic1D has large residual: {fpi_res}")
 
     # Save residual history
     self.residuals = residuals

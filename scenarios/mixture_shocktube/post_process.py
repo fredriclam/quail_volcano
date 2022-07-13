@@ -11,103 +11,39 @@ import numerics.basis.tools as basis_tools
 import scipy.interpolate
 import os
 
-# Set fname
-# fnameRadical = "pocket_atmos_flared" + "_"
-# fnameRadical = "pocket_atmos_mushroom" + "_"
-# fnameRadical = "pocket_atmos_shroomC_Sod_debug" + "_"
-
-dataSize = 100+1
-
-single_fname = "mixture_shocktube_conduit_final.pkl"
-# single_fname = "mixture_shocktube_conduit_126.pkl"
-solver = readwritedatafiles.read_data_file(single_fname)
-mesh = solver.mesh
-physics = solver.physics
-output_fname = "output_unnamed_"
-
-input_fname_conduit_list = [
-	# "mixture_shocktube_conduit_25.pkl",
-	# "mixture_shocktube_conduit2_25.pkl",
-	# "mixture_shocktube_conduit3_25.pkl",
-	"mixture_shocktube_conduit_final.pkl",
-	"mixture_shocktube_conduit2_final.pkl",
-	"mixture_shocktube_conduit3_final.pkl",
-	"mixture_shocktube_conduit4_final.pkl",
-	"mixture_shocktube_conduit5_final.pkl",
-]
-
-# t_indexed_fnames = lambda i : [
-# 	f"mixture_shocktube_conduit_{i}.pkl",
-# 	f"mixture_shocktube_conduit2_{i}.pkl",
-# 	f"mixture_shocktube_conduit3_{i}.pkl",
-# 	f"mixture_shocktube_conduit4_{i}.pkl",
-# 	f"mixture_shocktube_conduit5_{i}.pkl",
-# ]
-t_indexed_fnames = lambda i : [
-	f"mixture_shocktube_conduit_{i}.pkl",
-]
-
+''' Set parameters '''
+# Multidomain
+use_multidomain = True
+# Enter index of last iteration
+dataSize = 490+1
+# Conduit files to collate
 fname_radical_conduit = "mixture_shocktube_conduit"
-outputfname = "mat_mixture_shocktube_conduit"
+input_fname_conduit_list = [
+	"mixture_shocktube_conduit",
+	"mixture_shocktube_conduit2",
+]
+input_fname_2D_list = [
+	"mixture_shocktube_atm1",
+	# "mixture_shocktube_atm2",
+]
 
-if False:
-	plot.prepare_plot(linewidth=0.5)
-	plot.plot_solution(mesh, physics, solver, "Pressure", plot_numerical=True, 
-			create_new_figure=True, include_mesh=False, regular_2D=False, 
-			show_elem_IDs=False)
-	# Save figure
-	plot.show_plot()
-	plot.save_figure(file_name='Pressure', file_type='png', crop_level=2)
+outputfname = "v_mix0_"
 
-	# plot.plot_solution(mesh, physics, solver, "SoundSpeed", plot_numerical=True, 
-	# 		create_new_figure=True, include_mesh=False, regular_2D=False, 
-	# 		show_elem_IDs=False)
-	# plot.show_plot()
-	# plot.save_figure(file_name='SoundSpeed', file_type='png', crop_level=2)
+''' Business logic '''
 
-	solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit2_final.pkl")
-	plot.prepare_plot(linewidth=0.5)
-	plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
-			create_new_figure=True, include_mesh=False, regular_2D=False, 
-			show_elem_IDs=False)
-	plot.show_plot()
+num_2D_domains = len(input_fname_2D_list)
 
-	solver = readwritedatafiles.read_data_file("mixture_shocktube_conduit3_final.pkl")
-	plot.prepare_plot(linewidth=0.5)
-	plot.plot_solution(solver.mesh, solver.physics, solver, "Pressure", plot_numerical=True, 
-			create_new_figure=True, include_mesh=False, regular_2D=False, 
-			show_elem_IDs=False)
-	plot.show_plot()
-
-# For-loop extraction
-use_multidomain = False
-if use_multidomain:
-	name_2D_domain = "referenceM"
-	num_2D_domains = 2 #!
-	dataSize = 1200+1
-	verbose = False
-
-	outputfname = "redo_" + name_2D_domain + "_"
-	# outputfname = "void_"
-	fnameRadicals = {
-		"conduit": f"{name_2D_domain}_conduit",
-	}
-	for i in range(num_2D_domains):
-		fnameRadicals[i] = f"{name_2D_domain}{i+1}"
-	for key in fnameRadicals.keys():
-		if not fnameRadicals[key].endswith("_"):
-			fnameRadicals[key] += "_"
-else:
-	# dataSize moved to top of file
-	# dataSize = 50+1
-	verbose = False
-	# fnameRadicals = [fname_radical_conduit]
-
-	# for key in fnameRadicals.keys():
-	# 	if not fnameRadicals[key].endswith("_"):
-	# 		fnameRadicals[key] += "_"
-
-
+def execute_post_process():
+	''' Hoisted post process function. This is the only function called directly.'''
+	precomps = [pre_compute(fname) for fname in input_fname_2D_list]
+	for i in range(dataSize):
+		# pkl2mat_both(
+		# 	[f"{fname}_{i}.pkl" for fname in input_fname_2D_list],
+		# 	[f"{fname}_{i}.pkl" for fname in input_fname_conduit_list],
+		# 	precomps,
+		# 	outputfname=(outputfname + f"{i}"),
+		# 	verbose=False)
+		pkl2mat_p_only([f"{fname}_{i}.pkl" for fname in input_fname_2D_list], (outputfname + f"{i}"))
 
 def integrate(mesh, physics, solver, var_names, quad_pts, quad_wts, djacs):
 	# Extract info
@@ -129,7 +65,7 @@ def integrate(mesh, physics, solver, var_names, quad_pts, quad_wts, djacs):
 	
 	return outputs
 
-def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
+def pkl2mat_both(input_fname_2D_list, input_fname_conduit_list, precompute_list, outputfname, verbose=False):
 
 	Ne_per_domain = []
 	xConduit = []
@@ -147,7 +83,99 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 	normgrad_prhoAConduit = []
 	normgrad_pConduit = []
 	phiConduit = []
+	domain_prhoA = []
+	domain_prhoWv = []
+	domain_prhoM = []
+	domain_rho = []
+	domain_rhou = []
+	domain_rhov = []
+	domain_u = []
+	domain_v = []
+	domain_T = []
+	domain_E = []
+	domain_p = []
+	domainIntegrals = []
+	domain_normgradrho = []
+	domain_vorticity = []
+	samplePoints = []
+	x_r1 = []
+	x_r2 = []
 
+	''' Get 2D state '''
+	for i, input_fname in enumerate(input_fname_2D_list):
+		if verbose:
+			print(f"Reading {input_fname}.")
+		# Read in pickle file
+		solver = readwritedatafiles.read_data_file(input_fname)
+		# Unpack
+		mesh = solver.mesh
+		physics = solver.physics
+		# Extract numerical solution on mesh
+		# Sample down to the corners
+		temp_order_ = solver.order
+		solver.order = 0
+		samplePoints.append(plot.get_sample_points(
+			mesh, solver, physics, solver.basis, True))
+		solver.order = temp_order_
+
+		# Get numerical solution
+		getns = lambda quantity: plot.get_numerical_solution(
+			physics,
+			solver.state_coeffs,
+			samplePoints[i],
+			solver.basis,
+			quantity)
+		domain_prhoA.append(getns('pDensityA'))
+		domain_prhoWv.append(getns('pDensityWv'))
+		domain_prhoM.append(getns('pDensityM'))
+		domain_rho.append(domain_prhoA[i] + domain_prhoWv[i] + domain_prhoM)
+		domain_rhou.append(getns('XMomentum'))
+		domain_rhov.append(getns('YMomentum'))
+		domain_u.append(domain_rhou[i] / domain_rho[i])
+		domain_v.append(domain_rhov[i] / domain_rho[i])
+		domain_T.append(getns('Temperature'))
+		domain_E.append(getns('Energy'))
+		domain_p.append(getns('Pressure'))
+
+		# Gradient quantities
+		sample_basis_phys_grad_elems = precompute_list[i][3]
+		domain_normgradrho.append(np.linalg.norm(
+				np.einsum('ijnl, ink -> ijkl',
+					np.array(sample_basis_phys_grad_elems),
+					solver.state_coeffs)[:,:,0],
+				axis=2, keepdims=True))
+		du_ij = np.einsum('ijnl, ink -> ijkl',
+					np.array(sample_basis_phys_grad_elems),
+					solver.state_coeffs[:,:,1:3]/solver.state_coeffs[:,:,0:1])
+		vorticity = du_ij[:,:,1:2,0] - du_ij[:,:,0:1,1]
+		domain_vorticity.append(vorticity)
+
+		# Integrate key quantities over entire domain
+		quad_pts = precompute_list[i][0]
+		quad_wts = precompute_list[i][1]
+		djacs = precompute_list[i][2]
+		
+		state_names = ['pDensityA', 'pDensityWv', 'pDensityM',
+			'Energy', 'XMomentum', 'YMomentum', 'Pressure', 'InternalEnergy']
+		integrated_dict = dict(zip(
+			state_names,
+			integrate(solver.mesh, solver.physics, solver, 
+								state_names, quad_pts, quad_wts, djacs)
+		))
+		domainIntegrals.append(integrated_dict)
+
+		# Get special boundaries
+		try:
+			if i == 0:
+				x_r1 = solver.bface_helpers.x_bgroups[
+								solver.mesh.boundary_groups["r1"].number]
+			elif i == 1:
+				x_r2 = solver.bface_helpers.x_bgroups[
+								solver.mesh.boundary_groups["r2"].number]
+		except:
+			print("2D names should be ordered r_1 < r_2. Failed to extract boundary location.")
+
+	''' Get 1D state '''
 	for fname in input_fname_conduit_list:
 		# Get conduit state
 		solver_conduit = readwritedatafiles.read_data_file(fname)
@@ -169,13 +197,11 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 					conduitsolver.elem_helpers.basis_phys_grad_elems,
 					conduitsolver.state_coeffs)[:, :, 0],
 				axis=2) # [ne, nq]
-
-		# 2D
 		# normgrad_prhoAConduit.append(np.expand_dims(scipy.interpolate.griddata(
 		# 	( np.ndarray.flatten(conduitsolver.elem_helpers.x_elems[:,:,0]),
 		# 		np.ndarray.flatten(conduitsolver.elem_helpers.x_elems[:,:,1]) 
 		# 	),
-		# 	  np.ndarray.flatten(normgrad_prhoA),
+		# 		np.ndarray.flatten(normgrad_prhoA),
 		# 	samplePointsConduit,
 		# 	method='cubic'
 		# 	# method='nearest' # plot.get_sample_points(
@@ -209,11 +235,11 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 		prhoWvConduit.append(getns_conduit("pDensityWv"))
 		prhoMConduit.append(getns_conduit("pDensityM"))
 		rhoConduit.append(getns_conduit("pDensityA") + getns_conduit("pDensityWv")
-			               + getns_conduit("pDensityM"))
+										 + getns_conduit("pDensityM"))
 		EConduit.append(getns_conduit("Energy"))
 		uConduit.append(getns_conduit("XMomentum") / (getns_conduit("pDensityA") 
 									+ getns_conduit("pDensityWv")
-			            + getns_conduit("pDensityM")))
+									+ getns_conduit("pDensityM")))
 		prhoWtConduit.append(getns_conduit("pDensityWt"))
 		prhoCConduit.append(getns_conduit("pDensityC"))
 		TConduit.append(getns_conduit("Temperature"))
@@ -249,12 +275,30 @@ def pkl2mat_multiconduit(input_fname_conduit_list, outputfname, verbose=False):
 		"normgrad_pConduit": normgrad_pConduit,
 		"phiConduit": phiConduit,
 		"t": t,
+		"domain_prhoA": domain_prhoA,
+		"domain_prhoWv": domain_prhoWv,
+		"domain_prhoM": domain_prhoM,
+		"domain_rho": domain_rho,
+		"domain_rhou": domain_rhou,
+		"domain_rhov": domain_rhov,
+		"domain_u": domain_u,
+		"domain_v": domain_v,
+		"domain_T": domain_T,
+		"domain_E": domain_E,
+		"domain_p": domain_p,
+		"x_r1": x_r1,
+		"x_r2": x_r2,
+		"samplePoints": samplePoints,
+		"domain_normgradrho": domain_normgradrho,
+		"domain_vorticity": domain_vorticity,
+		"samplePointsConduit": samplePointsConduit,
+		"integrated": domainIntegrals,
 	})
 	
 	print(f"Converted to .mat at {outputfname} in folder {os.getcwd()}.")
 
 def pkl2mat(input_fname_list, input_fname_conduit,
-            precompute_list, outputfname=None, verbose=False):
+						precompute_list, outputfname=None, verbose=False):
 	''' Converts loose .pkl files into .mat with all domains specified.
 
 	Some additional variables:
@@ -393,7 +437,7 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		integrated_dict = dict(zip(
 			state_names,
 			integrate(solver.mesh, solver.physics, solver, 
-			          state_names, quad_pts, quad_wts, djacs)
+								state_names, quad_pts, quad_wts, djacs)
 		))
 		
 		domainIntegrals.append(integrated_dict)
@@ -401,10 +445,10 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		# Get special boundaries
 		if i == 0:
 			x_r1 = solver.bface_helpers.x_bgroups[
-				       solver.mesh.boundary_groups["r1"].number]
+							 solver.mesh.boundary_groups["r1"].number]
 		elif i == 1:
 			x_r2 = solver.bface_helpers.x_bgroups[
-				       solver.mesh.boundary_groups["r2"].number]
+							 solver.mesh.boundary_groups["r2"].number]
 
 
 	# Get conduit state
@@ -452,11 +496,11 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 		"prhoWvConduit": getns_conduit("pDensityWv"),
 		"prhoMConduit": getns_conduit("pDensityM"),
 		"rhoConduit": getns_conduit("pDensityA") + getns_conduit("pDensityWv") \
-			            + getns_conduit("pDensityM"),
+									+ getns_conduit("pDensityM"),
 		"EConduit": getns_conduit("Energy"),
 		"uConduit": getns_conduit("XMomentum") / (getns_conduit("pDensityA") 
 									+ getns_conduit("pDensityWv")
-			            + getns_conduit("pDensityM")),
+									+ getns_conduit("pDensityM")),
 		"TConduit": getns_conduit("Temperature"),
 		"integrated": domainIntegrals,
 		"t": conduitsolver.time,
@@ -468,19 +512,12 @@ def pkl2mat(input_fname_list, input_fname_conduit,
 
 def pre_compute(fname_radical):
 	# Load initial solution
-	solver = readwritedatafiles.read_data_file(f"{fname_radical}0.pkl")
+	solver = readwritedatafiles.read_data_file(f"{fname_radical}_0.pkl")
 	# Get quadrature data for static mesh
 	quad_pts, quad_wts = solver.mesh.gbasis.get_quadrature_data(
 		solver.basis.get_quadrature_order(solver.mesh, 2*np.amax([solver.order, 1]),
 		physics=solver.physics))
 	djacs = np.zeros((solver.mesh.num_elems, quad_wts.shape[0]))
-
-	# Get points at nodes of each elements
-	# temp_order_ = solver.order
-	# solver.order = 0
-	# sample_points_in_domain = plot.get_sample_points(
-	# 	solver.mesh, solver, solver.physics, solver.basis, True)
-	# solver.order = temp_order_
 
 	sample_basis_phys_grad_elems = []
 	for elem_ID in range(solver.mesh.num_elems):
@@ -508,23 +545,40 @@ def pre_compute(fname_radical):
 
 	return (quad_pts, quad_wts, djacs, sample_basis_phys_grad_elems)
 
-if use_multidomain:
-	precomps = [pre_compute(fnameRadicals[j]) for j in range(num_2D_domains)]
-	for i in range(dataSize):
-		pkl2mat(
-			[f"{fnameRadicals[j]}{i}.pkl" for j in range(num_2D_domains)],
-			f"{fnameRadicals['conduit']}{i}.pkl",
-			precomps,
-			outputfname=(outputfname + f"{i}"),
-			verbose=False)
-else:
-	# pkl2mat_multiconduit(input_fname_conduit_list, "mixture_shocktube_conduit")
-	# pkl2mat(
-	# 		[],
-	# 		single_fname,
-	# 		[],
-	# 		outputfname=(output_fname),
-	# 		verbose=False)
+def pkl2mat_p_only(input_fname_2D_list, outputfname):
+	samplePoints = []
+	domain_p = []
+	for i, input_fname in enumerate(input_fname_2D_list):
+		solver = readwritedatafiles.read_data_file(input_fname)
+		# Unpack
+		mesh = solver.mesh
+		physics = solver.physics
+		# Extract numerical solution on mesh
+		# Sample down to the corners
+		temp_order_ = solver.order
+		solver.order = 0
+		samplePoints.append(plot.get_sample_points(
+			mesh, solver, physics, solver.basis, True))
+		solver.order = temp_order_
 
-	for i in range(dataSize):
-		pkl2mat_multiconduit(t_indexed_fnames(i), outputfname + f"{i}")
+		# Get numerical solution
+		getns = lambda quantity: plot.get_numerical_solution(
+			physics,
+			solver.state_coeffs,
+			samplePoints[i],
+			solver.basis,
+			quantity)
+		domain_p.append(getns('Pressure'))
+		# Get output file name if not specified
+		postfix = f".mat"
+	if outputfname is None:
+		outputfname = "./" + input_fname_conduit_list[0][:-4] + ".mat"
+	else:
+		outputfname += postfix
+
+	scipy.io.savemat(outputfname, mdict={
+		"domain_p": domain_p,
+		"samplePoints": samplePoints,
+	})
+
+execute_post_process()

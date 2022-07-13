@@ -177,9 +177,9 @@ class RiemannProblem(FcnBase):
 			iright = (x[elem_ID, :, 0] > self.xd).reshape(-1)
 			# Replacement to prevent quadratic approximation of in-element
 			# discontinuity sending the state negative
-			if np.all(x[elem_ID, :, 0] >= 0.0):
-				ileft = (x[elem_ID, :, 0] < 0.).reshape(-1)
-				iright = (x[elem_ID, :, 0] >= 0.).reshape(-1)
+			if np.all(x[elem_ID, :, 0] >= self.xd):
+				ileft = (x[elem_ID, :, 0] < self.xd).reshape(-1)
+				iright = (x[elem_ID, :, 0] >= self.xd).reshape(-1)
 			# Fill left/right mass-related quantities
 			Uq[elem_ID, ileft, iarhoA] = arhoAL
 			Uq[elem_ID, iright, iarhoA] = arhoAR
