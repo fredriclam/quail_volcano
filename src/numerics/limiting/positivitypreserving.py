@@ -376,6 +376,9 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		self.var_name2 = "pDensityWv"
 		self.var_name3 = "pDensityM"
 		self.var_name4 = "Pressure"
+		# Tracer variables
+		self.var_nameT1 = "pDensityWt"
+		self.var_nameT2 = "pDensityC"
 
 		# self.theta_store = [[], [], [], []]
 	
@@ -406,7 +409,10 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		# Density and pressure from averaged state
 		rho_bar = {self.var_name1: physics.compute_variable(self.var_name1, U_bar),
 		           self.var_name2: physics.compute_variable(self.var_name2, U_bar),
-							 self.var_name3: physics.compute_variable(self.var_name3, U_bar)}
+							 self.var_name3: physics.compute_variable(self.var_name3, U_bar),
+							 self.var_nameT1: physics.compute_variable(self.var_nameT1, U_bar),
+							 self.var_nameT2: physics.compute_variable(self.var_nameT2, U_bar),
+							 }
 		p_bar = physics.compute_variable(self.var_name4, U_bar)
 
 		if np.any([np.any(rho < 0.) for rho in rho_bar.values()]) \
@@ -418,7 +424,8 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 
 		# logger_idx = -1
 		''' Limit partial-density variables '''
-		for var_name in [self.var_name1, self.var_name2, self.var_name3]:
+		for var_name in [self.var_name1, self.var_name2, self.var_name3,
+			self.var_nameT1, self.var_nameT2]:
 			# logger_idx += 1
 			# Compute density
 			quant_elem_faces = physics.compute_variable(var_name, U_elem_faces)

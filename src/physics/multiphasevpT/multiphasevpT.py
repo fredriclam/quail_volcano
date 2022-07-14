@@ -534,10 +534,6 @@ class MultiphasevpT1D(MultiphasevpT):
 			left_eigen: Left eigenvector matrix [ne, 1, ns, ns]
 		'''
 
-		raise NotImplementedError(
-			"Eigenvectors for convective flux are not implemented for class "
-			+ f"{type(self).__name__} with tracer quantities.")
-
 		# Unpack
 		ne = U_bar.shape[0]
 		ns = self.NUM_STATE_VARS
@@ -572,6 +568,9 @@ class MultiphasevpT1D(MultiphasevpT):
 		# Allocate the right and left eigenvectors
 		right_eigen = np.zeros([ne, 1, ns, ns])
 		left_eigen = np.zeros([ne, 1, ns, ns])
+
+		if False:
+			''' Legacy, without tracer states '''
 
 		# # Calculate the right and left eigenvectors
 		right_eigen[:, :, iarhoA,  iarhoA]  = pi2 - pi3

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Callable, Union
 import logging
 import queue
+import time
 
 
 _global_timeout_seconds = 615.0
@@ -37,6 +38,9 @@ class Domain():
     self.domain_output = None
     self.verbose = verbose
     self.user_functions = Domain.UserFunctionSeq()
+    self.total_await_time = 0.0
+    self.begin_time = time.time()
+    self.total_run_time = 0.0
 
     # Initalize logger
     self.logger = logging.getLogger(__name__)
@@ -92,6 +96,14 @@ class Domain():
     self.solver.solve()
     # Send output to main process
     self.domain_output_dict[self.id] = self.solver
+    # End timer
+    self.total_run_time = time.time() - self.begin_time
+    # Post data to bdry_data_net (assume current object will no longer be valid
+    # on the main process)
+    self.bdry_data_net[self.id] = {
+      "total_run_time": self.total_run_time,
+      "total_await_time": self.total_await_time,
+    }
   
   def pprint(self, msg):
     if self.verbose:
@@ -208,6 +220,7 @@ class Domain():
       self.bdry_data_net[write_key] = data
 
     # Await green light
+    await_time = time.time()
     with self.glight_condition:
         self.ready_queue.put(self.id)
         try:
@@ -220,6 +233,7 @@ class Domain():
           condition from boundary data network. If this occured while the
           code is paused in a debugger, this error can be ignored.''')
           self.logger.error(f"KeyError: {err}",stack_info=True)
+    self.total_await_time += time.time() - await_time
 
 class Observer():
   ''' Observer that oversees synchronization of multiple domains. '''

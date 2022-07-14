@@ -340,7 +340,7 @@ class LinearAtmosphere(FcnBase):
 		arhoWv = self.arhoWv*np.ones_like(p)
 		arhoM = self.arhoMR*np.ones_like(p)
 		arhoWt = arhoWv
-		arhoC = np.zeros_like(p)
+		arhoC = self.arhoMR*np.ones_like(p) # In principle should be passive in 2D
 		# Zero velocity
 		u = np.zeros_like(p)
 		v = np.zeros_like(p)

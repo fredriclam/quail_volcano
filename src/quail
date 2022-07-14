@@ -708,10 +708,16 @@ def main(argv):
 					process.join()
 				observer_process.join()
 
+				# Generate uptime report
+				domain_list
+				with open("performance_report.log", "w") as f:
+					[f.write(f"{dom.id}: {boundaryData[dom.id]}\n") for dom in domain_list]
+
 		run_total_wall_time = time.time() - run_total_wall_time_start
 
 		print(f"Global prep time  = {setup_wall_time:.5f} seconds")
 		print(f"Global solve time = {run_total_wall_time:.5f} seconds")
+		
 
 		# Expose root solver for backward compatibility
 		solver = domain_list[0].solver

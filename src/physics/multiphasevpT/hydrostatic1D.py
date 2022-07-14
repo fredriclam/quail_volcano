@@ -317,9 +317,11 @@ class GlobalDG():
         except IndexError as e:
           raise Exception("Face closest to x_jump may be at the boundary") from e
         # Save x_jump snapped to closest face
-        self.x_jump_actual = np.min(np.abs(x_jump - solver.mesh.node_coords))
+        x_jump_actual_idx = np.argmin(np.abs(x_jump - solver.mesh.node_coords))
+        self.x_jump_actual = solver.mesh.node_coords[x_jump_actual_idx][0]
         # Add pressure jump source
         # Adjust index by 1 due to INTERIOR face indexing (excludes bdry faces)
+        
         target_idx = max(face.elemL_ID-1, face.elemR_ID-1)
         delta_source[self.nb*target_idx-1] = p_jump/2
         delta_source[self.nb*target_idx] = p_jump/2
