@@ -206,8 +206,23 @@ class Domain():
       x = solver.bface_helpers.x_bgroups[bgroup.number] # [nbf, nq, ndims]
         # quad_wts = solver.bface_helpers.quad_wts
       BC = solver.physics.BCs[bgroup.name]
+
+      # Compute ordinary boundary state
+      bdry_state = BC.get_extrapolated_state(solver.physics, UqI, normals, x, None)
+      # Compute averaged data
+      if solver.physics.NDIMS == 2:
+        # Compute boundary measure
+        boundary_length = solver.bface_helpers.face_lengths_bgroups[bgroup.number].sum()
+        # Compute state averaged over the boundary
+        data["bdry_face_state_averaged"] = np.expand_dims(
+          np.einsum('ijm, ijk, jn -> k',
+          np.linalg.norm(normals, axis=2, keepdims=True),
+          UqI,
+          solver.bface_helpers.quad_wts) / boundary_length,
+          axis=(0,1))
+
       # Get data from BC method
-      data["bdry_face_state"] = BC.get_extrapolated_state(solver.physics, UqI, normals, x, None)
+      data["bdry_face_state"] = bdry_state
       ''' Attach data for elements at boundary to payload. '''
       # # Identify elements at boundary
       # boundary_elem_IDs = [bface.elem_ID for bface 

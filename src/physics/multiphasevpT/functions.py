@@ -766,7 +766,7 @@ class BCWeakLLF(BCBase):
 	'''
 
 	def __init__(self):
-		pass
+		self.is_cross_dimension = False
 		# Initalize logger
 		# self.logger = logging.getLogger(f"{__name__}{hash(self)}")
 		# self.logger.setLevel(logging.DEBUG)
@@ -778,21 +778,27 @@ class BCWeakLLF(BCBase):
 		# self.logger.addHandler(h)
 
 	def get_boundary_flux(self, physics, UqI, normals, x, t, gUq=None):
-		UqB = self.get_boundary_state(physics, UqI, normals, x, t)
+		
 		# F = physics.get_conv_flux_numerical(UqI, UqB, normals)
 		# UqB = self.get_boundary_state(physics, UqI, normals, x, t)
 		# F,_ = physics.get_conv_flux_projected(UqB, normals)
 		
-		if physics.NDIMS == 2:
-			F = physics.get_conv_flux_numerical(UqI, UqB, normals)
-		else:
-			# TODO: replace averaging with proper quadrature
+		if physics.NDIMS == 1 and self.is_cross_dimension:
+			# Squish 2D state to 1D face-averaged state
+			# UqB_down = np.mean(UqB,axis=(0,1),keepdims=True)[:,:,mask_omit_xmomentum]
+			# F = physics.get_conv_flux_numerical(UqI, UqB_down, normals)
+			# UqB = UqB_down
+
+			UqB = self.get_boundary_state(
+				physics, UqI, normals, x, t, get_average=True)		
+			# Reduce 2D momentum to 1D momentum
 			mask_omit_xmomentum = [i for i in np.array(range(UqB.shape[2]))
 				if not i == physics.get_state_index("XMomentum")]
-			# Squish 2D state to 1D face-averaged state
-			UqB_down = np.mean(UqB,axis=(0,1),keepdims=True)[:,:,mask_omit_xmomentum]
-			F = physics.get_conv_flux_numerical(UqI, UqB_down, normals)
-			UqB = UqB_down
+			UqB = UqB[:,:,mask_omit_xmomentum]
+			F = physics.get_conv_flux_numerical(UqI, UqB, normals)
+		else:
+			UqB = self.get_boundary_state(physics, UqI, normals, x, t, get_average=False)
+			F = physics.get_conv_flux_numerical(UqI, UqB, normals)
 
 		# Initalize logger
 		self.logger = logging.getLogger(f"{__name__}{hash(self)}")
@@ -849,6 +855,7 @@ class CouplingBC(BCWeakLLF):
 		# rho: np.array   = np.array([])
 		x: np.array     = np.array([])
 		n_hat: np.array = np.array([])
+		Ucross: np.array = np.array([])  # Cross-domain size
 
 	# (Debug) Seconds to wait for bdry data before raising exception
 	maxWaitTime = 5.0
@@ -908,6 +915,7 @@ class MultiphasevpT2D1D(CouplingBC):
 	def __init__(self, bkey):
 		super().__init__(bkey)
 		self.bdry_flux_fcn = LaxFriedrichs2D()
+		self.is_cross_dimension = True
 
 	def get_extrapolated_state(self, physics, UqI, normals, x, t):
 		''' Called when computing states at shared boundaries. '''
@@ -931,6 +939,7 @@ class MultiphasevpT2D1D(CouplingBC):
 								self.bstate.Ucast[:,:,-1:], axis=2)
 			# Set tangential momentum to zero
 			self.bstate.Ucast[:,:,physics.get_momentum_slice()] = 0.0
+			self.bstate.Ucross = self.bstate.Ulift.copy()
 		elif physics.NDIMS == 2:
 			# Project to [rho, ... , rho vel_n, rho vel_t, rho e, ...]
 			rho = self.bstate.Ucast[:,:,physics.get_mass_slice()].sum(
@@ -947,6 +956,7 @@ class MultiphasevpT2D1D(CouplingBC):
 				axis=2,
 				keepdims=True)
 			self.bstate.Ulift = self.bstate.U.copy()
+			self.bstate.Ucross = self.bstate.U.copy()
 		else:
 			raise Exception("Unhandled NDIMS in get_extrapolated_state. 0D?")
 		
@@ -1014,7 +1024,7 @@ class MultiphasevpT2D1D(CouplingBC):
 
 		return .5*(UqSelf + UqAdj - dURoe) # [nf, nq, ns]
 
-	def get_boundary_state(self, physics, UqI, normals, x, t):
+	def get_boundary_state(self, physics, UqI, normals, x, t, get_average=False):
 		adjacent_domain_id = [
 			key for key in 
 			physics.domain_edges[physics.domain_id][self.bkey] 
@@ -1031,7 +1041,10 @@ class MultiphasevpT2D1D(CouplingBC):
 		# 	[adjacent_domain_id]["payload"])
 
 		#
-		return adjacent_bstate["bdry_face_state"].Ulift
+		if get_average:
+			return adjacent_bstate["bdry_face_state_averaged"]
+		else:
+			return adjacent_bstate["bdry_face_state"].Ulift
 
 		# Prep useful parameters
 		gamma = physics.gamma
