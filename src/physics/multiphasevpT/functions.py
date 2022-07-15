@@ -310,7 +310,7 @@ class LinearAtmosphere(FcnBase):
 	'''
 
 	def __init__(self,T0:float=300., p_atm:float=1e5,
-		h0:float=-150.0, gravity:float=9.8, arhoWv=1.161*5e-3, arhoMR=1e-9):
+		h0:float=-150.0, gravity:float=9.8, massFracWv=5e-3, arhoMR=1e-9):
 		''' Set atmosphere temperature, pressure, and location of pressure.
 		Pressure distribution is computed as hydrostatic profile with p = p_atm
 		at elevation h0.
@@ -319,7 +319,7 @@ class LinearAtmosphere(FcnBase):
 		self.p_atm = p_atm
 		self.h0 = h0
 		self.gravity = gravity
-		self.arhoWv = arhoWv
+		self.massFracWv = massFracWv
 		self.arhoMR = arhoMR
 
 	def get_state(self, physics, x, t):
@@ -332,12 +332,15 @@ class LinearAtmosphere(FcnBase):
 		hs0 = physics.Gas[0]["R"]*self.T0/self.gravity
 		# Compute pressure linear in elevation
 		p = self.p_atm * (1.0 - (x[:,:,1:2] - self.h0)/hs0).squeeze(axis=2)
+		# Compute approx. volume fraction correcting for water partial pressure
+		prod = physics.Gas[1]["R"] * (1.0 - self.massFracWv)
+		alphaA = prod / (prod + physics.Gas[0]["R"] * self.massFracWv)
 		# Constant pure air density at h0
-		arhoA = self.p_atm / (physics.Gas[0]["R"]*self.T0)
+		arhoA = alphaA * self.p_atm / (physics.Gas[0]["R"]*self.T0)
 		# Compute temperature
 		T = p / (arhoA * physics.Gas[0]["R"])
 		# Zero or trace amounts of Wv, M and tracers
-		arhoWv = self.arhoWv*np.ones_like(p)
+		arhoWv = (1.0- alphaA) * p / (physics.Gas[1]["R"] * T)
 		arhoM = self.arhoMR*np.ones_like(p)
 		arhoWt = arhoWv
 		arhoC = self.arhoMR*np.ones_like(p) # In principle should be passive in 2D
@@ -803,10 +806,12 @@ class BCWeakLLF(BCBase):
 		if len(self.logger.handlers)== 0:
 			self.logger.addHandler(h)
 
-		self.logger.info(f"t = {t}")
-		self.logger.info(f"UqI (interior) = {UqI}")
-		self.logger.info(f"UqB (outboundary) = {UqB}")
-		self.logger.info(f"F = {F}")
+		log_state = False
+		if log_state:
+			self.logger.info(f"t = {t}")
+			self.logger.info(f"UqI (interior) = {UqI}")
+			self.logger.info(f"UqB (outboundary) = {UqB}")
+			self.logger.info(f"F = {F}")
 
 		# Compute diffusive boundary fluxes if needed
 		if physics.diff_flux_fcn:

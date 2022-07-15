@@ -409,13 +409,30 @@ class GlobalDG():
     p_guess = p
 
     ''' Fixed point iteration '''
-    fixedpointiter = lambda p: scipy.sparse.linalg.spsolve(A-B,
-      f_fn(np.expand_dims(p,axis=1)))
+    # Set relaxation parameter for P0
+    mu = 0.0
+    # if solver.order == 0:
+      # mu = 0
+    # Regularization matrix
+    # R = 0*scipy.sparse.identity(self.N).todense()
+    # R[29,29] = -1
+    # R[29,30] = 1
+    # R[30,29] = -1
+    # R[30,30] = 1
+    # (0.5*R@p_guess).T - delta_source
+    fixedpointiter = lambda p: scipy.sparse.linalg.spsolve(A-B+0*scipy.sparse.identity(self.N)+mu*M,
+      f_fn(np.expand_dims(p,axis=1)) + mu*M@np.expand_dims(p,axis=1) + 0*np.expand_dims(p,axis=1))
     evalresidual = lambda p : np.linalg.norm(
       (A-B)@np.expand_dims(p,axis=1) - f_fn(np.expand_dims(p,axis=1)), 'fro')
     residuals = np.array([evalresidual(p)])
+    
+    N_iter = self.N_iter
+    # Increase allowable for p0
+    if solver.order == 0:
+      N_iter = 1
+    
     # Start fixed point iteration
-    for i in range(self.N_iter):
+    for i in range(N_iter):
       p = fixedpointiter(p)
       fpi_res = evalresidual(p)
       residuals = np.append(residuals, fpi_res)
