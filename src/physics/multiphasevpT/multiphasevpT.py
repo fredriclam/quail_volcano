@@ -72,7 +72,7 @@ class MultiphasevpT(base.PhysicsBase):
 			base_BC_type.StateAll : base_fcns.StateAll,
 			base_BC_type.Extrapolate : base_fcns.Extrapolate,
 			BCType.SlipWall : mpvpT_fcns.SlipWall,
-			# BCType.PressureOutlet : mpvpT_fcns.PressureOutlet,
+			BCType.PressureOutlet : mpvpT_fcns.PressureOutlet,
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,

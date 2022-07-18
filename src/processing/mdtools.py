@@ -6,13 +6,14 @@ import matplotlib.animation as animation
 import numpy as np
 import processing.readwritedatafiles as readwritedatafiles
 import processing.plot as plot
+import traceback
 
 def viz(solver, plot_qty:str="Pressure"):
   x, qty = downsample(solver, plot_qty)
   if solver.physics.NDIMS == 2:
     custom_plot_2D(x, qty, solver, levels=None)
   elif solver.physics.NDIMS == 1:
-    plot(x.ravel(), qty.ravel(), '.-')
+    plt.plot(x.ravel(), qty.ravel(), '.-')
 
 def downsample(solver, plot_qty:str="Pressure"):
 	solver = copy.deepcopy(solver)
@@ -78,11 +79,20 @@ def plot_mean1D(x, q, clims, xscale=1.0, xshift=0.0):
 
 def generate_anim(atm_names, conduit_names, outfilename, num_frames,
   plot_qty, filter=lambda x, x0:x, initial=1, stride=10, is_high_detail=False):
-  plt.rcParams['animation.ffmpeg_path'] = "C:\\Users\\Fredric\\Documents\\ffmpeg\\ffmpeg-n4.4-latest-win64-gpl-4.4\\bin\\ffmpeg.exe"
+  # This line needs to be here, with path to your ffmpeg path
+  # plt.rcParams['animation.ffmpeg_path'] = "C:\\Users\\Fredric\\Documents\\ffmpeg\\ffmpeg-n4.4-latest-win64-gpl-4.4\\bin"
+  if is_high_detail:
+    print("High detail plot not implemented lol (defaulting to element-mean plotting)")
   fig = plt.figure()
 
   FFwriter = animation.FFMpegWriter()
-  FFwriter.setup(fig, f"{outfilename}.mp4")
+  FFsetup_failure = False
+  try:
+    FFwriter.setup(fig, f"{outfilename}.mp4")
+  except:
+    print("Failed to set up FFWriter. Showing plots without saving animation.")
+    traceback.print_exc()
+    FFsetup_failure = True
 
   atm_initials = [readwritedatafiles.read_data_file(f"{name}_{0}.pkl") 
     for name in atm_names]
@@ -92,6 +102,7 @@ def generate_anim(atm_names, conduit_names, outfilename, num_frames,
   ''' Compute values for each frame '''
   all_values = []
   all_x = []
+  all_t = np.zeros((num_frames,))
   for i in range(num_frames):
     read_index = initial+i*stride
     all_values.append([])
@@ -111,8 +122,9 @@ def generate_anim(atm_names, conduit_names, outfilename, num_frames,
       # Apply filter f(q, q0)
       qty = filter(qty, qty_init)
       all_values[i].append(qty)
-      if i == 1:
+      if i == 0:
         all_x.append(x)
+      all_t[i] = solver.time
 
 
     for dom_idx, name in enumerate(conduit_names):
@@ -130,8 +142,9 @@ def generate_anim(atm_names, conduit_names, outfilename, num_frames,
       qty = filter(qty, qty_init)
 
       all_values[i].append(qty)
-      if i == 1:
+      if i == 0:
         all_x.append(x)
+      all_t[i] = solver.time
 
   ''' Compute global clim '''
   min_val = np.min([np.min([np.min(vals_dom) for vals_dom in vals_t]) for vals_t in all_values])
@@ -153,11 +166,17 @@ def generate_anim(atm_names, conduit_names, outfilename, num_frames,
     cb = plt.colorbar(sm)
     cb.set_label(plot.get_ylabel(solver.physics, plot_qty, None))
     
+    plt.title(f"t = {all_t[i]:.6f}")
     plt.axis("auto")
     plt.axis("equal")
     plt.pause(0.010)
-    # Grab frame with FFwriter
-    FFwriter.grab_frame()
+    # plt.show()
+    plt.draw()
 
-  FFwriter.finish()
+    # Grab frame with FFwriter
+    if not FFsetup_failure:
+      FFwriter.grab_frame()
+
+  if not FFsetup_failure:
+    FFwriter.finish()
   print("Animation constructed")

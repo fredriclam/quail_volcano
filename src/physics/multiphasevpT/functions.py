@@ -434,7 +434,10 @@ class SlipWall(BCWeakPrescribed):
 class PressureOutlet(BCWeakPrescribed):
 	'''
 	This class corresponds to an outflow boundary condition with static
-	pressure prescribed. See documentation for more details.
+	pressure prescribed.
+	The boundary state is computed by connecting the initial state to the state
+	with the prescribed pressure along the integral curve of the extended
+	eigenvector corresponding to the entering waves.
 
 	Attributes:
 	-----------
@@ -456,60 +459,157 @@ class PressureOutlet(BCWeakPrescribed):
 		self.p = p
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
-		# Unpack
-		srho = physics.get_state_slice("Density")
-		srhoE = physics.get_state_slice("Energy")
-		smom = physics.get_momentum_slice()
+		if physics.NDIMS > 1:
+			raise NotImplementedError("Pressure boundary condition (multiphasevpT) only done for 1D")
 
-		# Pressure
-		pB = self.p
-
-		gamma = physics.gamma
-
-		UqB = UqI.copy()
-
-		# Unit normals
+		''' Perform physical checks '''
 		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-
-		# Interior velocity in normal direction
-		rhoI = UqI[:, :, srho]
-		velI = UqI[:, :, smom]/rhoI
+		rhoI = UqI[:, :, physics.get_mass_slice()].sum(axis=2, keepdims=True)
+		# Interior velocity in normal-tangential coordinates
+		velI = UqI[:, :, physics.get_momentum_slice()]/rhoI
 		velnI = np.sum(velI*n_hat, axis=2, keepdims=True)
-
+		veltI = velI - velnI*n_hat
+		pI = physics.compute_variable("Pressure", UqI)
+		if np.any(pI < 0.):
+			raise errors.NotPhysicalError
 		if np.any(velnI < 0.):
 			print("Incoming flow at outlet")
 
-		# Interior pressure
-		pI = physics.compute_variable("Pressure", UqI)
-
-		if np.any(pI < 0.):
-			raise errors.NotPhysicalError
-
-		# Interior speed of sound
+		''' Short-circuit function for sonic exit '''
 		cI = physics.compute_variable("SoundSpeed", UqI)
-		JI = velnI + 2.*cI/(gamma - 1.)
-		# Interior velocity in tangential direction
-		veltI = velI - velnI*n_hat
-
-		# Normal Mach number
 		Mn = velnI/cI
 		if np.any(Mn >= 1.):
 			# If supersonic, then extrapolate interior to exterior
 			return UqB
 
-		# Boundary density from interior entropy
-		rhoB = rhoI*np.power(pB/pI, 1./gamma)
-		UqB[:, :, srho] = rhoB
+		UqB = UqI.copy()
+		p_target = self.p
 
-		# Boundary speed of sound
-		cB = np.sqrt(gamma*pB/rhoB)
-		# Boundary velocity
-		velB = (JI - 2.*cB/(gamma-1.))*n_hat + veltI
-		UqB[:, :, smom] = rhoB*velB
+		# Define numerics for target state construction
+		damping_idx_scale = 5
+		additional_damping_factor = 1.0
+		N_steps_max = 20
+		# Permissive step count
+		N_steps_max = np.max([N_steps_max, 10*damping_idx_scale])
+		p_rel_tol = 1e-4
 
-		# Boundary energy
-		rhovel2B = rhoB*np.sum(velB**2., axis=2, keepdims=True)
-		UqB[:, :, srhoE] = pB/(gamma - 1.) + 0.5*rhovel2B
+		# Initialize monitor variables for measuring relative change
+		p = 1e-15
+		p_last = 1e15
+		stuck_counter = 0
+
+		def compute_eig_aco_negative(U, physics):
+			''' Computes eigenvector corresponding to u-c'''
+
+			'''Compute rows of flux Jacobian for tracer states'''
+			# Row of flux Jacobian for tracer states
+			rho = U[:,:,physics.get_mass_slice()].sum(axis=2)
+			u = U[:,:,physics.get_state_index("XMomentum")] / rho
+			# Truncated row of flux Jacobian for tracer states
+			#   b = [-u, -u, -u, 1, 0] / rho * q_i
+			# where q_i is the partial density of the given tracer state
+			N_states_hyperbolic = 5
+			N_states_tracer = 2
+			# Fill temporary construction vector with size [ne, nq, ns_hyp]
+			b_sub = np.tile(np.zeros_like(u), (1,1,N_states_hyperbolic))
+			b_sub[:,:,physics.get_mass_slice()] = -u/rho
+			b_sub[:,:,physics.get_state_index("XMomentum")] = 1.0/rho
+			# Fill temporary construction vector with size [ne, nq, ns_tracer]
+			slice_like_tracers = (physics.get_state_index("pDensityWt"), 
+				physics.get_state_index("pDensityC"))
+			arho_tracers = U[:,:,slice_like_tracers]
+			# Compute rows of flux Jacobian for tracer states
+			b = np.einsum("ijk, ijl -> ijkl", arho_tracers, b_sub)
+
+			''' Compute u-c eigenvector of hyperbolic subsystem '''
+			# Size [ne, nq, ns_hyp]
+			#   x = y1 y2 y3 u-a H - au
+			# Mass fractions
+			y1 = U[:,:,0] / rho
+			y2 = U[:,:,1] / rho
+			y3 = U[:,:,2] / rho
+			eigvec_hyp = np.zeros_like(b_sub)
+			H = physics.compute_additional_variable("TotalEnthalpy", U, True)
+			a = physics.compute_additional_variable("SoundSpeed", U, True)
+			eigvec_hyp[:,:,0] = y1
+			eigvec_hyp[:,:,1] = y2
+			eigvec_hyp[:,:,2] = y3
+			eigvec_hyp[:,:,3] = u - a
+			eigvec_hyp[:,:,4] = H - a*u
+
+			''' Compute extension of the hyperbolic subsystem acoustic eigenvector'''
+			# Compute (b^T * eigvec) / (eigval - u) -- 
+			eigvec_ext = np.einsum("ijkl, ijl -> ijk", b, eigvec_hyp) / (-a)
+			return np.concatenate((eigvec_hyp, eigvec_ext), axis=2)
+
+		p_fn = lambda U : physics.compute_additional_variable("Pressure", U, True)
+		dpdU_fn = lambda U : physics.compute_pressure_sgradient(U)
+		f = lambda U: compute_eig_aco_negative(U, physics)
+
+		for i in range(N_steps_max):
+			''' Set damped Newton step size '''
+			# Discrete Gaussian damping
+			damping = 1.0 - np.exp(-((i+1)/damping_idx_scale)**2)
+			damping *= additional_damping_factor
+			# Compute Newton step size
+			newton_step_size = (p_target - p_fn(UqB)) / \
+					np.einsum("ijk, ijk -> ij", dpdU_fn(UqB), f(UqB))
+			
+			# Check for stalling
+			# if (p - p_last) / p_target < p_rel_tol and i > 2 * damping_idx_scale:
+			#     # Increase damping (high damping for monotonic approach to target)
+			#     # (Deterministic alternative to stochastic perturbation)
+			#     damping *= (0.9)**(stuck_counter+1)
+			#     stuck_counter += 1
+			p_last = p
+
+			# Butcher table for Cash-Karp RK quadrature
+			B = np.array([[1/5, 0, 0, 0, 0],
+					[3/40, 9/40, 0, 0, 0],
+					[3/10, -9/10, 6/5, 0, 0],
+					[-11/54, 5/2, -70/27, 35/27, 0],
+					[1631/55296, 175/512, 575/13824, 44275/110592, 253/4096]])
+			w = np.array([37/378, 0, 250/621, 125/594 , 0, 512/1771])
+			# Compute damped step size for ODE integration
+			damped_step_size = damping * newton_step_size
+			# RK step 0
+			num_stages = B.shape[0] + 1
+			k = np.zeros(tuple(np.append([num_stages], list(UqB.shape))))
+			k[0,:,:,:] = f(UqB)
+			for j in range(B.shape[0]):
+					k[j+1,:,:,:]= f(UqB + damped_step_size*
+							np.einsum("m, mijk -> ijk", B[j,0:j+1], k[0:j+1,:]))
+			UqB += damped_step_size * np.einsum("i, ijkl -> jkl", w, k)
+			p = p_fn(UqB)
+
+			if np.abs(p - p_target) / p_target < p_rel_tol:
+				break
+
+			if i == N_steps_max-1:
+				print('''Boundary state construction reached max num steps allowed.
+				To be replaced by a logger.warning in PressureOutlet
+				''')
+
+		# Compute final state
+		p = p_fn(UqB)
+		rho = UqB[:,:,0:3].sum(axis=2)
+		# y1 = UqB[:,:,0] / rho
+		# y2 = UqB[:,:,1] / rho
+		# y3 = UqB[:,:,2] / rho
+		# rhoA = UqB[:,:,0]/physics.compute_additional_variable("volFracA", UqB, True)
+		# rhoWv = UqB[:,:,1]/physics.compute_additional_variable("volFracWv", UqB, True)
+		# T = physics.compute_additional_variable("Temperature", UqB, True)
+		# S = y1 * physics.Gas[0]["c_v"] * np.log(p / rhoA**physics.Gas[0]["gamma"]) + \
+		# 		y2 * physics.Gas[1]["c_v"] * np.log(p / rhoWv**physics.Gas[1]["gamma"]) + \
+		# 		y3 * physics.Liquid["c_m"] * np.log(T)
+		# a = physics.compute_additional_variable("SoundSpeed", UqB, True)
+		# beta = physics.compute_additional_variable("beta", UqB, True)
+		# velx = UqB[:,:,3] / rho
+		# Mn = velx / a
+
+		''' Post-computation pressure check '''
+		if np.any(p < 0.):
+			raise errors.NotPhysicalError
 
 		return UqB
 
