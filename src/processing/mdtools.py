@@ -8,10 +8,10 @@ import processing.readwritedatafiles as readwritedatafiles
 import processing.plot as plot
 import traceback
 
-def viz(solver, plot_qty:str="Pressure"):
+def viz(solver, plot_qty:str="Pressure", levels=None, clims=None):
   x, qty = downsample(solver, plot_qty)
   if solver.physics.NDIMS == 2:
-    custom_plot_2D(x, qty, solver, levels=None)
+    custom_plot_2D(x, qty, solver, levels=levels, clims=clims)
   elif solver.physics.NDIMS == 1:
     plt.plot(x.ravel(), qty.ravel(), '.-')
 
@@ -29,7 +29,7 @@ def downsample(solver, plot_qty:str="Pressure"):
 					solver.basis, plot_qty)
 	return x, var_plot
 
-def custom_plot_2D(x, var_plot, solver, levels=None):
+def custom_plot_2D(x, var_plot, solver, levels=None, clims=None):
 	# plot.plot_2D_general(solver.physics, x, var_plot)
 
 	if levels is None:
@@ -37,6 +37,9 @@ def custom_plot_2D(x, var_plot, solver, levels=None):
 		figtmp = plt.figure()
 		# Run this for the sole purpose of getting default contour levels
 		levels = plot.plot_2D_regular(solver.physics, np.copy(x), np.copy(var_plot))
+		if clims is not None:
+			plt.clim(clims)
+			levels = plot.plot_2D_regular(solver.physics, np.copy(x), np.copy(var_plot))
 		plt.close(figtmp)
 
 	num_elems = x.shape[0]
@@ -83,7 +86,8 @@ def generate_anim(atm_names, conduit_names, outfilename, num_frames,
   # plt.rcParams['animation.ffmpeg_path'] = "C:\\Users\\Fredric\\Documents\\ffmpeg\\ffmpeg-n4.4-latest-win64-gpl-4.4\\bin"
   if is_high_detail:
     print("High detail plot not implemented lol (defaulting to element-mean plotting)")
-  fig = plt.figure()
+  fig = plt.figure(figsize=(11, 11), dpi=80)
+  
 
   FFwriter = animation.FFMpegWriter()
   FFsetup_failure = False
