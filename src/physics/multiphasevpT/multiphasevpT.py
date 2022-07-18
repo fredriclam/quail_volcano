@@ -141,7 +141,7 @@ class MultiphasevpT(base.PhysicsBase):
 		Temperature = "T"
 		Entropy = "s"
 		InternalEnergy = "\\rho e"
-		TotalEnthalpy = "H"
+		TotalEnthalpy = "H" # per mass
 		SoundSpeed = "c"
 		MaxWaveSpeed = "\\lambda"
 		Velocity = "|u|"
@@ -152,7 +152,7 @@ class MultiphasevpT(base.PhysicsBase):
 		pi1 = "pi1"   # Thermodynamic parameter (Psi1 * Gas1-related quantity)
 		pi2 = "pi2"   # Thermodynamic parameter (Psi1 * Gas2-related quantity)
 		pi3 = "pi3"   # Thermodynamic parameter (Psi1 * Liquid-related quantity)
-		Enthalpy = "Enthalpy" # Enthalpy excluding kinetic energy contribution
+		Enthalpy = "Enthalpy" # Enthalpy *excluding* kinetic energy contribution
 		Gamma = "Gamma"       # Pseudogas Gamma (mixture heat capacity ratio)
 		phi = "phi"                   # Sum of gas volume fractions
 		volFracA = "\\alpha_a"				# Volume fraction, air

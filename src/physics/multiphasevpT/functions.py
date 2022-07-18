@@ -800,20 +800,20 @@ class BCWeakLLF(BCBase):
 			UqB = self.get_boundary_state(physics, UqI, normals, x, t, get_average=False)
 			F = physics.get_conv_flux_numerical(UqI, UqB, normals)
 
-		# Initalize logger
-		self.logger = logging.getLogger(f"{__name__}{hash(self)}")
-		self.logger.setLevel(logging.DEBUG)
-		h = logging.FileHandler(
-			filename=f"BCWeakLLF_{hash(self)}.log",
-			encoding="utf-8")
-		h.setFormatter(logging.Formatter(
-			'[%(asctime)s][%(levelname)s] Logger <%(name)s> : %(message)s'))
-		# Hack: logging (conflicts when multiple proesses)
-		if len(self.logger.handlers)== 0:
-			self.logger.addHandler(h)
-
 		log_state = False
 		if log_state:
+			# Initalize logger
+			self.logger = logging.getLogger(f"{__name__}{hash(self)}")
+			self.logger.setLevel(logging.DEBUG)
+			h = logging.FileHandler(
+				filename=f"BCWeakLLF_{hash(self)}.log",
+				encoding="utf-8")
+			h.setFormatter(logging.Formatter(
+				'[%(asctime)s][%(levelname)s] Logger <%(name)s> : %(message)s'))
+			# Hack: logging (conflicts when multiple proesses)
+			if len(self.logger.handlers)== 0:
+				self.logger.addHandler(h)
+
 			self.logger.info(f"t = {t}")
 			self.logger.info(f"UqI (interior) = {UqI}")
 			self.logger.info(f"UqB (outboundary) = {UqB}")
