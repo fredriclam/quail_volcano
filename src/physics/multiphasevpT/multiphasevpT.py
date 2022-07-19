@@ -24,6 +24,7 @@
 #
 # ------------------------------------------------------------------------ #
 from enum import Enum
+from logging import warning
 import numpy as np
 from pkg_resources import NullProvider
 
@@ -534,11 +535,14 @@ class MultiphasevpT1D(MultiphasevpT):
 			left_eigen: Left eigenvector matrix [ne, 1, ns, ns]
 		'''
 
+
+
 		# Unpack
 		ne = U_bar.shape[0]
 		ns = self.NUM_STATE_VARS
 
-		iarhoA, iarhoWv, iarhoM, irhou, ie = self.get_state_indices()
+		print("Warning: vpT eigenvector in get_conv_eigenvectors not fully implemented.")
+		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, = self.get_state_indices()
 
 		arhoA  = U_bar[:, :, iarhoA]
 		arhoWv = U_bar[:, :, iarhoWv]
@@ -602,10 +606,11 @@ class MultiphasevpT1D(MultiphasevpT):
 		# Try permuting
 		# right_eigen[:, :, :, :] = right_eigen[:, :, :, [irhou, ie, iarhoA, iarhoWv, iarhoM]]
 
-		left_eigen = np.linalg.inv(right_eigen)
+		# left_eigen = np.linalg.inv(right_eigen)
 		# Can uncomment line below to test l dot r = kronecker delta
 		# test = np.einsum('elij,eljk->elik', left_eigen, right_eigen)
 
+		return right_eigen
 		return right_eigen, left_eigen # [ne, 1, ns, ns]
 
 
