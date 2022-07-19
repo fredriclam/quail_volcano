@@ -10,7 +10,6 @@
 #
 # ------------------------------------------------------------------------ #
 
-from msilib.schema import Error
 import numpy as np
 
 import numerics.helpers.helpers as helpers
