@@ -95,7 +95,7 @@ class GlobalDG():
     T, arhoA, arhoC, xmomentum provided by the unequilibrated initial condition
     are computed from the latter and held constant. For the remaining three
     quantities, two constraints are required (besides for input pressure);
-    several strategies are provided, accessed by providing const_key:
+    several strategies are provided, accessed by providing constr_key:
       - WtEq: Fixed total water arhoWt, equilibrium dissolved water content.
         Typically difficult to use (volume fraction calculated may not be valid)
       - WvEq: Fixed exsolved water, equilibrium dissolved water content. Low
@@ -103,6 +103,7 @@ class GlobalDG():
         fractions are clipped to [0,1].
       - MEq (default): Fixed magma, equilibrium dissolved water content. Invalid
         volume fractions are clipped to [0,1].
+      - YEq: Fixed mass fractions (y_i for phase i). Equilibrium dissolved water
     
     Inputs:
       p: array of pressures in raveled vector form
@@ -183,6 +184,36 @@ class GlobalDG():
       alphaM = 1.0 - alphaA - alphaWv
       arhoWd = conc_eq / (1.0 + conc_eq) * alphaM * rhoM
       arhoWt = arhoWd + alphaWv * rhoWv
+    elif constr_key == "YEq":
+      ''' Algorithm 4: fixed mass fraction
+      Does not use pre-computed air volume fraction.
+      '''
+      rhoA = p / (physics.Gas[0]["R"]*T)
+      rhoWv = p / (physics.Gas[1]["R"]*T)
+      rhoM = physics.Liquid["rho0"] + (physics.Liquid["rho0"] 
+        / physics.Liquid["K"]) * (p - physics.Liquid["p0"])
+      # Compute mass fractions from origin state
+      rho_origin_state = self.origin_state[:,:,physics.get_mass_slice()].sum(
+        axis=2,keepdims=True)
+      yA = self.origin_state[:,:,physics.get_state_slice("pDensityA")] / rho_origin_state
+      yWv = self.origin_state[:,:,physics.get_state_slice("pDensityWv")] / rho_origin_state
+      yM = self.origin_state[:,:,physics.get_state_slice("pDensityM")] / rho_origin_state
+      yWt = self.origin_state[:,:,physics.get_state_slice("pDensityWt")] / rho_origin_state
+      yC = self.origin_state[:,:,physics.get_state_slice("pDensityC")] / rho_origin_state
+      # Compute mixture density (rho^-1 == sum_i y_i / rho_i)
+      rho = 1.0 / (yA/rhoA + yWv/rhoWv + yM/rhoM)
+
+      # Recompute air
+      constrained_state[:,:,physics.get_state_slice("pDensityA")] = rho * yA
+      # Compute volume fractions for fill-in
+      alphaA = rho * yA / rhoA
+      alphaWv = rho * yWv / rhoWv
+      alphaM = rho * yM / rhoM
+      # Recompute total water from equilibrium
+      arhoWd = conc_eq / (1.0 + conc_eq) * alphaM * rhoM
+      arhoWt = arhoWd + alphaWv * rhoWv
+      # Recompute crystallinity
+      constrained_state[:,:,physics.get_state_slice("pDensityC")] = rho * yC
     else:
       raise NotImplementedError(f"Unknown constraint key: {constr_key}." + 
         "Implemented constraints are WtEq, WvEq, MEq (default).")
@@ -199,9 +230,84 @@ class GlobalDG():
    
     return constrained_state
 
+  def eval_barotropic_drhodp(self, p:np.array, constr_key:str="MEq"):
+    ''' Evaluate scalar derivative drho/dp for the corresponding barotropic
+    pressure-density relation.
+    Scalar derivative is needed for Newton's method in solving the stationary
+    PDE for hydrostatic equilibrium. The following constraints can be set in
+    eval_barotropic_state to determine how the mixture density is varied with 
+    respect to pressure in constructing the initial condition. 
+      - WtEq: Fixed total water arhoWt, equilibrium dissolved water content.
+        Typically difficult to use (volume fraction calculated may not be valid)
+      - WvEq: Fixed exsolved water, equilibrium dissolved water content. Low
+        pressures may cause problems with the magma density. Invalid volume
+        fractions are clipped to [0,1].
+      - MEq (default): Fixed magma, equilibrium dissolved water content. Invalid
+        volume fractions are clipped to [0,1].
+    See eval_barotropic_state for more details on the constraint key. 
+
+    Currently only implemented for Wv,Eq MEq.
+    '''
+
+    physics = self.solver.physics
+    # Copy origin state
+    constrained_state = self.origin_state.copy()
+    # Rearrange p to Quail format
+    p = self.inv_ravel(p)
+
+    if constr_key == "WtEq":
+      raise NotImplementedError
+    elif constr_key == "WvEq":
+      K = physics.Liquid["K"]
+      p0 = physics.Liquid["p0"]
+      rho0 = physics.Liquid["rho0"]
+      T = self.solver.physics.compute_additional_variable(
+        "Temperature", constrained_state, flag_non_physical=True)
+      return rho0 / K + 1.0/(p**2.0) * rho0 * (1 - p0/K) * T * (
+        self.origin_state[:,:,physics.get_state_slice("pDensityA")] * physics.Gas[0]["R"]
+        + self.origin_state[:,:,physics.get_state_slice("pDensityWv")] * physics.Gas[1]["R"]
+      )
+    elif constr_key == "MEq":
+      K = physics.Liquid["K"]
+      p0 = physics.Liquid["p0"]
+      rho0 = physics.Liquid["rho0"]
+      T = self.solver.physics.compute_additional_variable(
+        "Temperature", constrained_state, flag_non_physical=True)
+      return 1.0/(physics.Gas[1]["R"]*T) * (1.0
+        - self.origin_state[:,:,physics.get_state_slice("pDensityM")] 
+        / rho0 * K * (K-p0)/(p+K-p0)**2)
+    elif constr_key == "YEq":
+      ''' Derivative drho/dp from rho^{-1} == sum_i y_i / rho_i'''
+      T = self.solver.physics.compute_additional_variable(
+        "Temperature", constrained_state, flag_non_physical=True)
+      K = physics.Liquid["K"]
+      p0 = physics.Liquid["p0"]
+      rho0 = physics.Liquid["rho0"]
+      rhoA = p / (physics.Gas[0]["R"]*T)
+      rhoWv = p / (physics.Gas[1]["R"]*T)
+      rhoM = physics.Liquid["rho0"] + (physics.Liquid["rho0"] 
+        / physics.Liquid["K"]) * (p - physics.Liquid["p0"])
+      # Compute mass fractions from origin state
+      rho_origin_state = self.origin_state[:,:,physics.get_mass_slice()].sum(
+        axis=2,keepdims=True)
+      yA = self.origin_state[:,:,physics.get_state_slice("pDensityA")] / rho_origin_state
+      yWv = self.origin_state[:,:,physics.get_state_slice("pDensityWv")] / rho_origin_state
+      yM = self.origin_state[:,:,physics.get_state_slice("pDensityM")] / rho_origin_state
+      # Compute mixture density (rho^-1 == sum_i y_i / rho_i)
+      rho = 1.0 / (yA/rhoA + yWv/rhoWv + yM/rhoM)
+      T = self.solver.physics.compute_additional_variable(
+        "Temperature", constrained_state, flag_non_physical=True)
+      return rho**2.0 * (T / p**2.0 *
+        (yA * physics.Gas[0]["R"] + yWv * physics.Gas[1]["R"])
+        + yM * rho0 / K / rhoM**2.0)
+    else:
+      raise NotImplementedError(f"Unknown constraint key: {constr_key}." + 
+        "Implemented constraints are WtEq, WvEq, MEq (default).")
+
+
   def set_initial_condition(self, p_bdry:float=1e5, p_bc_loc:str="x2",
     is_jump_included:bool=False, x_jump:float=0.0, is_x_jump_exact:bool=False,
-    traction_fn:Callable=None, owner_domain=None):
+    traction_fn:Callable=None, owner_domain=None, constr_key="MEq"):
     ''' Replace the initial condition in self.solver with hydrostatic
     condition.
     
@@ -375,13 +481,19 @@ class GlobalDG():
       M[nb*i:nb*(i+1), nb*i:nb*(i+1)] = M_vec[i,:,:]
     M = M.tocsr()
 
+    ''' Set barotropic state, state gradient '''
+    # Function that maps p to the full state
+    path_U = lambda p: self.eval_barotropic_state(p, constr_key=constr_key)
+    # Function that maps p to drho/dp
+    path_drhodp = lambda p: self.eval_barotropic_drhodp(p, constr_key=constr_key)
+
     ''' Compute initial guess from average weight '''
     gsource = [s for s in solver.physics.source_terms if
       type(s) is GravitySource][0]
     # Barotropic gravity source function [ne, nq]
     g_fn = lambda p: gsource.get_source(
         self.solver.physics,
-        self.eval_barotropic_state(p),
+        path_U(p),
         self.solver.elem_helpers.x_elems,
         self.solver.time)[
           :,:,self.solver.physics.get_state_index("XMomentum")]
@@ -419,20 +531,28 @@ class GlobalDG():
     # R[30,29] = -1
     # R[30,30] = 1
     # (0.5*R@p_guess).T - delta_source
+
+    # Simple fixed point iteration obtained from inverting the linear part of
+    # the equation (A-B)*p = f(p) -> p_{k+1} = (A-B) \ f(p_{k})
     fixedpointiter = lambda p: scipy.sparse.linalg.spsolve(A-B+0*scipy.sparse.identity(self.N)+mu*M,
       f_fn(np.expand_dims(p,axis=1)) + mu*M@np.expand_dims(p,axis=1) + 0*np.expand_dims(p,axis=1))
     evalresidual = lambda p : np.linalg.norm(
       (A-B)@np.expand_dims(p,axis=1) - f_fn(np.expand_dims(p,axis=1)), 'fro')
-    residuals = np.array([evalresidual(p)])
-    
+    # Newton iteration sending residual of equation to zero
+    newtoniter = lambda p: p - scipy.sparse.linalg.spsolve(
+      A-B+gsource.gravity*M@np.diag(path_drhodp(p).ravel()), # (A-B) - M*diag(d(-rho*g)/dp)
+      (A-B)@np.expand_dims(p,axis=1) - f_fn(np.expand_dims(p,axis=1)))
+
+
+    residuals = np.array([evalresidual(p)])    
     N_iter = self.N_iter
-    # Increase allowable for p0
-    if solver.order == 0:
-      N_iter = 1
+    # # Increase allowable for p0
+    # if solver.order == 0:
+    #   N_iter = 1
     
     # Start fixed point iteration
     for i in range(N_iter):
-      p = fixedpointiter(p)
+      p = newtoniter(p)
       fpi_res = evalresidual(p)
       residuals = np.append(residuals, fpi_res)
       if fpi_res < self.FPI_TOL:
@@ -446,10 +566,10 @@ class GlobalDG():
     # Compute difference in pressure between pressure vector and eval'd state
     self.pError = np.linalg.norm(p - 
       self.solver.physics.compute_additional_variable("Pressure",
-        self.eval_barotropic_state(p) ,True).ravel()
+        path_U(p) ,True).ravel()
     )
     # Evaluate Quail-ready state
-    U = self.eval_barotropic_state(p)
+    U = path_U(p)
     # Check unsteady problem residual
     try:
       self.unsteady_residuals_face = np.zeros_like(U)

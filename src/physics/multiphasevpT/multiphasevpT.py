@@ -74,6 +74,7 @@ class MultiphasevpT(base.PhysicsBase):
 			base_BC_type.Extrapolate : base_fcns.Extrapolate,
 			BCType.SlipWall : mpvpT_fcns.SlipWall,
 			BCType.PressureOutlet : mpvpT_fcns.PressureOutlet,
+			BCType.Inlet : mpvpT_fcns.Inlet,
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
@@ -486,6 +487,22 @@ class MultiphasevpT1D(MultiphasevpT):
 		return smom
 
 	def get_conv_flux_interior(self, Uq):
+		# Rider check for correct inverse eigenvector matrix
+		# 1. L * R == I
+		# print(np.abs(np.einsum("ijkl,ijlm->ijkm",
+		# 	self.get_eigenvectors_L(np.tile(Uq,(1,1,1))),
+		# 	self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))) - 
+		# 	np.eye(7)).max())
+		# 2. L == R^{-1}
+		# print(np.abs(
+		# 	self.get_eigenvectors_L(np.tile(Uq,(1,1,1))) -
+		# 	np.linalg.inv(self.get_eigenvectors_R(np.tile(Uq,(1,1,1))))).max())
+		# 3. L * R == I subject to conditioning of R
+		# print(np.abs(np.einsum("ijkl,ijlm->ijkm",
+		# 	self.get_eigenvectors_L(np.tile(Uq,(1,1,1))),
+		# 	self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))) - 
+		# 	np.eye(7)).max() / np.linalg.cond(self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))))
+
 		# Get indices of state variables
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = self.get_state_indices()
 		# Extract data of size # [n, nq]
@@ -614,6 +631,200 @@ class MultiphasevpT1D(MultiphasevpT):
 		return right_eigen
 		return right_eigen, left_eigen # [ne, 1, ns, ns]
 
+	def get_essential_eigenvectors_R(self, U):
+		# TODO: add NDIMS_ess to physics
+		ns_ess = self.NDIMS + 4
+
+		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, = self.get_state_indices()
+
+		''' Compute required variables in squeezed shape [ne, nb,].
+		Requires are: y1, y2, y3, pi1, pi2, pi3, beta, u, a, H
+		TODO: reuse intermediates to lower comp. cost
+		''' 
+		rho = U[:,:,self.get_mass_slice()].sum(axis=2)
+		p = np.squeeze(self.compute_additional_variable("Pressure", U, True), axis=2)
+
+		y1 = U[:, :, iarhoA]/rho
+		y2 = U[:, :, iarhoWv]/rho
+		y3 = 1.0 - y1 - y2
+		pi1 = np.squeeze(self.compute_additional_variable("pi1", U, True), axis=2)
+		pi2 = np.squeeze(self.compute_additional_variable("pi2", U, True), axis=2)
+		pi3 = np.squeeze(self.compute_additional_variable("pi3", U, True), axis=2)
+		beta = np.squeeze(self.compute_additional_variable("beta", U, True), axis=2)
+		u = U[:, :, irhou] / rho
+		a = np.squeeze(self.compute_additional_variable("SoundSpeed", U, True), axis=2)
+		H = (U[:, :, ie] + p)/rho
+		
+		right_eigen = np.zeros([U.shape[0], U.shape[1], ns_ess, ns_ess])
+		right_eigen[:, :, iarhoA,  iarhoA]  = pi2 - pi3
+		right_eigen[:, :, iarhoWv, iarhoA]  = pi3 - pi1
+		right_eigen[:, :, iarhoM,  iarhoA]  = pi1 - pi2
+		right_eigen[:, :, irhou,   iarhoA]  = 0.
+		right_eigen[:, :, ie,      iarhoA]  = 0.
+		right_eigen[:, :, iarhoA,  iarhoWv] = -pi2
+		right_eigen[:, :, iarhoWv, iarhoWv] = pi1
+		right_eigen[:, :, iarhoM,  iarhoWv] = 0.
+		right_eigen[:, :, irhou,   iarhoWv] = u*(pi1 - pi2)
+		right_eigen[:, :, ie,      iarhoWv] = 0.5*u*u*(pi1 - pi2)
+		right_eigen[:, :, iarhoA,  iarhoM]  = -2*beta
+		right_eigen[:, :, iarhoWv, iarhoM]  = 2*beta
+		right_eigen[:, :, iarhoM,  iarhoM]  = 0.
+		right_eigen[:, :, irhou,   iarhoM]  = 0.
+		right_eigen[:, :, ie,      iarhoM]  = pi1 - pi2
+		right_eigen[:, :, iarhoA,  irhou]   = y1
+		right_eigen[:, :, iarhoWv, irhou]   = y2
+		right_eigen[:, :, iarhoM,  irhou]   = y3
+		right_eigen[:, :, irhou,   irhou]   = u - a
+		right_eigen[:, :, ie,      irhou]   = H - a*u
+		right_eigen[:, :, iarhoA,  ie]      = y1
+		right_eigen[:, :, iarhoWv, ie]      = y2
+		right_eigen[:, :, iarhoM,  ie]      = y3
+		right_eigen[:, :, irhou,   ie]      = u + a
+		right_eigen[:, :, ie,      ie]      = H + a*u
+
+		return right_eigen
+
+	def get_essential_eigenvectors_L(self, U):
+		# TODO: add NDIMS_ess to physics
+		ns_ess = self.NDIMS + 4
+
+		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, = self.get_state_indices()
+
+		''' Compute required variables in squeezed shape [ne, nb,].
+		Requires are: y1, y2, y3, pi1, pi2, pi3, beta, u, a, H
+		TODO: reuse intermediates to lower comp. cost
+		''' 
+		rho = U[:,:,self.get_mass_slice()].sum(axis=2)
+		p = np.squeeze(self.compute_additional_variable("Pressure", U, True), axis=2)
+
+		y1 = U[:, :, iarhoA]/rho
+		y2 = U[:, :, iarhoWv]/rho
+		y3 = 1.0 - y1 - y2
+		pi1 = np.squeeze(self.compute_additional_variable("pi1", U, True), axis=2)
+		pi2 = np.squeeze(self.compute_additional_variable("pi2", U, True), axis=2)
+		pi3 = np.squeeze(self.compute_additional_variable("pi3", U, True), axis=2)
+		beta = np.squeeze(self.compute_additional_variable("beta", U, True), axis=2)
+		u = U[:, :, irhou] / rho
+		a = np.squeeze(self.compute_additional_variable("SoundSpeed", U, True), axis=2)
+		H = (U[:, :, ie] + p)/rho
+		
+		# Compute intermediate variables
+		Pi = y1*pi1 + y2*pi2 + y3*pi3
+		f1 = beta*u*u + pi1
+		f2 = beta*u*u + pi2
+		f3 = beta*u*u + pi3
+		u2Pi = 0.5*u*u*Pi
+		uHDiff = 0.5*u*u - H
+
+		left_eigen = np.zeros([U.shape[0], U.shape[1], ns_ess, ns_ess])
+		left_eigen[:, :, iarhoA,  iarhoA]  = -y3*f1
+		left_eigen[:, :, iarhoA, iarhoWv]  = -y3*f2
+		left_eigen[:, :, iarhoA,  iarhoM]  = a*a-y3*f3
+		left_eigen[:, :, iarhoA,   irhou]  = 2*beta*u*y3
+		left_eigen[:, :, iarhoA,      ie]  = -2*beta*y3
+		left_eigen[:, :, iarhoWv,  iarhoA] = a*a - f1
+		left_eigen[:, :, iarhoWv, iarhoWv] = a*a - f2
+		left_eigen[:, :, iarhoWv,  iarhoM] = a*a - f3
+		left_eigen[:, :, iarhoWv,   irhou] = 2*beta*u
+		left_eigen[:, :, iarhoWv,      ie] = -2*beta
+		left_eigen[:, :, iarhoM,  iarhoA]  = u2Pi + pi1*uHDiff
+		left_eigen[:, :, iarhoM, iarhoWv]  = u2Pi + pi2*uHDiff
+		left_eigen[:, :, iarhoM,  iarhoM]  = u2Pi + pi3*uHDiff
+		left_eigen[:, :, iarhoM,   irhou]  = -u*Pi
+		left_eigen[:, :, iarhoM,      ie]  = Pi
+		left_eigen[:, :, irhou,  iarhoA]   = 0.5*(f1+a*u)
+		left_eigen[:, :, irhou, iarhoWv]   = 0.5*(f2+a*u)
+		left_eigen[:, :, irhou,  iarhoM]   = 0.5*(f3+a*u)
+		left_eigen[:, :, irhou,   irhou]   = -0.5*a - beta*u
+		left_eigen[:, :, irhou,      ie]   = beta
+		left_eigen[:, :, ie,  iarhoA]      = 0.5*(f1-a*u)
+		left_eigen[:, :, ie, iarhoWv]      = 0.5*(f2-a*u)
+		left_eigen[:, :, ie,  iarhoM]      = 0.5*(f3-a*u)
+		left_eigen[:, :, ie,   irhou]      = 0.5*a - beta*u
+		left_eigen[:, :, ie,      ie]      = beta
+
+		# Manually apply factored-mass row-wise
+		m1 = np.expand_dims(1.0/(a*a*(pi1-pi2)),axis=-1)
+		m2 = np.expand_dims(1.0/(a*a),axis=-1)
+		left_eigen[:, :, iarhoA,  :] *= m1
+		left_eigen[:, :, iarhoWv, :] *= m1
+		left_eigen[:, :, iarhoM,  :] *= m1
+		left_eigen[:, :, irhou,   :] *= m2
+		left_eigen[:, :, ie,      :] *= m2
+
+		return left_eigen
+
+	def get_eigenvectors_R(self, U):
+		# TODO: add NDIMS_ess to physics
+		ns_ess = self.NDIMS + 4
+		ns = self.NUM_STATE_VARS
+		# Number of columns for eigenvalue u in essential system
+		ns_u = ns_ess - 2
+
+		rho = U[:,:,self.get_mass_slice()].sum(axis=2)
+		u = U[:,:,self.get_state_index("XMomentum")] / rho
+		a = self.compute_additional_variable("SoundSpeed", U, True).squeeze(axis=2)
+
+		right_eigen = np.zeros([U.shape[0], U.shape[1], ns, ns])
+		# Block fill-in
+		right_eigen[:, :, 0:ns_ess, 0:ns_ess] = self.get_essential_eigenvectors_R(U)
+		right_eigen[:, :, ns_ess:, ns_ess:] = np.eye(ns-ns_ess, ns-ns_ess)
+		# Fill-in u-c and u+c columns
+		right_eigen[:, :, ns_ess, ns_u] = U[:,:,self.get_state_index("pDensityWt")]/rho * (a-u)/a
+		right_eigen[:, :, ns_ess, ns_u+1] = U[:,:,self.get_state_index("pDensityWt")]/rho * (a+u)/a
+		right_eigen[:, :, ns_ess+1, ns_u] = U[:,:,self.get_state_index("pDensityC")]/rho * (a-u)/a
+		right_eigen[:, :, ns_ess+1, ns_u+1] = U[:,:,self.get_state_index("pDensityC")]/rho * (a+u)/a
+
+		return right_eigen
+
+	def get_eigenvectors_L(self, U):
+		# TODO: add NDIMS_ess to physics
+		ns_ess = self.NDIMS + 4
+		ns = self.NUM_STATE_VARS
+		# Number of columns for eigenvalue u in essential system
+		ns_u = ns_ess - 2
+
+		rho = U[:,:,self.get_mass_slice()].sum(axis=2)
+		a2 = self.compute_additional_variable("SoundSpeed", U, True).squeeze(axis=2)**2
+		beta = self.compute_additional_variable("beta", U, True).squeeze(axis=2)
+		u = U[:,:,self.get_state_index("XMomentum")] / rho
+		pi1 = self.compute_additional_variable("pi1", U, True).squeeze(axis=2)
+		pi2 = self.compute_additional_variable("pi2", U, True).squeeze(axis=2)
+		pi3 = self.compute_additional_variable("pi3", U, True).squeeze(axis=2)
+		f0 = (beta-1)*u*u
+		f1 = f0 + pi1
+		f2 = f0 + pi2
+		f3 = f0 + pi3
+
+		# Compute eigenvector matrix of essential system (ne, nb, ns_ess, ns_ess)
+		L_ess = self.get_essential_eigenvectors_L(U)
+
+		# Block fill-in complete matrix
+		left_eigen = np.zeros([U.shape[0], U.shape[1], ns, ns])
+		left_eigen[:, :, 0:ns_ess, 0:ns_ess] = L_ess
+		left_eigen[:, :, ns_ess:, ns_ess:] = np.eye(ns-ns_ess, ns-ns_ess)
+		
+		# Fill-in u-c and u+c columns
+		# TODO: replace with operator-form matvec multiplication
+		left_eigen[:, :, ns_ess, 0:ns_ess] = \
+			np.expand_dims(-U[:,:,self.get_state_index("pDensityWt")]/(rho*a2), axis=2) \
+			* np.concatenate(
+				tuple(np.expand_dims(v,axis=2) for v in 
+					[f1, f2, f3, (1-2*beta)*u, 2*beta,]),
+				axis=2
+			)
+		left_eigen[:, :, ns_ess+1, 0:ns_ess] = \
+			np.expand_dims(-U[:,:,self.get_state_index("pDensityC")]/(rho*a2), axis=2) \
+			* np.concatenate(
+				tuple(np.expand_dims(v,axis=2) for v in 
+					[f1, f2, f3, (1-2*beta)*u, 2*beta,]),
+				axis=2
+			)
+
+		return left_eigen
+	
+	def get_eigenvalues(self, U):
+		pass
 
 class MultiphasevpT2D(MultiphasevpT):
 	'''
