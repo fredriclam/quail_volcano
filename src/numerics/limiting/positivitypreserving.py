@@ -140,6 +140,7 @@ class PositivityPreserving(base.LimiterBase):
 		rho_bar = physics.compute_variable(self.var_name1, U_bar)
 		p_bar = physics.compute_variable(self.var_name2, U_bar)
 
+
 		if np.any(rho_bar < 0.) or np.any(p_bar < 0.):
 			raise errors.NotPhysicalError
 
@@ -414,6 +415,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 							 self.var_nameT2: physics.compute_variable(self.var_nameT2, U_bar),
 							 }
 		p_bar = physics.compute_variable(self.var_name4, U_bar)
+		
 
 		if np.any([np.any(rho < 0.) for rho in rho_bar.values()]) \
 			 or np.any(p_bar < 0.):

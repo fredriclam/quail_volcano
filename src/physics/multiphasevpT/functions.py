@@ -71,6 +71,7 @@ class SourceType(Enum):
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 	ExsolutionSource = auto()
+	WaterInflowSource = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -1696,6 +1697,122 @@ class ExsolutionSource(SourceBase):
 			arhoWt-arhoWv <= general.eps,
 			arhoM <= general.eps
 			))] = 0.0
+
+		return dSdU
+
+
+class WaterInflowSource(SourceBase):
+	'''
+	Water Inflow Source term
+
+	Inputs:
+	-------
+		Uq:
+
+	Outputs:
+
+	'''
+
+	def __init__(self, aquifer_depth:float=-500.0, aquifer_length:float=100.0, **kwargs):
+		super().__init__(kwargs)
+		self.aquifer_depth = aquifer_depth
+		self.aquifer_length = aquifer_length
+
+	def get_source(self, physics, Uq, x, t):
+		S = np.zeros_like(Uq)
+		if physics.NDIMS == 1:
+			# Extract variables
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+				physics.get_state_indices()
+			slarhoWv = physics.get_state_slice("pDensityWv")
+			slarhoM = physics.get_state_slice("pDensityM")
+			slarhoWt = physics.get_state_slice("pDensityWt")
+			sle = physics.get_state_slice("Energy")
+			arhoWv = Uq[:, :, slarhoWv]
+			arhoM = Uq[:, :, slarhoM]
+			arhoWt = Uq[:, :, slarhoWt]
+			e = Uq[:, :, sle]
+
+			# formulating j
+			darcy_vel = 10 ** -2  # range decided with Eric: 10^-8 - 10^-5
+			radius = 50  # in meters & hardcoded
+			rho_w = 10 ** 3  # kg/m^3
+			j = darcy_vel * rho_w * (2/radius)  # Starosin has different j value
+
+			# formulating q
+			T_w = 290  # K
+			specific_heat = 4182  # for water
+			water_den = 10 ** 3
+			q = T_w * specific_heat * water_den * darcy_vel
+
+			# variables about x
+			xmin = x[len(x) - 1]
+			xmax = x[0]
+			conduit_size = int(np.abs(xmax + xmin))
+			NumElemsX = len(x)
+			elem_size = conduit_size/NumElemsX
+
+			index_start = int(-self.aquifer_depth/elem_size)
+			for i in range(int(self.aquifer_length/elem_size)):
+				S[:, :, slarhoWv][index_start + i][0] = j
+				S[:, :, sle][index_start + i][0] = q
+		return S  # [ne, nq, ns]
+
+	def get_jacobian(self, physics, Uq, x, t):
+		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+		if physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+				physics.get_state_indices()
+			dSdU = self.compute_exsolution_source_sgradient(physics, Uq)
+			jac[:, :, iarhoWv, :] = dSdU
+			jac[:, :, iarhoM, :] = -dSdU
+		else:
+			raise Exception("Unexpected physics num dimension in GravitySource.")
+		return jac
+
+	def compute_exsolution_source_sgradient(self, physics, Uq):
+		'''
+		Compute the state-gradient of the exsolution scalar source function.
+
+		Inputs:
+		-------
+			Uq: solution in each element evaluated at quadrature points [ne, nq, ns]
+
+		Outputs:
+		--------
+			array: state-gradient of the scalar source function [ne, nq, ns]
+		'''
+		if physics.NDIMS != 1:
+			raise NotImplementedError(f"compute_exsolution_source_sgradient called for" +
+									  f"NDIMS=={self.NDIMS}, which is not 1.")
+
+		# Extract variables
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
+		slarhoWv = physics.get_state_slice("pDensityWv")
+		slarhoM = physics.get_state_slice("pDensityM")
+		slarhoWt = physics.get_state_slice("pDensityWt")
+		arhoWv = Uq[:, :, slarhoWv]
+		arhoM = Uq[:, :, slarhoM]
+		arhoWt = Uq[:, :, slarhoWt]
+		p = physics.compute_additional_variable("Pressure", Uq, True)
+
+		# Compute source gradient
+		dSdU = np.zeros_like(Uq)
+		# Change in source term due to pressure-related solubility change
+		dSdU = (arhoM - arhoWt + arhoWv) \
+			   * ExsolutionSource.get_eq_conc_deriv(physics, p) \
+			   * physics.compute_pressure_sgradient(Uq)
+		# Chemical potential change
+		dSdU[:, :, slarhoWv] += (1.0 + ExsolutionSource.get_eq_conc(physics, p))
+		dSdU[:, :, slarhoM] += ExsolutionSource.get_eq_conc(physics, p)
+		# Apply tau_d
+		dSdU /= -self.tau_d
+		# Remove vacuum-related spurious values at quadrature points
+		dSdU[np.where(np.logical_and(
+			arhoWt - arhoWv <= general.eps,
+			arhoM <= general.eps
+		))] = 0.0
 
 		return dSdU
 

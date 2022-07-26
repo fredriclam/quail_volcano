@@ -21,7 +21,7 @@ Numerics = {
   # Order 0 is most robust, and the error is mostly diffusive (may be
   # currently bugged, as of commit 68ce3b653480e52a1d52436f0206b3327c8f744f
   # on branch main.
-  "SolutionOrder" : 1,
+  "SolutionOrder" : 0,
   "SolutionBasis" : "LagrangeSeg",
   "Solver" : "DG",
   "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -64,30 +64,30 @@ Physics = {
 }
 
 InitialCondition = {
-	# Initial condition (not necessarily hydrostatic; the injected function (see
-  # below) takes this initial condition and computes the hydrostatic solution).
-  # The parameters can be provided below, or changed in the source:
-  # quail_volcano\src\physics\multiphasevpT\functions.py > RiemannProblem
-  "Function" : "RiemannProblem",
-  # The following are optional parameters. If not provided, the default args
-  # are used.
-  # Left side values
-  "arhoAL": 1e-1,
-  "arhoWvL": 8.686,
-  "arhoML": 2496.3,
-  "uL": 0.,
-  "TL": 1000.,
-  "arhoWtL": 10.0,
-  "arhoCL": 100.0, 
-  # Right side values
-	"arhoAR": 1.161,
-  "arhoWvR": 1.161*5e-3,
-  "arhoMR": 1e-6,
-  "uR": 0.,
-  "TR": 300.,
-  "arhoWtR": 1.161*5e-3,
-  "arhoCR": 0.0,
-  "xd": -600.0, # Position of the discontinuity
+  # Initial condition (not necessarily hydrostatic; the injected function (see
+ # below) takes this initial condition and computes the hydrostatic solution).
+ # The parameters can be provided below, or changed in the source:
+ # quail_volcano\src\physics\multiphasevpT\functions.py > RiemannProblem
+ "Function" : "RiemannProblem",
+ # The following are optional parameters. If not provided, the default args
+ # are used.
+ # Left side values
+ "arhoAL": 1e-1,
+ "arhoWvL": 8.686,
+ "arhoML": 2496.3,
+ "uL": 0.,
+ "TL": 1000.,
+ "arhoWtL": 10.0,
+ "arhoCL": 100.0,
+ # Right side values
+  "arhoAR": 1.161,
+ "arhoWvR": 1.161*5e-3,
+ "arhoMR": 1e-6,
+ "uR": 0.,
+ "TR": 300.,
+ "arhoWtR": 1.161*5e-3,
+ "arhoCR": 0.0,
+ "xd": -600.0, # Position of the discontinuity
 }
 
 # Define the hydrostatic steady-state solver that operates on the initial
@@ -143,6 +143,11 @@ SourceTerms = {
       "source_treatment" : "Implicit",
       "tau_d": 1.0,
   },
+ "source4": {
+     "Function" : "WaterInflowSource",
+     "aquifer_depth" : -400,  # the aquifer depth is difference from the deepest part of the conduit
+     "aquifer_length" : 100,  # the size of the conduit
+ },
 }
 
 # Fake exact solution

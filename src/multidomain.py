@@ -154,7 +154,7 @@ class Domain():
           callback(solver)
       self.call_count += 1
 
-    def append(self, functions:Union[Callable,list[Callable]],
+    def append(self, functions,
       initial:bool=True, postinitial:bool=True, owner_domain=None):
       ''' Add function to function sequence, specifying whether active for
       initial call and post initial call.'''
@@ -168,17 +168,17 @@ class Domain():
         self.callbacks.append(
             __class__.CallbackType(functions, initial, postinitial, owner_domain))
  
-    def append_always(self, functions:Union[Callable,list[Callable]]):
+    def append_always(self, functions):
       ''' Add function to function sequence, and have it execute every time
       sequence is called.'''
       self.append(functions, initial=True, postinitial=True)
 
-    def append_initial(self, functions:Union[Callable,list[Callable]]):
+    def append_initial(self, functions):
       ''' Add function to function sequence, and have it execute only the first
       time the sequence is called. '''
       self.append(functions, initial=True, postinitial=False)
 
-    def append_noninitial(self, functions:Union[Callable,list[Callable]]):
+    def append_noninitial(self, functions):
       ''' Add function to function sequence, and have it execute except the
       first time the sequence is called. '''
       self.append(functions, initial=False, postinitial=True)
