@@ -497,10 +497,10 @@ class MultiphasevpT1D(MultiphasevpT):
 		# 	self.get_eigenvectors_L(np.tile(Uq,(1,1,1))) -
 		# 	np.linalg.inv(self.get_eigenvectors_R(np.tile(Uq,(1,1,1))))).max())
 		# 3. L * R == I subject to conditioning of R
-		print(np.abs(np.einsum("ijkl,ijlm->ijkm",
-			self.get_eigenvectors_L(np.tile(Uq,(1,1,1))),
-			self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))) - 
-			np.eye(7)).max() / np.linalg.cond(self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))))
+		# print(np.abs(np.einsum("ijkl,ijlm->ijkm",
+		# 	self.get_eigenvectors_L(np.tile(Uq,(1,1,1))),
+		# 	self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))) - 
+		# 	np.eye(7)).max() / np.linalg.cond(self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))))
 
 		# Get indices of state variables
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = self.get_state_indices()
