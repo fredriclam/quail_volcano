@@ -21,7 +21,7 @@ Numerics = {
   # Order 0 is most robust, and the error is mostly diffusive (may be
   # currently bugged, as of commit 68ce3b653480e52a1d52436f0206b3327c8f744f
   # on branch main.
-  "SolutionOrder" : 1,
+  "SolutionOrder" : 0,
   "SolutionBasis" : "LagrangeSeg",
   "Solver" : "DG",
   "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
