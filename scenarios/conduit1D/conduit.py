@@ -21,7 +21,7 @@ Numerics = {
   # Order 0 is most robust, and the error is mostly diffusive (may be
   # currently bugged, as of commit 68ce3b653480e52a1d52436f0206b3327c8f744f
   # on branch main.
-  "SolutionOrder" : 0,
+  "SolutionOrder" : 1,
   "SolutionBasis" : "LagrangeSeg",
   "Solver" : "DG",
   "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -80,13 +80,13 @@ InitialCondition = {
   "arhoWtL": 10.0,
   "arhoCL": 100.0, 
   # Right side values
-	"arhoAR": 1.161,
+  "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
   "arhoMR": 1e-6,
   "uR": 0.,
   "TR": 300.,
   "arhoWtR": 1.161*5e-3,
-  "arhoCR": 0.0,
+  "arhoCR": 1e-6,
   "xd": -600.0, # Position of the discontinuity
 }
 
