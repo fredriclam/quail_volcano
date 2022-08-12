@@ -642,11 +642,11 @@ class Inlet(BCWeakPrescribed):
 		self.U_chamber = np.array([
 			0,
 			1.2*1.257556105882443e+00,
-      1.2*2.400000011294172e+03,
+			1.2*2.400000011294172e+03,
 			0,													# Replaced variable
-      1.2*7.202297102593764e+09,
+			1.2*7.202297102593764e+09,
 			1.2*4.562862152986715e+01, # Abundance of total water
-      1.2*4.307867810200626e+01])
+			1.2*4.307867810200626e+01])
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		if physics.NDIMS > 1:
