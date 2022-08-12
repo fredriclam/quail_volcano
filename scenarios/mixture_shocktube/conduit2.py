@@ -23,7 +23,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_conduit2",
+	"Prefix" : "mixture_shocktube_conduit2_trash",
 	"WriteInterval" : 30,#4*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,

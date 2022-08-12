@@ -39,7 +39,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "v0_pboundary",
-	"WriteInterval" : 200,#4*200,
+	"WriteInterval" : 1,#4*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }
@@ -88,6 +88,12 @@ InitialCondition = {
     "xd": -600.0-150.0,
     "arhoWvL": 6,#8.686,
     "arhoML": 2400,#2496.3,
+    "arhoWvR": 1006,#8.686,
+    "arhoMR": 0,#2496.3,
+    "arhoAL": 0,
+    "arhoAR": 1.2,
+    "TL": 1000,
+    "TR": 300,
     # "rhoL": 12.5,
     # "uL": 0.0,
     # "pL": 10*1e5,
@@ -101,10 +107,11 @@ InitialCondition = {
 # List of functions to inject in custom user function
 def hydrostatic_solve(solver, owner_domain=None):
     GlobalDG(solver).set_initial_condition(
-        p_bdry=1e5,
+        p_bdry=1e7,
         is_jump_included=True,
         owner_domain=owner_domain,
-        x_jump=-600.0-150.0 ,
+        x_jump=-600.0-150.0,
+        constr_key="YEq",
         # traction_fn=lambda x: (-1e7/(50.0*np.sqrt(np.pi)))*np.exp(-((x-0.0)/50.0)**2.0)
     )
 
@@ -132,11 +139,11 @@ SourceTerms = {
 		"crit_volfrac": 0.7,
         "logistic_scale": 0.01,
     },
-    "source3": {
-        "Function": "ExsolutionSource",
-        "source_treatment" : "Implicit",
-        "tau_d" : 1.0,
-    },
+    # "source3": {
+    #     "Function": "ExsolutionSource",
+    #     "source_treatment" : "Implicit",
+    #     "tau_d" : 1.0,
+    # },
 }
 
 if False:
@@ -155,14 +162,14 @@ ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
 "x1" : {
-    "BCType" : "SlipWall"
+    "BCType" : "Inlet"
     # "BCType" : "MultiphasevpT1D1D",
     # "bkey": "interface_-1",
 },
 "x2" : { 
     # "BCType" : "SlipWall",
     "BCType" : "PressureOutlet",
-    "p": 0.8e5,
+    "p": 1e5,
     # "BCType" : "MultiphasevpT2D1D",
     # "bkey": "vent",
 },
