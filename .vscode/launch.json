@@ -8,7 +8,7 @@
       "name": "Python: Current File",
       "type": "python",
       "request": "launch",
-      "program": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\src\\quail",
+      "program": "C:\\Users\\fredr\\Documents\\quail_volcano\\src\\quail",
        // "program": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\test\\volcano_models\\mp_execution.py",
       "console": "integratedTerminal",
       // "args": ["p0.py"],
@@ -18,7 +18,8 @@
       "args": ["conduit.py"],
       // "args": ["-p", "post_process.py"],
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\mixture_shocktube\\",
-      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit1D\\",
+      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit1D\\",
+      "cwd": "C:\\Users\\fredr\\Documents\\quail_volcano\\scenarios\\mixture_shocktube\\dev_runs\\",
       "subProcess": true,
     }
   ]
