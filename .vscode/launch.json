@@ -15,11 +15,11 @@
       // "args": ["-p", "conduit.py"],
       //
       // "args": ["vent_region.py"],
-      "args": ["conduit.py"],
+      "args": ["conduit_p.py"],
       // "args": ["-p", "post_process.py"],
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\mixture_shocktube\\",
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit1D\\",
-      "cwd": "C:\\Users\\fredr\\Documents\\quail_volcano\\scenarios\\mixture_shocktube\\dev_runs\\",
+      "cwd": "C:\\Users\\fredr\\Documents\\quail_volcano\\scenarios\\verification_acoustic\\",
       "subProcess": true,
     }
   ]

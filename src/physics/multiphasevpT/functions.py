@@ -32,6 +32,7 @@ import logging
 
 from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
 				SourceBase, ConvNumFluxBase)
+import physics.multiphasevpT.atomics as atomics
 
 from dataclasses import dataclass
 import copy
@@ -47,12 +48,12 @@ class FcnType(Enum):
 	UniformExsolutionTest = auto()
 	IsothermalAtmosphere = auto()
 	LinearAtmosphere = auto()
+	RightTravelingGaussian = auto()
 
 
 class BCType(Enum):
 	'''
-	Enum class that stores the types of boundary conditions. These
-	boundary conditions are specific to the available Euler equation sets.
+	Enum class that stores the types of boundary conditions.
 	'''
 	SlipWall = auto()
 	PressureOutlet = auto()
@@ -61,6 +62,12 @@ class BCType(Enum):
 	MultiphasevpT1D1D = auto()
 	MultiphasevpT2D1D = auto()
 	MultiphasevpT2D2D = auto()
+	NonReflective1D = auto()
+	PressureOutlet1D = auto()
+	PressureOutlet2D = auto()
+	# Not implemented (could use lumped magma chamber model for example)
+	EntropyTotalenthalpyInlet1D = auto()
+	EntropyPressureInlet1D = auto()
 
 
 class SourceType(Enum):
@@ -201,6 +208,68 @@ class RiemannProblem(FcnBase):
 			Uq[elem_ID, iright, iarhoC] = arhoCR
 		return Uq # [ne, nq, ns]
 
+class RightTravelingGaussian(FcnBase):
+	'''
+	Gaussian in wave amplitude constructed to travel in the +x-direction.
+	'''
+	def __init__(self,
+		p_ambient:float=1e5, T_ambient:float=300, y_ambient:np.array=None,
+		amplitude:float=1.0, location:float=0.0, length_scale:float=10.0):
+		'''
+		Initialize with ambient pressure, temperature, and mass fraction
+		vector (y). Also set the amplitude (in velocity units), the location,
+		and the length scale of the initial Gaussian pulse.
+		'''
+		self.p_ambient = p_ambient
+		self.T_ambient = T_ambient
+		self.amplitude = amplitude
+		self.location = location
+		self.length_scale = length_scale
+		if y_ambient is None:
+			y_ambient = np.expand_dims(np.array([1.0, 0, 0]),axis=(0,1))
+		elif len(y_ambient.shape) < 3:
+			# Pad np.array to nd array matching shape of U
+			y_ambient = np.zeros((1,1,1)) + y_ambient
+		self.y_ambient = y_ambient
+
+	def get_state(self, physics, x, t):
+		U = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+
+		# Compute 
+		U[...,0] = 1.2
+		U[...,1:3] = 0
+
+		Gamma = atomics.Gamma(U[...,0:3], physics)
+		gas_volfrac = atomics.gas_volfrac(U[...,0:3], self.T_ambient, physics)
+		p = atomics.pressure(U[...,0:3], self.T_ambient, gas_volfrac, physics)
+
+		# Construct constant psi+ with reference to psi+ == 0 at ambient state
+		psi_plus = np.zeros_like(U[...,0:1])
+		# Construct pulse in psi-
+		psi_minus = self.amplitude / (
+			np.sqrt(2.*np.pi)*self.length_scale) \
+			* np.exp(-np.power((x - self.location)/self.length_scale, 2.)/2)
+		
+		u = 0.5*(psi_plus + psi_minus)
+		# Compute linearized representation of mean impedance reciprocal
+		f_bar = atomics.acousticRI_integrand_scalar(p[0,0,0], np.array([self.T_ambient]), p[0,0,0], 
+			atomics.massfrac(U[...,0:3])[:1,:1,:], Gamma[0,0,0], physics)
+		p = p[0,0,0] + 0.5*(psi_minus - psi_plus) / f_bar
+		# Isentropic condition for temperature
+		T = self.T_ambient * (p/p[0,0,0]) ** ((Gamma-1)/Gamma)
+
+		# Fill in computed conservative state
+		U[...,0:1] = p / T / physics.Gas[0]["R"]
+		U[...,1:2] = 0*p / T / physics.Gas[1]["R"]
+		U[...,2:3] = 0*p / T / physics.Gas[1]["R"]
+		if np.any(U[...,2:3] > 0):
+			raise NotImplementedError
+		U[...,3:4] = atomics.rho(U[...,0:3]) * u
+		U[...,4:5] = atomics.c_v(U[...,0:3], physics) * T \
+		+ 0.5 * atomics.rho(U[...,0:3]) * u**2
+		U[...,5:] = 0
+		return U # [ne, nq, ns]
 
 class UniformExsolutionTest(FcnBase):
 	'''
@@ -1613,6 +1682,15 @@ class MultiphasevpT2D2D(BCWeakRiemann):
 		return np.flip(
 			copy.copy(physics.bdry_data_net[data_net_key]["bdry_face_state"]),
 			axis=(0,1))
+
+class NonReflective1D(FcnBase):
+	pass
+
+class PressureOutlet1D(FcnBase):
+	pass
+
+class PressureOutlet2D(FcnBase):
+	pass
 
 '''
 ---------------------

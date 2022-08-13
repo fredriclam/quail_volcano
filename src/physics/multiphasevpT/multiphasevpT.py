@@ -74,10 +74,12 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.SlipWall : mpvpT_fcns.SlipWall,
 			BCType.PressureOutlet : mpvpT_fcns.PressureOutlet,
 			BCType.Inlet : mpvpT_fcns.Inlet,
-			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 			BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
+			BCType.NonReflective1D : mpvpT_fcns.NonReflective1D,
+			BCType.PressureOutlet1D : mpvpT_fcns.PressureOutlet1D,
+			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
 		})
 
 	def set_physical_params(self, 
@@ -437,6 +439,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		d = {
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
+			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 		}
 
 		self.IC_fcn_map.update(d)
