@@ -24,6 +24,8 @@
 from abc import abstractmethod
 from enum import Enum, auto
 import numpy as np
+from pyXSteam.XSteam import XSteam
+
 from scipy.optimize import fsolve, root
 
 import errors
@@ -43,6 +45,7 @@ class FcnType(Enum):
 	functions are specific to the available Euler equation sets.
 	'''
 	RiemannProblem = auto()
+	MagmaWaterProblem = auto()
 	GravityRiemann = auto()
 	UniformExsolutionTest = auto()
 	IsothermalAtmosphere = auto()
@@ -171,6 +174,115 @@ class RiemannProblem(FcnBase):
 		rhoR = arhoAR+arhoWvR+arhoMR
 		eR = (arhoAR * physics.Gas[0]["c_v"] * TR + 
 			arhoWvR * physics.Gas[1]["c_v"] * TR + 
+			arhoMR * (physics.Liquid["c_m"] * TR + physics.Liquid["E_m0"])
+			+ 0.5 * rhoR * uR**2.)
+
+		for elem_ID in range(Uq.shape[0]):
+			ileft = (x[elem_ID, :, 0] <= self.xd).reshape(-1)
+			iright = (x[elem_ID, :, 0] > self.xd).reshape(-1)
+			# Replacement to prevent quadratic approximation of in-element
+			# discontinuity sending the state negative
+			if np.all(x[elem_ID, :, 0] >= self.xd):
+				ileft = (x[elem_ID, :, 0] < self.xd).reshape(-1)
+				iright = (x[elem_ID, :, 0] >= self.xd).reshape(-1)
+			# Fill left/right mass-related quantities
+			Uq[elem_ID, ileft, iarhoA] = arhoAL
+			Uq[elem_ID, iright, iarhoA] = arhoAR
+			Uq[elem_ID, ileft, iarhoWv] = arhoWvL
+			Uq[elem_ID, iright, iarhoWv] = arhoWvR
+			Uq[elem_ID, ileft, iarhoM] = arhoML
+			Uq[elem_ID, iright, iarhoM] = arhoMR
+			# XMomentum
+			Uq[elem_ID, ileft, imom] = rhoL*uL
+			Uq[elem_ID, iright, imom] = rhoR*uR
+			# Energy
+			Uq[elem_ID, ileft, ie] = eL
+			Uq[elem_ID, iright, ie] = eR
+			# Tracer quantities
+			Uq[elem_ID, ileft, iarhoWt] = arhoWtL
+			Uq[elem_ID, iright, iarhoWt] = arhoWtR
+			Uq[elem_ID, ileft, iarhoC] = arhoCL
+			Uq[elem_ID, iright, iarhoC] = arhoCR
+		return Uq # [ne, nq, ns]
+
+class MagmaWaterProblem(FcnBase):
+	'''
+	Magma Water problem.
+
+	Attributes:
+	-----------
+	rhoL: float
+		left density
+	uL: float
+		left velocity
+	pL: float
+		left pressure
+	rhoR: float
+		right density
+	uR: float
+		right velocity
+	pR: float
+		right pressure
+	xd: float
+		location of initial discontinuity
+	'''
+	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0., TL=1000., arhoWtL=10.0, arhoCL=100.0,
+							 arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-6, uR=0., TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0.):
+		'''
+		This method initializes the attributes.
+
+		Inputs:
+		-------
+			stuff
+			xd: location of initial discontinuity
+
+		Outputs:
+		--------
+				self: attributes initialized
+		'''
+		self.arhoAL = arhoAL
+		self.arhoWvL = arhoWvL
+		self.arhoML = arhoML
+		self.uL = uL
+		self.TL = TL
+		self.arhoWtL = arhoWtL
+		self.arhoCL = arhoCL
+		self.arhoAR = arhoAR
+		self.arhoWvR = arhoWvR
+		self.arhoMR = arhoMR
+		self.uR = uR
+		self.TR = TR
+		self.xd = xd
+		self.arhoWtR = arhoWtR
+		self.arhoCR = arhoCR
+
+	def get_state(self, physics, x, t):
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+		arhoAL = self.arhoAL
+		arhoWvL = self.arhoWvL
+		arhoML = self.arhoML
+		uL = self.uL
+		TL = self.TL
+		arhoWtL = self.arhoWtL
+		arhoCL = self.arhoCL
+		arhoAR = self.arhoAR
+		arhoWvR = self.arhoWvR
+		arhoMR = self.arhoMR
+		uR = self.uR
+		TR = self.TR
+		arhoWtR = self.arhoWtR
+		arhoCR = self.arhoCR
+
+		rhoL = arhoAL+arhoWvL+arhoML
+		eL = (arhoAL * physics.Gas[0]["c_v"] * TL +
+			arhoWvL * physics.Gas[1]["c_v"] * TL +
+			arhoML * (physics.Liquid["c_m"] * TL + physics.Liquid["E_m0"])
+			+ 0.5 * rhoL * uL**2.)
+		rhoR = arhoAR+arhoWvR+arhoMR
+		eR = (arhoAR * physics.Gas[0]["c_v"] * TR +
+			arhoWvR * physics.Gas[1]["c_v"] * TR +
 			arhoMR * (physics.Liquid["c_m"] * TR + physics.Liquid["E_m0"])
 			+ 0.5 * rhoR * uR**2.)
 
@@ -1934,16 +2046,16 @@ class WaterInflowSource(SourceBase):
 			e = Uq[:, :, sle]
 
 			# formulating j
-			darcy_vel = 10 ** -2  # range decided with Eric: 10^-8 - 10^-5
+			darcy_vel = 10 ** -5 * 10 ** 5  # range decided with Eric: 10^-8 - 10^-5
 			radius = 50  # in meters & hardcoded
 			rho_w = 10 ** 3  # kg/m^3
 			j = darcy_vel * rho_w * (2/radius)  # Starosin has different j value
 
+			steam_table = XSteam(XSteam.UNIT_SYSTEM_BARE)
+
 			# formulating q
 			T_w = 290  # K
-			specific_heat = 4182  # for water
-			water_den = 10 ** 3
-			q = T_w * specific_heat * water_den * darcy_vel
+			q = 1e3 * steam_table.h_pt(10, T_w) * rho_w * darcy_vel * (2 / radius)  #T_w * 4182 * rho_w * darcy_vel
 
 			# variables about x
 			xmin = x[len(x) - 1]
@@ -1954,8 +2066,11 @@ class WaterInflowSource(SourceBase):
 
 			index_start = int(-self.aquifer_depth/elem_size)
 			for i in range(int(self.aquifer_length/elem_size)):
-				S[:, :, slarhoWv][index_start + i][0] = j
-				S[:, :, sle][index_start + i][0] = q
+				if physics.pressure_temp[0, 6] < 0.25:  # while time is less than 1
+					# adding water density term for inflowing water
+					S[:, :, slarhoWv][index_start + i][0] = j
+					# adding energy term for inflowing water
+					S[:, :, sle][index_start + i][0] = q
 		return S  # [ne, nq, ns]
 
 	def get_jacobian(self, physics, Uq, x, t):
@@ -2047,8 +2162,10 @@ class LaxFriedrichs1D(ConvNumFluxBase):
 		# Max wave speeds at each point ||u|| + a
 		wL = np.empty(u2L.shape + (1,))
 		wR = np.empty(u2R.shape + (1,))
-		wL[:, :, 0] = np.sqrt(u2L) + aL
-		wR[:, :, 0] = np.sqrt(u2R) + aR
+
+		# adding in squeeze for aL and aR
+		wL[:, :, 0] = np.sqrt(u2L) + aL.reshape((aL.size, 1))
+		wR[:, :, 0] = np.sqrt(u2R) + aR.reshape((aR.size, 1))
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)

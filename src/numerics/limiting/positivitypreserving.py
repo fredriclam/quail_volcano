@@ -419,7 +419,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 
 		if np.any([np.any(rho < 0.) for rho in rho_bar.values()]) \
 			 or np.any(p_bar < 0.):
-			raise errors.NotPhysicalError
+ 			raise errors.NotPhysicalError
 
 		# Ignore divide-by-zero
 		np.seterr(divide='ignore')

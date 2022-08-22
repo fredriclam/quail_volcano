@@ -571,6 +571,8 @@ class PhysicsBase(ABC):
 			projected flux values [nf, nq, ns]
 			tuple of extra variables computed by interior flux
 		'''
+		if Uq.shape == (119, 1, 7):  # put in to look at a specific case w a break pt
+			x = 0
 		Fq, vars = self.get_conv_flux_interior(Uq) # [nf, nq, ns, ndims]
 		
 		# Check needed for ADER shapes to be consistent. This appears to 
@@ -726,6 +728,8 @@ class PhysicsBase(ABC):
 			varq = Uq[:, :, sidx:sidx+1].copy()
 		except KeyError:
 			# Now try additional
+			if Uq.shape == (120, 3, 7):
+				x = 0
 			varq = self.compute_additional_variable(var_name, Uq,
 					flag_non_physical)
 

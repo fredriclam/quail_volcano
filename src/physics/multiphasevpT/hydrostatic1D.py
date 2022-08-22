@@ -224,6 +224,12 @@ class GlobalDG():
       + alphaM * rhoM * (physics.Liquid["c_m"] * T + physics.Liquid["E_m0"])
 
     constrained_state[:,:,physics.get_state_slice("pDensityWv")] = alphaWv * rhoWv
+
+    # manually changing the states
+    #for i in range(120):
+      #constrained_state[:, :,physics.get_state_slice("pDensityWv")][i + 120] = 1000.
+
+
     constrained_state[:,:,physics.get_state_slice("pDensityM")] = alphaM * rhoM
     constrained_state[:,:,physics.get_state_slice("Energy")] = e
     constrained_state[:,:,physics.get_state_slice("pDensityWt")] = arhoWt

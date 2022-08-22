@@ -27,6 +27,9 @@ from enum import Enum
 from logging import warning
 import numpy as np
 from pkg_resources import NullProvider
+from pyXSteam.XSteam import XSteam
+import scipy
+from scipy.interpolate import RegularGridInterpolator
 
 import errors
 import general
@@ -45,6 +48,7 @@ from physics.multiphasevpT.functions import SourceType
 
 import numerics.helpers.helpers as helpers
 from dataclasses import dataclass
+
 
 class MultiphasevpT(base.PhysicsBase):
 	'''
@@ -65,6 +69,7 @@ class MultiphasevpT(base.PhysicsBase):
 
 	def __init__(self, mesh):
 		super().__init__(mesh)
+		self.flag = True
 
 	def set_maps(self):
 		super().set_maps()
@@ -160,6 +165,8 @@ class MultiphasevpT(base.PhysicsBase):
 		volFracA = "\\alpha_a"				# Volume fraction, air
 		volFracWv = "\\alpha_\{wv\}"	# Volume fraction, exsolved water vapour
 		volFracM = "\\alpha_m"				# Volume fraction, magma
+		vaporFrac = "vaporFrac"			# vapor fraction of water
+
 
 	def compute_additional_variable(self, var_name, Uq, flag_non_physical):
 		''' Extract state variables '''
@@ -169,7 +176,6 @@ class MultiphasevpT(base.PhysicsBase):
 		mom = Uq[:, :, self.get_momentum_slice()]
 		e = Uq[:, :, self.get_state_slice("Energy")]
 		arhoWt = Uq[:, :, self.get_state_slice("pDensityWt")]
-		arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
 
 		''' Flag non-physical state '''
 		if flag_non_physical:
@@ -177,55 +183,120 @@ class MultiphasevpT(base.PhysicsBase):
 				 or np.any(arhoWt < 0.): # or np.any(arhoC < 0.):
 				raise errors.NotPhysicalError
 
-		''' Nested functions for common quantities 
+		steam_table = XSteam(XSteam.UNIT_SYSTEM_BARE)
+
+		if Uq.shape == (60, 1, 7):  # hard coded and needs to be changed if mesh size changes
+			solution = self.pressure_temp
+		elif Uq.shape == (1, 1, 7):
+			p = -1
+			for i in range(60):  # len(self.pressure_temp) --> hardcoding bc giving error
+				if float(arhoWv) == self.pressure_temp[i, 2]\
+					and float(arhoM) == self.pressure_temp[i, 3]\
+					and float(e) == self.pressure_temp[i, 4]:
+					p = self.pressure_temp[i, 0]
+					h = self.pressure_temp[i, 1]
+					solution = np.zeros(shape=(1, 2))
+					solution[0, 0] = p
+					solution[0, 1] = h
+					break
+				else: continue
+			if p == -1:  # error to tell if nothing matches the given densities and energy
+				raise errors.NotPhysicalError
+		else:  # running into case of (119, 1, 7)
+			p = -1
+			solution = np.zeros(shape=(len(Uq), 2))
+			for i in range(len(Uq)):  # looping through all values of arhoWv, arhoM, e
+				# see if they match any value of self.pressure_temp
+				if i == 59:
+					x = 0
+				for j in range(60):  # len(self.pressure_temp) --> hardcoding bc giving error
+					if float(arhoWv[i, 0, 0]) == self.pressure_temp[j, 2]:
+						if float(arhoM[i, 0, 0]) == self.pressure_temp[j, 3]\
+						and float(e[i, 0, 0]) == self.pressure_temp[j, 4]:
+							p = self.pressure_temp[j, 0]
+							h = self.pressure_temp[j, 1]
+							solution[i, 0] = p
+							solution[i, 1] = h
+							break
+						else: continue
+					else: continue
+			if p == -1:  # error to tell if nothing matches the given densities and energy
+				raise errors.NotPhysicalError
+
+		''' Nested functions for common quantities
 		Common routines that may be called for computing several outputs.
 		States arhoA, mom, e, etc. are captured by nested functions at this point.
 		'''
-		def get_temperature():
-			kinetic = 0.5*np.sum(mom*mom, axis=2, keepdims=True) \
-				/(arhoA + arhoWv + arhoM)
-			c_mix = arhoA * self.Gas[0]["c_v"] \
-						+ arhoWv * self.Gas[1]["c_v"] \
-						+ arhoM * self.Liquid["c_m"]
-			return (e - arhoM * self.Liquid["E_m0"] - kinetic)/c_mix
-		def get_porosity(T=None):
-			if T is None:
-				T = get_temperature()
-			sym1 = self.Liquid["K"] - self.Liquid["p0"]
-			sym2 = (arhoA * self.Gas[0]["R"] + arhoWv * self.Gas[1]["R"]) * T
-			return 0.5 / sym1 * (
-					sym1 - sym2 - self.Liquid["K"] / self.Liquid["rho0"] * arhoM
-					+ np.sqrt(
-							np.power((sym1 - sym2 - self.Liquid["K"] / self.Liquid["rho0"] * arhoM
-							),2) + 4 * sym1 * sym2)
-			)
-		def get_pressure(T=None,phi=None):
-			if T is None:
-				T = get_temperature()
-			if phi is None:
-				phi = get_porosity(T)
-			p = arhoA * self.Gas[0]["R"] * T \
-				+ arhoWv * self.Gas[1]["R"] * T \
-				+ (1.-phi)*(self.Liquid["p0"] - self.Liquid["K"]) \
-					+ (self.Liquid["K"] / self.Liquid["rho0"]) * arhoM
-			if flag_non_physical:
-				if np.any(p < 0.):
-					raise errors.NotPhysicalError
-			return p
-		def get_Psi1(T=None,phi=None,p=None):
-			if T is None:
-				T = get_temperature()
-			if phi is None:
-				phi = get_porosity(T)
+		def get_temperature(p=None):
 			if p is None:
-				p = get_pressure(T, phi)
-			return (p + self.Liquid["K"] - self.Liquid["p0"]) / ( 
-				p + phi * (self.Liquid["K"] - self.Liquid["p0"]))
-		def get_Gamma():
-			c_mix = arhoA * self.Gas[0]["c_v"] \
-						+ arhoWv * self.Gas[1]["c_v"] \
-						+ arhoM * self.Liquid["c_m"]
-			return 1. + (arhoA * self.Gas[0]["R"] + arhoWv * self.Gas[1]["R"]) / c_mix
+				p = get_pressure()
+			temp_array = np.zeros(shape=(len(solution), 1, 1))
+			for i in range(len(solution)):
+				h = solution[i, 1]
+				temp = steam_table.t_ph(p[i, 0, 0] * 1e-6, h)
+				temp_array[i, 0, 0] = temp
+			return temp_array
+			# if len(solution) > 5:
+			# 	return np.array(solution[:, 1].reshape((-1, 1, 1)))
+			# return np.array(solution[:, 1].reshape(-1, 1, 1))
+		def get_pressure():
+			if len(solution) > 5:
+				return np.array(solution[:, 0].reshape((-1, 1, 1)))
+			return np.array(solution[:, 0].reshape(-1, 1, 1))  # trying to get (20, 1, 1) size
+		def get_porosity(p=None):
+			if p is None:
+				p = get_pressure()
+			# getting rid of 1e6 on p bc 1e6 on pressure function
+			numerator = (self.Liquid["p0"] - self.Liquid["K"] - p + ((self.Liquid["K"] / self.Liquid["rho0"]) * arhoM))
+			denominator = (self.Liquid["p0"] - self.Liquid["K"] - p)
+			return np.array(numerator/denominator)
+			# return np.array((self.Liquid["p0"] - self.Liquid["K"] - p +
+			# 			   (self.Liquid["K"] / self.Liquid["rho0"]) * arhoM) / \
+			# 			  (self.Liquid["p0"] - self.Liquid["K"] - p))
+		def get_Psi1(p=None,phi=None):
+			if p is None:
+				p = get_pressure()
+			if phi is None:
+				phi = get_porosity(p)
+			return np.array((p + self.Liquid["K"] - self.Liquid["p0"]) / (
+				p + phi * (self.Liquid["K"] - self.Liquid["p0"])))
+		# TODO: EVERYTHING ABOVE HAS BEEN CHANGED TO NON-IDEAL GAS. BELOW NEEDS TO BE CHANGED
+		def get_Gamma(T=None,p=None):
+			if p is None:
+				p = get_pressure()
+			if T is None:
+				T = get_temperature(p)
+			if len(T) > 5: # meaning it is the array version
+				gamma = np.zeros(shape=(len(Uq), 1, 1))
+				for i in range(len(T)):
+					current_p = p[i, 0, 0]
+					current_h = solution[i, 1]
+					current_arhoWv = self.pressure_temp[i, 2]
+					current_arhoM = self.pressure_temp[i, 3]
+					current_arhoA = self.pressure_temp[i, 5]
+					numerator = (current_arhoA * self.Gas[0]["c_p"] + current_arhoWv * steam_table.Cp_ph(current_p * 1e-6, current_h)
+								 + current_arhoM * self.Liquid["c_m"])
+					denominator = (current_arhoA * self.Gas[0]["c_v"] + current_arhoWv * steam_table.Cv_ph(current_p * 1e-6, current_h)
+								   + current_arhoM * self.Liquid["c_m"])
+					gamma[i, 0, 0] = numerator/denominator
+				return gamma
+			else:
+				numerator = (arhoA * self.Gas[0]["c_p"] + arhoWv * steam_table.Cp_ph(p * 1e-6, solution[0, 1]) \
+							 + arhoM * self.Liquid["c_m"])
+				denominator = (arhoA * self.Gas[0]["c_v"] + arhoWv * steam_table.Cv_ph(p * 1e-6, solution[0, 1]) \
+							   + arhoM * self.Liquid["c_m"])
+				return np.array(numerator/denominator)
+		def get_vapor_fraction(p=None):
+			if p is None:
+				p = get_pressure()
+			vapor_fraction_array = np.zeros(shape=(len(solution), 1, 1))
+			for i in range(len(solution)):
+				current_p = p[i, 0, 0]
+				current_h = solution[i, 1]
+				vapor_frac = steam_table.x_ph(current_p, current_h)
+				vapor_fraction_array[i, 0, 0] = vapor_frac
+			return vapor_fraction_array
+
 
 		''' Compute '''
 		vname = self.AdditionalVariables[var_name].name
@@ -247,7 +318,35 @@ class MultiphasevpT(base.PhysicsBase):
 		elif vname is self.AdditionalVariables["TotalEnthalpy"].name:
 			varq = (e + get_pressure())/(arhoA+arhoWv+arhoM)
 		elif vname is self.AdditionalVariables["SoundSpeed"].name:
-			varq = np.sqrt(get_Gamma()*get_pressure()/(arhoA+arhoWv+arhoM)*get_Psi1())
+			p = get_pressure()
+			gamma = get_Gamma(p=p)
+			psi1 = get_Psi1(p=p)
+			val = np.sqrt(gamma*p/(arhoA+arhoWv+arhoM)*psi1)
+			# if float(val).isnan():
+			# 	raise NotImplementedError("Value is NaN")
+			if np.isnan(val).any():
+				for i in range(len(val)):
+					if not np.isnan(val).any():
+						break
+					if np.isnan(val[i][0][0]):
+						if (i - 1 > 0) and (i + 1 < len(val)):
+							if np.isnan(val[i-1][0][0]) and np.isnan(val[i+1][0][0]):  # both sides are NaN -- make zero
+								val[i][0][0] = 0
+							elif np.isnan(val[i-1][0][0]) and not np.isnan(val[i+1][0][0]):  # right is not NaN
+								val[i][0][0] = val[i+1][0][0]
+							elif not np.isnan(val[i-1][0][0]) and np.isnan(val[i+1][0][0]):  # left is not NaN
+								val[i][0][0] = val[i-1][0][0]
+							else:  # both sides are values
+								val[i][0][0] = (val[i-1][0][0] + val[i+1][0][0])/2  # average values if nan
+						elif i - 1 > 0:  # this means error is on the last val
+							val[i][0][0] = val[i-1][0][0]
+						else:  # means error is on first val
+							if i + 1 >= len(val):
+								val[i][0][0] == 3000.  # Fred said this value as a sound speed is fine
+							else:
+								val[i][0][0] = val[i+1][0][0]  # running into error
+			varq = val
+			#varq = np.sqrt(get_Gamma()*get_pressure()/(arhoA+arhoWv+arhoM)*get_Psi1())
 		elif vname is self.AdditionalVariables["MaxWaveSpeed"].name:
 			# |u| + c
 			varq = np.linalg.norm(mom, axis=2, keepdims=True)/(arhoA+arhoWv+arhoM) \
@@ -273,12 +372,16 @@ class MultiphasevpT(base.PhysicsBase):
 			varq = get_Psi1(T) * (self.Gas[1]["R"] * T
 													 - (get_Gamma() - 1) * (self.Gas[1]["c_v"] * T))
 		elif vname is self.AdditionalVariables["pi3"].name:
-			T = get_temperature()
 			p = get_pressure()
+			T = get_temperature()
+			phi = get_porosity(p)
 			rhoM = (p - self.Liquid["p0"] + self.Liquid["K"])/self.Liquid["K"]*self.Liquid["rho0"]
-			varq = get_Psi1(T=T,p=p) * (p / rhoM
+			varq = get_Psi1(p=p, phi=phi) * (p / rhoM
 													 - (get_Gamma() - 1) * (
 														 self.Liquid["c_m"] * T + self.Liquid["E_m0"]))
+			# varq = get_Psi1(T=T,p=p) * (p / rhoM
+			# 										 - (get_Gamma() - 1) * (
+			# 											 self.Liquid["c_m"] * T + self.Liquid["E_m0"]))
 		elif vname is self.AdditionalVariables["phi"].name:
 			varq = get_porosity()
 		elif vname is self.AdditionalVariables["volFracA"].name:
@@ -297,6 +400,8 @@ class MultiphasevpT(base.PhysicsBase):
 			varq[np.where(phi > 0)] = phi[np.where(phi > 0)] * (ppWv / (ppA + ppWv))
 		elif vname is self.AdditionalVariables["volFracM"].name:
 			varq = 1.0 - get_porosity()
+		elif vname is self.AdditionalVariables["vaporFrac"].name:
+			varq = get_vapor_fraction()
 		else:
 			raise NotImplementedError
 
@@ -425,6 +530,7 @@ class MultiphasevpT1D(MultiphasevpT):
 
 		d = {
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
+			FcnType.MagmaWaterProblem: mpvpT_fcns.MagmaWaterProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 		}
 
@@ -516,6 +622,7 @@ class MultiphasevpT1D(MultiphasevpT):
 
 		# Compute mixture (total) density
 		rho = arhoA + arhoWv + arhoM
+
 		p = self.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
 		u = mom / rho
 		u2 = u**2.0
