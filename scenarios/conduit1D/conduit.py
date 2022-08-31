@@ -160,7 +160,8 @@ BoundaryConditions = {
       # "bkey": "interface_-1",
     },
     "x2" : { 
-        "BCType" : "SlipWall",
+        "BCType" : "PressureOutlet",
+        "p" : 1e5,
     },
 }
 
