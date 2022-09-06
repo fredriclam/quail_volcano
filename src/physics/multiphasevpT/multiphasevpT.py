@@ -451,6 +451,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
+			SourceType.WaterInflowSource: mpvpT_fcns.WaterInflowSource,
 		})
 
 		self.conv_num_flux_map.update({

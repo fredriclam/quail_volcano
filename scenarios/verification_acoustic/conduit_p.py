@@ -3,13 +3,13 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 TimeStepping = {
     "InitialTime" : 0.0,
-    "FinalTime" : 1,
-    "NumTimeSteps" : 1000,
+    "FinalTime" : 5,
+    "NumTimeSteps" : 10000,
     "TimeStepper" : "FE",
 }
 
 Numerics = {
-    "SolutionOrder" : 0,
+    "SolutionOrder" : 1,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     # "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -23,7 +23,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "verification_conduit_p",
-	"WriteInterval" : 10,#4*200,
+	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -44,6 +44,7 @@ Physics = {
 InitialCondition = {
     "Function" : "RightTravelingGaussian",
     "amplitude": 1,
+    "location": 800,
 }
 
 # List of functions to inject in custom user function
@@ -89,7 +90,8 @@ if IsDecoupled:
             "BCType" : "SlipWall"
         },
         "x2" : { 
-            "BCType" : "SlipWall",
+            "BCType" : "PressureOutlet1D",
+            "p": 1e5,
         },
     }
 else:

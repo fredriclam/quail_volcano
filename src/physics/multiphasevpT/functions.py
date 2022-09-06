@@ -79,6 +79,7 @@ class SourceType(Enum):
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 	ExsolutionSource = auto()
+	WaterInflowSource = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -214,7 +215,7 @@ class RightTravelingGaussian(FcnBase):
 	'''
 	def __init__(self,
 		p_ambient:float=1e5, T_ambient:float=300, y_ambient:np.array=None,
-		amplitude:float=1.0, location:float=0.0, length_scale:float=10.0):
+		amplitude:float=1.0, location:float=0.0, length_scale:float=30.0):
 		'''
 		Initialize with ambient pressure, temperature, and mass fraction
 		vector (y). Also set the amplitude (in velocity units), the location,
@@ -1686,8 +1687,71 @@ class MultiphasevpT2D2D(BCWeakRiemann):
 class NonReflective1D(FcnBase):
 	pass
 
-class PressureOutlet1D(FcnBase):
-	pass
+class PressureOutlet1D(BCWeakPrescribed):
+	'''
+	This class corresponds to an outflow boundary condition with static
+	pressure prescribed.
+	The boundary state is computed using acoustic Riemann invariants in 1D.
+	Attributes:
+	-----------
+	p: float
+		pressure
+	'''
+	def __init__(self, p):
+		self.p = p
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Computes the boundary state that satisfies the pressure BC strongly. '''
+
+		UqB = UqI.copy()
+		''' Compute normal velocity. '''
+		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		# rhoI = UqI[:, :, physics.get_mass_slice()].sum(axis=2, keepdims=True)
+		arhoVec = UqI[:,:,physics.get_mass_slice()]
+		rhoI = atomics.rho(arhoVec)
+		velI = UqI[:, :, physics.get_momentum_slice()]/rhoI
+		''' Inflow handling '''
+		# if np.any(velI < 0.):
+			# print("Incoming flow at outlet")
+		''' Compute interior pressure. '''
+		# pI = physics.compute_variable("Pressure", UqI)		
+		TI = atomics.temperature(arhoVec,
+			UqI[:,:,physics.get_momentum_slice()], 
+			UqI[:,:,physics.get_state_slice("Energy")], physics)
+		gas_volfrac = atomics.gas_volfrac(arhoVec, TI, physics)
+		pI = atomics.pressure(arhoVec, TI, gas_volfrac, physics)
+		if np.any(pI < 0.):
+			raise errors.NotPhysicalError
+		''' Short-circuit function for sonic exit based on interior '''
+		# cI = physics.compute_variable("SoundSpeed", UqI)		
+		cI = atomics.sound_speed(atomics.Gamma(arhoVec, physics),
+			pI, rhoI, gas_volfrac, physics)
+		if np.any(velI >= cI):
+			return UqB
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to ingoing acoustic waves) of the interior
+		solution. '''
+		p_target = self.p
+		_, u_target, T_target = atomics.velocity_RI_fixed_p_quadrature(
+			p_target, UqB, physics, normals, is_adaptive=True)
+		# Compute mass fractions of interior solution
+		yI = atomics.massfrac(arhoVec)
+		rho_target = atomics.mixture_density(yI, p_target, T_target, physics)
+		''' Map to conservative variables '''
+		UqB[:,:,physics.get_mass_slice()] = rho_target * yI
+		UqB[:,:,physics.get_momentum_slice()] = rho_target * u_target
+		UqB[:,:,physics.get_state_slice("Energy")] = \
+			atomics.c_v(rho_target * yI, physics) * T_target \
+			+ (rho_target * yI[:,:,2:3]) * physics.Liquid["E_m0"] \
+			+ 0.5 * rho_target * u_target * u_target
+		''' Update adiabatically compressed/expanded tracer partial densities '''
+		UqB[:,:,5:] *= rho_target / rhoI
+
+		''' Post-computation validity check '''
+		if np.any(T_target < 0.):
+			raise errors.NotPhysicalError
+
+		return UqB
 
 class PressureOutlet2D(FcnBase):
 	pass
@@ -1976,6 +2040,66 @@ class ExsolutionSource(SourceBase):
 			))] = 0.0
 
 		return dSdU
+
+
+class WaterInflowSource(SourceBase):
+	'''
+	Water Inflow Source term, equipped with water as an ideal gas
+	Inputs:
+	-------
+		Uq:
+	Outputs:
+	'''
+
+	def __init__(self, aquifer_depth:float=-500.0, aquifer_length:float=100.0, **kwargs):
+		super().__init__(kwargs)
+		self.aquifer_depth = aquifer_depth
+		self.aquifer_length = aquifer_length
+
+	def get_source(self, physics, Uq, x, t):
+		S = np.zeros_like(Uq)
+		if physics.NDIMS == 1:
+			# Extract variables
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+				physics.get_state_indices()
+			slarhoWv = physics.get_state_slice("pDensityWv")
+			slarhoM = physics.get_state_slice("pDensityM")
+			slarhoWt = physics.get_state_slice("pDensityWt")
+			sle = physics.get_state_slice("Energy")
+			arhoWv = Uq[:, :, slarhoWv]
+			arhoM = Uq[:, :, slarhoM]
+			arhoWt = Uq[:, :, slarhoWt]
+			e = Uq[:, :, sle]
+
+			# formulating j
+			darcy_vel = 10 ** -5 * 10 ** 5  # range decided with Eric: 10^-8 - 10^-5
+			radius = 50  # in meters & hardcoded
+			rho_w = 75 # 10 ** 3  # kg/m^3
+			j = darcy_vel * rho_w * (2/radius)  # Starosin has different j value
+
+			# formulating q
+			T_w = 290  # K
+			# steam_table = XSteam(XSteam.UNIT_SYSTEM_BARE)
+			# enthalpy_per_mass = 1e3 * steam_table.h_pt(10, T_w)
+			enthalpy_per_mass = physics.Gas[1]["c_p"] * T_w
+			q = enthalpy_per_mass * rho_w * darcy_vel * (2 / radius)  #T_w * 4182 * rho_w * darcy_vel
+
+			# variables about x
+			xmin = x[len(x) - 1]
+			xmax = x[0]
+			conduit_size = int(np.abs(xmax + xmin))
+			NumElemsX = len(x)
+			elem_size = conduit_size/NumElemsX
+
+			index_start = int(-self.aquifer_depth/elem_size)
+			for i in range(int(self.aquifer_length/elem_size)):
+				if t < 0.1: #  physics.pressure_temp[0, 6] < 0.25:  # while time is less than 1
+					# adding water density term for inflowing water
+					S[:, :, slarhoWv][index_start + i][0] = j
+					# adding energy term for inflowing water
+					S[:, :, sle][index_start + i][0] = q
+		return S  # [ne, nq, ns]
+
 
 '''
 ------------------------

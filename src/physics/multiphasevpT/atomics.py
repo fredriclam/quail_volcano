@@ -14,27 +14,38 @@ def rho(arhoVec):
 def massfrac(arhoVec):
   return arhoVec / np.sum(arhoVec, axis=-1, keepdims=True)
 
-def c_v(arhoVec, physics):
+def c_v(densityPerAny, physics):
   ''' Compute mixture c_v (heat capacity at constant volume)
   Input arhoVec -> c_v per unit volume
   Input massfracVec -> c_v per unit mass '''
-  return (arhoVec[...,0:1] * physics.Gas[0]["c_v"]
-    + arhoVec[...,1:2] * physics.Gas[1]["c_v"] \
-    + arhoVec[...,2:3] * physics.Liquid["c_m"])
+  return (densityPerAny[...,0:1] * physics.Gas[0]["c_v"]
+    + densityPerAny[...,1:2] * physics.Gas[1]["c_v"] \
+    + densityPerAny[...,2:3] * physics.Liquid["c_m"])
 
-def c_p(arhoVec, physics):
+def c_p(densityPerAny, physics):
   ''' Compute mixture c_p (heat capacity at constant volume)
   Input arhoVec -> c_p per unit volume
   Input massfracVec -> c_p per unit mass '''
-  return (arhoVec[...,0:1] * physics.Gas[0]["c_p"]
-    + arhoVec[...,1:2] * physics.Gas[1]["c_p"] \
-    + arhoVec[...,2:3] * physics.Liquid["c_m"])
+  return (densityPerAny[...,0:1] * physics.Gas[0]["c_p"]
+    + densityPerAny[...,1:2] * physics.Gas[1]["c_p"] \
+    + densityPerAny[...,2:3] * physics.Liquid["c_m"])
 
 def Gamma(arhoVec, physics):
   return (c_p(arhoVec, physics) / c_v(arhoVec, physics))
 
 def velocity(mom, rho):
   return mom / rho
+
+def mixture_spec_vol(massfracVec, p, T, physics):
+  Tdivp = T / p
+  return (massfracVec[...,0:1] * physics.Gas[0]["R"]
+    + massfracVec[...,1:2] * physics.Gas[1]["R"]) * Tdivp \
+    + massfracVec[...,2:3]/(
+      physics.Liquid["rho0"] * (1.0 + 
+        (p - physics.Liquid["p0"]) / physics.Liquid["K"]))
+
+def mixture_density(massfracVec, p, T, physics):
+  return 1.0 / mixture_spec_vol(massfracVec, p, T, physics)
 
 def temperature(arhoVec, mom, e, physics):
   kinetic = 0.5*np.sum(mom*mom, axis=2, keepdims=True) / rho(arhoVec)
@@ -138,27 +149,33 @@ def acousticRI_integrand_scalar(p, T0, p0, massfracVec, Gamma, physics):
   ) / Gamma)
 
 def velocity_RI_fixed_p_quadrature(p_bdry:float, U:np.array,
-  physics, is_adaptive=True, tol=1e-1, rtol=1e-5) -> tuple:
-  ''' Quadrature of inverse acoustic impedance for fixed integration limits.
+  physics, normals, is_adaptive=True, tol=1e-1, rtol=1e-5) -> tuple:
+  ''' Quadrature of inverse acoustic impedance for fixed integration limits:
+     p                
+      2               
+      ⌠        -1     
+      ⌡ (ρ ⋅ c)   ⋅ dp
+     p                
+      1               
+
   Result is equal to the difference in particle velocity for two phases with
   the same value of acoustic Riemann invariant.
   Returns tuple of primitives (pHat, uHat, THat)
   '''
+
   arhoVec = U[:,:,physics.get_mass_slice()]
   mom = U[:,:,physics.get_momentum_slice()]
   e = U[:,:,physics.get_state_slice("Energy")]
 
   massfracVec = massfrac(arhoVec)
   T0 = temperature(arhoVec, mom, e, physics)
-  gas_volfrac = gas_volfrac(arhoVec, T0, physics)
-  p0 = pressure(arhoVec, T0, gas_volfrac, physics)
+  p0 = pressure(arhoVec, T0, gas_volfrac(arhoVec, T0, physics), physics)
   Gamma0 = Gamma(arhoVec, physics)
-  rho = rho(arhoVec)
 
   # Set boundary pressure equal to specified pressure function
   pHat = p_bdry
   # Set initial value for velocity, updated with subsequent quadrature
-  uHat = velocity(mom, rho)
+  uHat = velocity(mom, rho(arhoVec))
 
   ''' Adaptive Gauss quadrature '''
   if is_adaptive:
@@ -166,7 +183,7 @@ def velocity_RI_fixed_p_quadrature(p_bdry:float, U:np.array,
       lambda p: acousticRI_integrand_scalar(
         p, T0, p0, massfracVec, Gamma0, physics),
       p_bdry, p0, tol=tol, rtol=rtol)
-    uHat += val
+    uHat += normals * val
   else:
     raise NotImplementedError("Non-adaptive algorithm is deprecated.")
     ''' Full-stride Gauss quadrature for ODE of type dF/dp = f(p)
