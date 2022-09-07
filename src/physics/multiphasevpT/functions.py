@@ -75,7 +75,6 @@ class SourceType(Enum):
 	Enum class that stores the types of source terms. These
 	source terms are specific to the available Euler equation sets.
 	'''
-	Exsolution = auto()
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 	ExsolutionSource = auto()
@@ -1973,10 +1972,20 @@ class ExsolutionSource(SourceBase):
 				(1.0+eq_conc) * arhoWt 
 				- (1.0+eq_conc) * arhoWv
 				- eq_conc * arhoM)
+			# Replace limiting value for absent magma and absent water
 			S_scalar[np.where(np.logical_and(
 				arhoWt-arhoWv <= general.eps,
 				arhoM <= general.eps
 			))] = 0.0
+			# Switch-off of source term for zero exsolved water
+			# Set epsilon below which the source term is quadratic in arhoWv. Must be
+			# large enough to limit stiff sources.
+			quadr_eps = 1e-1
+			# Compute rate factor <= 1 that smoothly goes to zero when arhoWv goes to
+			# zero, but is 1 when arhoWv > quadr_eps
+			rateFactor = np.minimum(arhoWv, quadr_eps) / quadr_eps 
+			S_scalar *= rateFactor**2.0
+
 			S[:, :, slarhoWv] =  S_scalar
 			S[:, :, slarhoM]  = -S_scalar
 		else:
