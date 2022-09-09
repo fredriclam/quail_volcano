@@ -33,7 +33,7 @@ def write_data_file(solver, iwrite):
 	'''
 	
 	# Remove un-pickle-able functions, objects, etc...
-	solver.physics.gas = None
+	# solver.physics.gas = None
 	# Remove piped objects
 	bdnet = solver.physics.bdry_data_net
 	solver.physics.bdry_data_net = None
