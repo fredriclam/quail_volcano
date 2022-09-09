@@ -65,6 +65,7 @@ class BCType(Enum):
 	NonReflective1D = auto()
 	PressureOutlet1D = auto()
 	PressureOutlet2D = auto()
+	MassFluxInlet1D = auto()
 	# Not implemented (could use lumped magma chamber model for example)
 	EntropyTotalenthalpyInlet1D = auto()
 	EntropyPressureInlet1D = auto()
@@ -1683,8 +1684,10 @@ class MultiphasevpT2D2D(BCWeakRiemann):
 			copy.copy(physics.bdry_data_net[data_net_key]["bdry_face_state"]),
 			axis=(0,1))
 
+
 class NonReflective1D(FcnBase):
 	pass
+
 
 class PressureOutlet1D(BCWeakPrescribed):
 	'''
@@ -1752,8 +1755,109 @@ class PressureOutlet1D(BCWeakPrescribed):
 
 		return UqB
 
+
 class PressureOutlet2D(FcnBase):
 	pass
+
+
+class MassFluxInlet1D(BCWeakPrescribed):
+	'''
+	This class corresponds to an outflow boundary condition with static
+	incoming mass flux, for a fixed chamber/reservoir pressure and temperature.
+	The boundary state is computed using acoustic Riemann invariants in 1D.
+	Attributes:
+	-----------
+	mass_flux:        mass flux at boundary, const
+	p_chamber:        pressure of chamber, const (not necessarily bdry value)
+	T_chamber:        temperature of chamber, const (not necessarily bdry value)
+	newton_tol:       absolute tolerance in residual equation (units of velocity)
+	newton_iter_max:  max number of newton iterations to take
+
+	'''
+	def __init__(self, mass_flux:float=20e3, p_chamber:float=100e6,
+			T_chamber:float=1e3, newton_tol:float=1e-7, newton_iter_max=20):
+		self.mass_flux, self.p_chamber, self.T_chamber, self.newton_tol, \
+			self.newton_iter_max = \
+			mass_flux, p_chamber, T_chamber, newton_tol, newton_iter_max
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Computes the boundary state that satisfies the pressure BC strongly. '''
+
+		UqB = UqI.copy()
+		''' Check validity of flow state, check number of boundary points. '''
+		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
+			# TODO: improve out flow and sonic handling
+			print("Attempting to outflow into an inlet")
+		if UqI.shape[0] * UqI.shape[1] > 1:
+			raise NotImplementedError('''Not implemented: for-loop over more than one
+				inflow boundary point.''')
+
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to outgoing acoustic waves) of the interior
+		solution. '''
+		# Extract data from input and prescribed chamber/reservoir values
+		arhoVecI = UqI[:,:,physics.get_mass_slice()]
+		momxI = UqI[...,physics.get_momentum_slice()]
+		eI = UqI[...,physics.get_state_slice("Energy")]
+		j, p_chamber, T_chamber = self.mass_flux, self.p_chamber, self.T_chamber
+		K, rho0, p0 = \
+			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
+		# Compute intermediates
+		Gamma = atomics.Gamma(arhoVecI, physics)
+		y = atomics.massfrac(arhoVecI)
+		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
+		# Compute chamber entropy as ratio T/p^(..)
+		S_r = T_chamber / p_chamber**((Gamma-1)/Gamma)
+		# Compute grid primitives
+		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
+		pGrid = atomics.pressure(arhoVecI, TGrid,
+			atomics.gas_volfrac(arhoVecI, TGrid, physics), physics)
+
+		def eval_fun_dfun(p):
+			''' Evaluate function G and its derivative dG/dp. '''
+			# Define reusable groups
+			g1 = yRGas * p**(-1/Gamma) * S_r
+			g2 = y[...,2] * K / (rho0*(p + K - p0))
+			# Integration of 1/impedance
+			# Note that the output p, T are not used, since entropy is not taken from grid
+			_, uTarget, _ = atomics.velocity_RI_fixed_p_quadrature(p, UqI, physics, normals,
+				is_adaptive=True, tol=1e-1, rtol=1e-5)
+			# Evaluate integrand
+			f = atomics.acousticRI_integrand_scalar(np.array(p), TGrid, pGrid, y, Gamma, physics)
+			# Evaluate returns
+			G = j * (g1 + g2) + normals * uTarget
+			dGdp = -j * (g1 * (1/Gamma) / p + g2 / (p+K-p0)) - f
+			return G, dGdp, (p, uTarget)
+
+		# Perform Newton iteration to compute boundary p
+		p = pGrid.copy()
+		for i in range(self.newton_iter_max):
+			G, dGdp, _ = eval_fun_dfun(p)
+			p -= G / dGdp
+			if np.abs(G) < self.newton_tol:
+				break
+		# TODO: set logging if max iter is reached
+		# Evaluate primitive variables for boundary state
+		_, _, (p, u) = eval_fun_dfun(p)
+		T = S_r * p**((Gamma-1)/Gamma)
+		rho = atomics.mixture_density(y, p, T, physics)
+
+		''' Check positivity of computed state. '''
+		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
+			raise errors.NotPhysicalError
+
+		''' Map to conservative variables '''
+		UqB[:,:,physics.get_mass_slice()] = rho * y
+		UqB[:,:,physics.get_momentum_slice()] = j
+		UqB[:,:,physics.get_state_slice("Energy")] = \
+			atomics.c_v(rho * y, physics) * T \
+			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
+			+ 0.5 * j * u
+		# Update adiabatically compressed/expanded tracer partial densities
+		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+
+		return UqB
 
 '''
 ---------------------

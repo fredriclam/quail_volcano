@@ -80,6 +80,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.NonReflective1D : mpvpT_fcns.NonReflective1D,
 			BCType.PressureOutlet1D : mpvpT_fcns.PressureOutlet1D,
 			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
+			BCType.MassFluxInlet1D: mpvpT_fcns.MassFluxInlet1D,
 		})
 
 	def set_physical_params(self, 
