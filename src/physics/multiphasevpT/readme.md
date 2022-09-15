@@ -1,4 +1,30 @@
-### Steam tools
+## Functions ⚡
+
+Functions associated with `multiphasevpT` physics are included in `functions.py`. The documented boundary conditions are
+
+* `SlipWall`: Wall that allows slip in the wall-parallel direction. If in 1D, simply sets velocity to zero.
+
+* `MultiphasevpT1D1D`: 1D to 1D coupling.
+
+* `MultiphasevpT2D1D`: 1D to 2D coupling; 2D state is averaged along the boundary, and 1D state is lifted to 2D by providing zero tangential velocity.
+
+* `MultiphasevpT2D2D`: 2D to 2D coupling.
+
+* `PressureOutlet1D`: Pressure boundary condition for 1D. Does not yet handle incoming flow.
+
+* `MassFluxInlet1D`: Mass flux inlet for 1D. Specify desired mass flux, and (p, T) of the reservoir state. Currently copies the grid value mass fraction (**to be changed in the future**)
+
+* `LinearizedImpedance2D`: Linearized impedance boundary condition for 2D. Uses current grid value of acoustic impedance. Linearizes pressure about the first value of pressure encountered in the simulation (typically equal to the pressure of the initial condition).
+
+## Atomics ⚛
+
+Commonly used functions are provided by `atomics.py`. Atomics have minimal overhead and are useful for improving performance bottlenecks. Of particular note are the following:
+
+* `acousticRI_integrand_scalar(p, T0, p0, massfracVec, Gamma, physics)`: this functions computes the integrand for the acoustic Riemann invariant; this is the reciprocal of the acoustic impedance, expressed as a function of pressure, and some quantities that are constant during acoustic perturbations. These quantities are 1) the entropy, which is computed using some initial (T0, p0), and 2) the mass fractions specified in `massfracVec`. The mixture heat capacity ratio `Gamma` is provided as an argument to reduce redundant computation of `Gamma`.
+
+* `velocity_RI_fixed_p_quadrature(p_bdry, U, physics, normals, is_adaptive=True, tol=1e-1, rtol=1e-5)`: computes the boundary state that has pressure `p_bdry`, but shares the entropy of the interior value `U` and the value of the acoustic Riemann invariant. Returns tuple `(p, u, T)` corresponding to the boundary state. This function is useful for outflow pressure boundary conditions. Numerical quadrature is used; by default we use `scipy.integrate.quadrature` with the specified tolerances.
+
+## Steam tools 🌊
 
 An implementation of rootfinding for mixtures involving water described by steam tables (via pyXSteam) is included in `p_steam_root1d`. The algorithm is a two-level 1D rootfinder using Brent's method, with conserved variables as inputs. The outer level solves for the pressure that satisfies the saturation condition. The saturation condition is not satisfied a priori at the initial bracketing values of pressure, for which the volume fractions are computed using the partial density and the specific volume specified by the thermodynamic state. The specific volume is computed as a function of pressure (magma) or a function of pressure and enthalpy (water). The water's specific enthalpy is not explicitly known; the inner level of the two-level rootfinder solves for the specific enthalpy consistent with the total energy density.
 
@@ -29,29 +55,29 @@ The file `p_steam_root1d.py` exposes the following class:
 
 `SteamCalc(itab, Liquid, method="brent")`: steam calculator object. Initialize by providing an inverse steam tabulation (`physics.multiphasevpT.inv_steam_tabulation.InverseTabulation`, and the `Liquid` object found in a `physics.multiphasevpT` object. Optionally, provide the method (`brent` or `bisect-newton`; `brent` is strongly recommended). 
 
-### Plotting tools
+## Plotting tools 📊
 
 Plotting tools are found in `.\src\processing\mdtools.py`.
 
-`mdtools` contains tools for plotting multidomain objects. The following functions are provided for convenient plotting. Probably the useful one is `viz`.
+* `mdtools` contains tools for plotting multidomain objects. The following functions are provided for convenient plotting. Probably the useful one is `viz`.
 
-`viz(solver, plot_qty="Pressure", levels=None, clims=None)`: quick visualization of solver. String `plot_qty` is the name of the quantity defined in multiphasevpT.py (search term `AdditionalVariables`; these are the variable names like `Pressure`). The names of the conserved variables also work: these are `pDensityA`, `pDensityWv`, `pDensityM`, `XMomentum` (and `YMomentum`), `Energy`, `pDensityWt`, and `pDensityC`. This works for 1D and 2D.
+* `viz(solver, plot_qty="Pressure", levels=None, clims=None)`: quick visualization of solver. String `plot_qty` is the name of the quantity defined in multiphasevpT.py (search term `AdditionalVariables`; these are the variable names like `Pressure`). The names of the conserved variables also work: these are `pDensityA`, `pDensityWv`, `pDensityM`, `XMomentum` (and `YMomentum`), `Energy`, `pDensityWt`, and `pDensityC`. This works for 1D and 2D.
 
-`downsample(solver, plot_qty:str="Pressure")`: returns `(x, var_plot)`, a downsample of the finite element solution suitable for plotting. Downsampling is effective for obtaining a coarse mesh of points for quickly plotting arbitrary solutions. Variable x are points where the solution (`var_plot`) is evaluated.
+* `downsample(solver, plot_qty:str="Pressure")`: returns `(x, var_plot)`, a downsample of the finite element solution suitable for plotting. Downsampling is effective for obtaining a coarse mesh of points for quickly plotting arbitrary solutions. Variable x are points where the solution (`var_plot`) is evaluated.
 
-`custom_plot_2D(x, var_plot, solver, levels=None, clims=None)`: a quick 2D plot using the given data `(x, var_plot)`. This function allows arbitrary data to be plotted rapidly. The default Quail visualizers are more detailed and may take longer. If there is no specific mesh to be plotted, one can use `viz` instead to automatically obtain a quick mesh.
+* `custom_plot_2D(x, var_plot, solver, levels=None, clims=None)`: a quick 2D plot using the given data `(x, var_plot)`. This function allows arbitrary data to be plotted rapidly. The default Quail visualizers are more detailed and may take longer. If there is no specific mesh to be plotted, one can use `viz` instead to automatically obtain a quick mesh.
 
-`plot_mean(x, q, clims)`: the fastest 2D plot (plots only the mean value of each element). This can be used if `viz` is taking too long, or there's just TOO much detail.
+* `plot_mean(x, q, clims)`: the fastest 2D plot (plots only the mean value of each element). This can be used if `viz` is taking too long, or there's just TOO much detail.
 
-`plot_mean1D(x, q, clims, xscale=1.0, xshift=0.0)`: plots 1D data as 2D rectangles. The xscale and xshift modify the width of the rectangles and where the domain ends. This can be used to make plots containing 2D and 1D portions.
+* `plot_mean1D(x, q, clims, xscale=1.0, xshift=0.0)`: plots 1D data as 2D rectangles. The xscale and xshift modify the width of the rectangles and where the domain ends. This can be used to make plots containing 2D and 1D portions.
 
-`generate_anim(atm_names, conduit_names, outfilename, num_frames, plot_qty, filter=lambda x, x0:x, initial=1, stride=1, is_high_detail=False)`: generates an animation using ffmpeg. ffmpeg must be installed, and the path must be provided in the environment. List of file names (excluding the number of the file) in the working directory are specified as `atm_names` and `conduit_names`. The output file name for the animation is `outfilename`. Provide also the number of frames to render (`num_frames`), and the name of the quantity (`plot_qty`). Optionally, a filter can be provided (mapping x -> f(x); some useful ones are log10(abs(x))). 
+* `generate_anim(atm_names, conduit_names, outfilename, num_frames, plot_qty, filter=lambda x, x0:x, initial=1, stride=1, is_high_detail=False)`: generates an animation using ffmpeg. ffmpeg must be installed, and the path must be provided in the environment. List of file names (excluding the number of the file) in the working directory are specified as `atm_names` and `conduit_names`. The output file name for the animation is `outfilename`. Provide also the number of frames to render (`num_frames`), and the name of the quantity (`plot_qty`). Optionally, a filter can be provided (mapping x -> f(x); some useful ones are log10(abs(x))). 
 
-### Exact solution
+## Exact Riemann problem solution ☑
 
-`util.py/RiemannSolution`: contains fast construction of the solution to the Riemann problem, consisting of an expansion, contact (a.k.a. material interface), and shock.
+* `util.py/RiemannSolution`: contains fast construction of the solution to the Riemann problem, consisting of an expansion, contact (a.k.a. material interface), and shock.
 
-### Experimental steam features
+## Experimental steam features 🧪
 
 We evaluate the performance of SteamCalc in this section. The data used to generate the scatter plots are available (`water_test_range.npy` contains an array of values `[p, T, rho, wall_clock]` computed by SteamCalc, while `water_test_range_ref.npy` contains the values `[p, arhoM, e, arhoW]` computed by InverseTabulation; the latter values can be treated as the reference solution). The data was generated as in `p_steam_test.py`.
 
