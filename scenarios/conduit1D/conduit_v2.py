@@ -53,8 +53,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 240, 
-    "xmin" : -1200.0,
+    "NumElemsX" : 1000, 
+    "xmin" : -3000.0,
     "xmax" : 0.0,
 }
 
@@ -100,6 +100,7 @@ def hydrostatic_solve(solver, owner_domain=None):
         is_jump_included=True,
         owner_domain=owner_domain,
         x_jump=-600.0,
+        constr_key="YEq",
         # To set the traction function, use the following line and prescribe
         # traction as a function of x. The traction function needs to be
         # somehow compatible with the initial condition in RiemannProblem.

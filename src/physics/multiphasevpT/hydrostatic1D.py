@@ -554,6 +554,7 @@ class GlobalDG():
     for i in range(N_iter):
       p = newtoniter(p)
       fpi_res = evalresidual(p)
+      print(fpi_res)
       residuals = np.append(residuals, fpi_res)
       if fpi_res < self.FPI_TOL:
         break
