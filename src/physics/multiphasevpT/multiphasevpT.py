@@ -26,7 +26,6 @@
 from enum import Enum
 from logging import warning
 import numpy as np
-from pkg_resources import NullProvider
 
 import errors
 import general
@@ -75,10 +74,14 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.SlipWall : mpvpT_fcns.SlipWall,
 			BCType.PressureOutlet : mpvpT_fcns.PressureOutlet,
 			BCType.Inlet : mpvpT_fcns.Inlet,
-			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 			BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
+			BCType.NonReflective1D : mpvpT_fcns.NonReflective1D,
+			BCType.PressureOutlet1D : mpvpT_fcns.PressureOutlet1D,
+			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
+			BCType.MassFluxInlet1D: mpvpT_fcns.MassFluxInlet1D,
+			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
 		})
 
 	def set_physical_params(self, 
@@ -280,7 +283,7 @@ class MultiphasevpT(base.PhysicsBase):
 													 - (get_Gamma() - 1) * (self.Gas[1]["c_v"] * T))
 		elif vname is self.AdditionalVariables["pi3"].name:
 			T = get_temperature()
-			p = get_pressure()
+			p = get_pressure(T=T)
 			rhoM = (p - self.Liquid["p0"] + self.Liquid["K"])/self.Liquid["K"]*self.Liquid["rho0"]
 			varq = get_Psi1(T=T,p=p) * (p / rhoM
 													 - (get_Gamma() - 1) * (
@@ -305,6 +308,18 @@ class MultiphasevpT(base.PhysicsBase):
 			varq = 1.0 - get_porosity()
 		elif vname is self.AdditionalVariables["Drag"].name:
 			varq = get_Drag()
+		elif vname is self.AdditionalVariables["SpecificEntropy"].name:
+			rho = (arhoA+arhoWv+arhoM)
+			y1 = arhoA / rho
+			y2 = arhoWv / rho
+			y3 = arhoM / rho
+			T = get_temperature()
+			p = get_pressure(T=T)
+			gammaA = self.Gas[0]["gamma"]
+			gammaWv = self.Gas[1]["gamma"]
+			varq = y1 * self.Gas[0]["c_p"] * np.log(T / p**((gammaA-1.0)/gammaA)) + \
+					y2 * self.Gas[1]["c_p"] * np.log(T / p**((gammaWv-1.0)/gammaWv)) + \
+					y3 * self.Liquid["c_m"] * np.log(T)
 		else:
 			raise NotImplementedError
 
@@ -434,6 +449,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		d = {
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
+			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -445,6 +461,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
+			SourceType.WaterInflowSource: mpvpT_fcns.WaterInflowSource,
 		})
 
 		self.conv_num_flux_map.update({

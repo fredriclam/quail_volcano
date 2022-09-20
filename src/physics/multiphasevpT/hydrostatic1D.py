@@ -35,8 +35,8 @@ from physics.multiphasevpT.functions import GravitySource
 #       In unsteady residual, local momentum residual > 1e1 to the right of test
 #       jump due to magma partial density reaching ~2500, and then plateauing to
 #       the left.
-# TODO: Consider factorizations that increase FPI precision (currently plateaus
-#       at 1e-8).
+# TODO: Consider factorizations that increase solve precision (currently
+#       plateaus at 1e-7 to 1e-8).
 
 class GlobalDG():
   def __init__(self, solver):
@@ -65,8 +65,10 @@ class GlobalDG():
     # Compute unraveled shape
     self.vec_shape = (self.N, 1)
 
-    # Fixed point iteration parameters
-    self.FPI_TOL = 1e-7
+    # Set fixed point iteration parameters
+    # Absolute tolerance in the steady equation residual (equation has typical
+    # magnitude ~ rho*g*dx ~ 1e5 to 1e6).
+    self.FPI_TOL = 5e-6
     self.N_iter = 20
 
     # Allocate error metrics
@@ -90,7 +92,7 @@ class GlobalDG():
     ''' Inverse of ravel operation: (N,1) -> (ne, nb, 1) '''
     return data.reshape(self.eltwise_shape)
   
-  def eval_barotropic_state(self, p:np.array, constr_key:str="MEq"):
+  def eval_barotropic_state(self, p:np.array, constr_key:str="YEq"):
     ''' Evaluate state with ns-1 constraints and known pressure. The quantities
     T, arhoA, arhoC, xmomentum provided by the unequilibrated initial condition
     are computed from the latter and held constant. For the remaining three
@@ -180,43 +182,60 @@ class GlobalDG():
         / rhoM
       alphaWv = 1.0 - alphaA - alphaM
       # Force positivity
-      alphaWv[np.where(alphaWv < 0)] = 0
+      if np.any(alphaWv < 0) or np.any(alphaM < 0) or np.any(alphaA > 1):
+        raise Exception('''Volume fraction calculated is out of bounds [0,1].
+          Consider providing constr_key="YEq" in
+          hydrostatic1D/set_initial_condition (or eval_barotropic_state), or
+          decreasing the air mass fraction.''')
       alphaM = 1.0 - alphaA - alphaWv
       arhoWd = conc_eq / (1.0 + conc_eq) * alphaM * rhoM
       arhoWt = arhoWd + alphaWv * rhoWv
     elif constr_key == "YEq":
-      ''' Algorithm 4: fixed mass fraction
-      Does not use pre-computed air volume fraction.
+      ''' Algorithm 4: fixed mass fraction of water and dry magma.
+
+      Does not use pre-computed air volume fraction. Computes exsolved water as
+      the leftover of total water, clipped to zero. Temperature is held constant
+      resulting in the following invariants: temperature, dry magma mass frac,
+      air mass frac, and total water mass frac. Two degrees of freedom remain;
+      these allow for pressure to vary, and the exsolved water partial density
+      to be constrained by the equilibrium dissolved concentration.
       '''
       rhoA = p / (physics.Gas[0]["R"]*T)
       rhoWv = p / (physics.Gas[1]["R"]*T)
       rhoM = physics.Liquid["rho0"] + (physics.Liquid["rho0"] 
         / physics.Liquid["K"]) * (p - physics.Liquid["p0"])
-      # Compute mass fractions from origin state
+      # Compute mass fractions that are kept from origin state
       rho_origin_state = self.origin_state[:,:,physics.get_mass_slice()].sum(
         axis=2,keepdims=True)
+      # Decompose mass into air, total water, and dry magma; recall that m
+      # is for magma + disolved water)
       yA = self.origin_state[:,:,physics.get_state_slice("pDensityA")] / rho_origin_state
-      yWv = self.origin_state[:,:,physics.get_state_slice("pDensityWv")] / rho_origin_state
-      yM = self.origin_state[:,:,physics.get_state_slice("pDensityM")] / rho_origin_state
       yWt = self.origin_state[:,:,physics.get_state_slice("pDensityWt")] / rho_origin_state
+      yMDry = 1.0 - yWt - yA
       yC = self.origin_state[:,:,physics.get_state_slice("pDensityC")] / rho_origin_state
-      # Compute mixture density (rho^-1 == sum_i y_i / rho_i)
+      # Compute dissolved water from Henry's law or total water if unsaturated
+      yWd = np.minimum(conc_eq * yMDry, yWt)
+      # Compute mass fraction m: magma + dissolved water
+      yM = yMDry + yWd
+      yWv = 1.0 - yM - yA
+      # Cull small or negative values
+      if np.any(yWv < -1e-10):
+        raise Exception("Unexpected negative mass fraction of water vapour.")
+      yWv[np.where(yWv<1e-10)] = 1e-10
+      # Compute mixture density from specific volumes (rho^-1 == sum_i y_i / rho_i)
       rho = 1.0 / (yA/rhoA + yWv/rhoWv + yM/rhoM)
-
-      # Recompute air
-      constrained_state[:,:,physics.get_state_slice("pDensityA")] = rho * yA
-      # Compute volume fractions for fill-in
+      # Compute volume fractions
       alphaA = rho * yA / rhoA
       alphaWv = rho * yWv / rhoWv
       alphaM = rho * yM / rhoM
-      # Recompute total water from equilibrium
-      arhoWd = conc_eq / (1.0 + conc_eq) * alphaM * rhoM
-      arhoWt = arhoWd + alphaWv * rhoWv
+      arhoWt = rho * yWt
+      # Recompute air partial density
+      constrained_state[:,:,physics.get_state_slice("pDensityA")] = rho * yA      
       # Recompute crystallinity
       constrained_state[:,:,physics.get_state_slice("pDensityC")] = rho * yC
     else:
       raise NotImplementedError(f"Unknown constraint key: {constr_key}." + 
-        "Implemented constraints are WtEq, WvEq, MEq (default).")
+        "Implemented constraints are WtEq, WvEq, MEq, YEq (default).")
 
     # Compute volumetric energy
     e = alphaA * rhoA * physics.Gas[0]["c_v"] * T \
@@ -230,7 +249,7 @@ class GlobalDG():
    
     return constrained_state
 
-  def eval_barotropic_drhodp(self, p:np.array, constr_key:str="MEq"):
+  def eval_barotropic_drhodp(self, p:np.array, constr_key:str="YEq"):
     ''' Evaluate scalar derivative drho/dp for the corresponding barotropic
     pressure-density relation.
     Scalar derivative is needed for Newton's method in solving the stationary
@@ -256,7 +275,7 @@ class GlobalDG():
     p = self.inv_ravel(p)
 
     if constr_key == "WtEq":
-      raise NotImplementedError
+      raise NotImplementedError("Newton's method slope not implemented for WtEq.")
     elif constr_key == "WvEq":
       K = physics.Liquid["K"]
       p0 = physics.Liquid["p0"]
@@ -277,6 +296,46 @@ class GlobalDG():
         - self.origin_state[:,:,physics.get_state_slice("pDensityM")] 
         / rho0 * K * (K-p0)/(p+K-p0)**2)
     elif constr_key == "YEq":
+      # Compute invariant temperature
+      T = self.solver.physics.compute_variable("Temperature", constrained_state)
+      # Compute (p,T)-dependent quantities
+      conc_eq = physics.Solubility["k"] * p ** physics.Solubility["n"]
+      rhoA = p / (physics.Gas[0]["R"]*T)
+      rhoWv = p / (physics.Gas[1]["R"]*T)
+      rhoM = physics.Liquid["rho0"] + (physics.Liquid["rho0"] 
+        / physics.Liquid["K"]) * (p - physics.Liquid["p0"])
+      # Compute mass fractions that are kept from origin state
+      rho_origin_state = self.origin_state[:,:,physics.get_mass_slice()].sum(
+        axis=2,keepdims=True)
+      # Decompose mass into air, total water, and dry magma; recall that m
+      # is for magma + disolved water)
+      yA = self.origin_state[:,:,physics.get_state_slice("pDensityA")] / rho_origin_state
+      yWt = self.origin_state[:,:,physics.get_state_slice("pDensityWt")] / rho_origin_state
+      yMDry = 1.0 - yWt - yA
+      # Compute dissolved water from Henry's law or total water if unsaturated
+      yWd = np.minimum(conc_eq * yMDry, yWt)
+      # Compute mass fraction m: magma + dissolved water
+      yM = yMDry + yWd
+      yWv = 1.0 - yM - yA
+      # Cull small negative values
+      if np.any(yWv < -1e-10):
+        raise Exception("Unexpected negative mass fraction of water vapour.")
+      yWv[np.where(yWv<1e-10)] = 1e-10
+      # Compute mixture density from specific volumes (rho^-1 == sum_i y_i / rho_i)
+      rho = 1.0 / (yA/rhoA + yWv/rhoWv + yM/rhoM)
+      # Compute specific volumes
+      vA = 1.0 / rhoA
+      vM = 1.0 / rhoM
+      vWv = 1.0 / rhoWv
+      # Count 1 if dissolved water is at saturation, else 0
+      satIndicator = (conc_eq * yMDry < yWt).astype(float)
+      return rho**2.0/p * (
+        yA * vA
+        + yM * vM * p / (p + physics.Liquid["K"] - physics.Liquid["p0"])
+        + yWv * vWv
+        + (vWv - vM) * satIndicator * yMDry * physics.Solubility["n"] * conc_eq
+      )
+    elif constr_key == "YEqLegacy":
       ''' Derivative drho/dp from rho^{-1} == sum_i y_i / rho_i'''
       T = self.solver.physics.compute_additional_variable(
         "Temperature", constrained_state, flag_non_physical=True)
@@ -302,7 +361,7 @@ class GlobalDG():
         + yM * rho0 / K / rhoM**2.0)
     else:
       raise NotImplementedError(f"Unknown constraint key: {constr_key}." + 
-        "Implemented constraints are WtEq, WvEq, MEq (default).")
+        "Implemented constraints are WtEq, WvEq, MEq, YEq (default).")
 
 
   def set_initial_condition(self, p_bdry:float=1e5, p_bc_loc:str="x2",
@@ -516,6 +575,7 @@ class GlobalDG():
     p_like = 0.0*b.todense() + 1.0
     f = -b + (-rho0*gsource.gravity) * M @ p_like + delta_source
     p = scipy.sparse.linalg.spsolve(A-B, f)
+    p = np.expand_dims(p, axis=1)
     # Copy for internal debugging
     p_guess = p
 
@@ -534,15 +594,14 @@ class GlobalDG():
 
     # Simple fixed point iteration obtained from inverting the linear part of
     # the equation (A-B)*p = f(p) -> p_{k+1} = (A-B) \ f(p_{k})
-    fixedpointiter = lambda p: scipy.sparse.linalg.spsolve(A-B+0*scipy.sparse.identity(self.N)+mu*M,
-      f_fn(np.expand_dims(p,axis=1)) + mu*M@np.expand_dims(p,axis=1) + 0*np.expand_dims(p,axis=1))
+    fixedpointiter = lambda p: scipy.linalg.solve(A-B+0*scipy.sparse.identity(self.N)+mu*M,
+      f_fn(p) + mu*M@p + 0*p)
     evalresidual = lambda p : np.linalg.norm(
-      (A-B)@np.expand_dims(p,axis=1) - f_fn(np.expand_dims(p,axis=1)), 'fro')
+      (A-B)@p - f_fn(p), 'fro')
     # Newton iteration sending residual of equation to zero
-    newtoniter = lambda p: p - scipy.sparse.linalg.spsolve(
+    newtoniter = lambda p: p - scipy.linalg.solve(
       A-B+gsource.gravity*M@np.diag(path_drhodp(p).ravel()), # (A-B) - M*diag(d(-rho*g)/dp)
-      (A-B)@np.expand_dims(p,axis=1) - f_fn(np.expand_dims(p,axis=1)))
-
+      (A-B)@p - f_fn(p))
 
     residuals = np.array([evalresidual(p)])    
     N_iter = self.N_iter
@@ -551,6 +610,7 @@ class GlobalDG():
     #   N_iter = 1
     
     # Start fixed point iteration
+    # for i in range(2):
     for i in range(N_iter):
       p = newtoniter(p)
       fpi_res = evalresidual(p)
