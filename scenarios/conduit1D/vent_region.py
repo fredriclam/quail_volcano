@@ -17,7 +17,7 @@ Numerics = {
 	"ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 150,#5e3
+	"AVParameter" : 200,#5e3
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 	'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
@@ -29,7 +29,7 @@ Mesh = {
 
 Output = {
 	"Prefix" : "atmSteadyState",
-	"WriteInterval" : 1000,
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -66,9 +66,9 @@ ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
 	"r1" : {
-		"BCType" : "SlipWall",
-		#"BCType" : "MultiphasevpT2D2D",
-		#"bkey": "r1",
+		#"BCType" : "SlipWall",
+		"BCType" : "MultiphasevpT2D2D",
+		"bkey": "r1",
 		# "BCType" : "SlipWall",
 	},
 	"ground" : {
@@ -96,8 +96,8 @@ LinkedSolvers = [
 	#	"DeckName": "conduit.py",
 	#	"BoundaryName": "vent",
 	#},
-	#{
-	#	"DeckName": "r1r2_test.py",
-	#	"BoundaryName": "r1",
-	#},
+	{
+		"DeckName": "r1r2.py",
+		"BoundaryName": "r1",
+	},
 ]

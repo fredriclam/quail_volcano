@@ -20,7 +20,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "atm4SteadyState_inlet",
+	"Prefix" : "atm4SteadyState",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

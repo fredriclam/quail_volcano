@@ -43,7 +43,7 @@ Numerics = {
 Output = {
 	"Prefix" : "conduitSteadyState",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 30,
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -53,7 +53,7 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 1000, 
+    "NumElemsX" : 600, 
     "xmin" : -3000.0,
     "xmax" : 0.0,
 }
