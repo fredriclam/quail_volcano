@@ -86,7 +86,7 @@ LinkedSolvers = [
 	#	"BoundaryName": "vent",
 	#},
 	{
-		"DeckName": "r2r3.py",
+		"DeckName": "steadyState_r2r3.py",
 		"BoundaryName": "r2",
 	},
 ]

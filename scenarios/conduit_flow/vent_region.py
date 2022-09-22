@@ -1,5 +1,10 @@
 import numpy as np
 
+Restart = {
+	"File" : "atm1SteadyState_final.pkl",
+	"StartFromFileTime" : True,
+}
+
 #TimeStepping = {
 #	"InitialTime" : 0.0,
 #	"FinalTime" : 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
@@ -28,7 +33,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "atm1SteadyState",
+	"Prefix" : "atm1",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -97,7 +102,7 @@ LinkedSolvers = [
 	#	"BoundaryName": "vent",
 	#},
 	{
-		"DeckName": "steadyState_r1r2.py",
+		"DeckName": "r1r2.py",
 		"BoundaryName": "r1",
 	},
 ]

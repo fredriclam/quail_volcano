@@ -1,10 +1,15 @@
 import numpy as np
 from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
+Restart = {
+	"File" : "conduitSteadyState_final.pkl",
+	"StartFromFileTime" : True,
+}
+
 # Set timestepper
 TimeStepping = {
-	"InitialTime" : 0.0,
-	"FinalTime" : 2.50,
+	"InitialTime" : 2.50,
+	"FinalTime" : 5.0,
 	"NumTimeSteps" : 25000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
@@ -41,7 +46,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduitSteadyState",
+	"Prefix" : "conduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
@@ -116,7 +121,7 @@ def hydrostatic_solve(solver, owner_domain=None):
 Inject = [
     {
         "Function": hydrostatic_solve,
-        "Initial": True,
+        "Initial": False,
         "Postinitial": False,
     }
 ]
@@ -154,10 +159,6 @@ BoundaryConditions = {
     "x1" : {
       # To be replaced by an exit pressure boundary condition
       "BCType" : "SlipWall"
-      #"BCType" : "MassFluxInlet1D",
-      #"mass_flux" : 50,
-      #"p_chamber" : 2e8,
-      #"T_chamber" : 1500,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism
@@ -181,7 +182,7 @@ BoundaryConditions = {
 # boundary "x2" in the linked parameter file).
 LinkedSolvers = [
     {
-        "DeckName": "steadyState_vent_region.py",
+        "DeckName": "vent_region.py",
         "BoundaryName": "vent",
     },
 ]

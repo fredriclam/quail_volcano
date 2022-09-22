@@ -1,12 +1,9 @@
 import numpy as np
 
-#TimeStepping = {
-#	"InitialTime" : 0.0,
-#	"FinalTime" : 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
-#	"NumTimeSteps" : 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-#     # 100000 for generalB1, 400~K
-#	"TimeStepper" : "FE",
-#}
+Restart = {
+    "File" : "atm2SteadyState_final.pkl",
+    "StartFromFileTime" : True,
+}
 
 Numerics = {
 	"SolutionOrder" : 1,
@@ -24,11 +21,11 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA1.msh",
+	"File" : "../meshes/volcanoA2.msh",
 }
 
 Output = {
-	"Prefix" : "atm1SteadyState",
+	"Prefix" : "atm2SteadyState",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -51,6 +48,11 @@ SourceTerms = {
 	# },
 }
 
+# Restart = {
+# 	"File" : "atm2SteadyState_inlet_140.pkl",
+# 	"StartFromFileTime" : True
+# }
+
 #if False:
 #	# Sod state
 #	rhoAmbient = 0.125
@@ -65,28 +67,20 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
+	"ground_far" : {
+		"BCType" : "SlipWall",
+	},
+	"symmetry_far" : {
+		"BCType" : "SlipWall",
+	},
+	"r2" : {
+		"BCType" : "MultiphasevpT2D2D",
+		# "BCType" : "LinearizedImpedance2D",
+		"bkey": "r2",
+	},
 	"r1" : {
-		#"BCType" : "SlipWall",
 		"BCType" : "MultiphasevpT2D2D",
 		"bkey": "r1",
-		# "BCType" : "SlipWall",
-	},
-	"ground" : {
-		"BCType" : "SlipWall",
-	},
-	"flare" : {
-		"BCType" : "SlipWall",
-	},
-	"pipewall" : {
-		"BCType" : "SlipWall",
-	},
-	"x2" : {
-		# "BCType" : "SlipWall",
-		"BCType" : "MultiphasevpT2D1D",
-		"bkey": "vent",
-	},
-	"symmetry" : {
-		"BCType" : "SlipWall",
 	},
 }
 
@@ -97,7 +91,7 @@ LinkedSolvers = [
 	#	"BoundaryName": "vent",
 	#},
 	{
-		"DeckName": "steadyState_r1r2.py",
-		"BoundaryName": "r1",
+		"DeckName": "r2r3.py",
+		"BoundaryName": "r2",
 	},
 ]
