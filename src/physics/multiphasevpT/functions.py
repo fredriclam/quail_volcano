@@ -77,6 +77,7 @@ class SourceType(Enum):
 	Enum class that stores the types of source terms. These
 	source terms are specific to the available Euler equation sets.
 	'''
+	FrictionVolFracVariableMu = auto()
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 	ExsolutionSource = auto()
@@ -2043,15 +2044,13 @@ class FrictionVolFracVariableMu(SourceBase):
 
 	Attributes:
 	-----------
-	mu: viscosity (units Pa s)
 	conduit_radius: conduit radius used in Poiseuille approximation (units m)
 	crit_volfrac: critical volume fraction at which friction model transitions (-)
 	logistic_scale: scale of logistic function (-)
 	'''
-	def __init__(self, mu:float=1e5, conduit_radius:float=50.0,
-							 crit_volfrac:float=0.8, logistic_scale:float=0.01,**kwargs):
+	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
+							 logistic_scale:float=0.01,**kwargs):
 		super().__init__(kwargs)
-		self.mu = mu
 		self.conduit_radius = conduit_radius
 		self.crit_volfrac = crit_volfrac
 		self.logistic_scale = logistic_scale
@@ -2068,6 +2067,20 @@ class FrictionVolFracVariableMu(SourceBase):
 		'''
 		return (1.0/self.logistic_scale) * self.compute_indicator(phi) \
 			* (self.compute_indicator(phi) - 1.0)
+	
+	def compute_viscosity(self, Uq, physics):
+		''' calculates the viscosity at each depth point as function of dissolved
+		water and crystal content.
+		'''
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+		arhoA  = Uq[:, :, iarhoA:iarhoA+1]
+		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
+		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
+		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
+		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		pDensityWd = arhoWt - arhoWv
+		viscosity = np.ones(pDensityWd.shape) * 1e5
+		return viscosity
 
 	def get_source(self, physics, Uq, x, t):
 		'''
@@ -2084,7 +2097,8 @@ class FrictionVolFracVariableMu(SourceBase):
 		''' Compute mixture density, u, friction coefficient '''
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
-		fric_coeff = 8.0 * self.mu / self.conduit_radius**2.0
+		mu = self.compute_viscosity(Uq, physics)
+		fric_coeff = 8.0 * mu / self.conduit_radius**2.0
 		''' Compute indicator based on magma porosity '''
 		I = self.compute_indicator( \
 			physics.compute_additional_variable("phi", Uq, True))
@@ -2125,7 +2139,8 @@ class FrictionVolFracVariableMu(SourceBase):
 		''' Compute Jacobian of physical expression for friction, times I '''
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
-		fric_coeff = 8.0 * self.mu / self.conduit_radius**2.0		
+		mu = self.compute_viscosity(Uq, physics)
+		fric_coeff = 8.0 * mu / self.conduit_radius**2.0		
 		friction_jacobian = np.zeros(
 			[Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 		# friction_jacobian[:, :, imom, physics.get_mass_slice()] = u / rho
