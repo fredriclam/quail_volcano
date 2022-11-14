@@ -2091,7 +2091,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		#log10_vis[vfM < (1 - self.crit_volfrac)] = fix # XXX adhoc fix for above fragmentation
 		#print(log10_vis[phi > self.crit_volfrac]) #viscosity = 10**log10_vis
 		viscosity = 10**log10_vis
-        viscosity[phi > self.crit_volfrac] = 0
+		viscosity[phi > self.crit_volfrac] = 0
 		return viscosity
 
 	def get_source(self, physics, Uq, x, t):
