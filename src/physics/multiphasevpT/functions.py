@@ -2086,7 +2086,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		log_mfWd = np.log(mfWd*100)
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		#log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
 		#fix = np.max(log10_vis)
 		#log10_vis[vfM < (1 - self.crit_volfrac)] = fix # XXX adhoc fix for above fragmentation
 		#print(log10_vis[phi > self.crit_volfrac]) #viscosity = 10**log10_vis
