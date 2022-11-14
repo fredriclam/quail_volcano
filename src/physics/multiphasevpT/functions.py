@@ -2072,8 +2072,8 @@ class FrictionVolFracVariableMu(SourceBase):
 		''' calculates the viscosity at each depth point as function of dissolved
 		water and crystal content.
 		'''
-		temp = physics.compute_additional_variable("Temperature", Uq, False)
-		vfM = physics.compute_additional_variable("volFracM", Uq, False)
+		temp = physics.compute_additional_variable("Temperature", Uq, True)
+		phi = physics.compute_additional_variable("phi", Uq, True)
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
 		arhoA  = Uq[:, :, iarhoA:iarhoA+1]
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
@@ -2086,11 +2086,12 @@ class FrictionVolFracVariableMu(SourceBase):
 		log_mfWd = np.log(mfWd*100)
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		log10_vis[vfM < (1 - self.crit_volfrac)] = 0 # XXX adhoc fix for above fragmentation
-		fix = np.max(log10_vis)
-		log10_vis[vfM < (1 - self.crit_volfrac)] = fix # XXX adhoc fix for above fragmentation
-		#print(vfM) #viscosity = 10**log10_vis
+		#log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		#fix = np.max(log10_vis)
+		#log10_vis[vfM < (1 - self.crit_volfrac)] = fix # XXX adhoc fix for above fragmentation
+		#print(log10_vis[phi > self.crit_volfrac]) #viscosity = 10**log10_vis
 		viscosity = 10**log10_vis
+        viscosity[phi > self.crit_volfrac] = 0
 		return viscosity
 
 	def get_source(self, physics, Uq, x, t):
