@@ -2049,7 +2049,7 @@ class FrictionVolFracVariableMu(SourceBase):
 	logistic_scale: scale of logistic function (-)
 	'''
 	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
-							 logistic_scale:float=0.01,**kwargs):
+							 logistic_scale:float=0.004,**kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius
 		self.crit_volfrac = crit_volfrac
@@ -2072,14 +2072,25 @@ class FrictionVolFracVariableMu(SourceBase):
 		''' calculates the viscosity at each depth point as function of dissolved
 		water and crystal content.
 		'''
+		temp = physics.compute_additional_variable("Temperature", Uq, False)
+		vfM = physics.compute_additional_variable("volFracM", Uq, False)
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
 		arhoA  = Uq[:, :, iarhoA:iarhoA+1]
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
 		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
-		pDensityWd = arhoWt - arhoWv
-		viscosity = np.ones(pDensityWd.shape) * 1e5
+		arhoWd = arhoWt - arhoWv
+		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
+		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
+		log_mfWd = np.log(mfWd*100)
+		log10_vis = -3.545 + 0.833 * log_mfWd
+		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
+		log10_vis[vfM < (1 - self.crit_volfrac)] = 0 # XXX adhoc fix for above fragmentation
+		fix = np.max(log10_vis)
+		log10_vis[vfM < (1 - self.crit_volfrac)] = fix # XXX adhoc fix for above fragmentation
+		#print(vfM) #viscosity = 10**log10_vis
+		viscosity = 10**log10_vis
 		return viscosity
 
 	def get_source(self, physics, Uq, x, t):

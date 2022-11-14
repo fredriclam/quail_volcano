@@ -77,8 +77,8 @@ InitialCondition = {
   "arhoML": 2496.3,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 10.0,
-  "arhoCL": 100.0, 
+  "arhoWtL": 200.0,
+  "arhoCL": 1e3, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
@@ -157,7 +157,7 @@ BoundaryConditions = {
       "BCType" : "MassFluxInlet1D",
       "mass_flux" : 27000,
       "p_chamber" : 2e8,
-      "T_chamber" : 1500,
+      "T_chamber" : 1000,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism
