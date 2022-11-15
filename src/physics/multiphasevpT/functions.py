@@ -2087,11 +2087,11 @@ class FrictionVolFracVariableMu(SourceBase):
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
 		log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
-		#fix = np.max(log10_vis)
-		#log10_vis[vfM < (1 - self.crit_volfrac)] = fix # XXX adhoc fix for above fragmentation
+		fix = np.max(log10_vis)
+		log10_vis[phi > self.crit_volfrac] = fix # XXX adhoc fix for above fragmentation
 		#print(log10_vis[phi > self.crit_volfrac]) #viscosity = 10**log10_vis
 		viscosity = 10**log10_vis
-		viscosity[phi > self.crit_volfrac] = 0
+		#viscosity[phi > self.crit_volfrac] = 0
 		return viscosity
 
 	def get_source(self, physics, Uq, x, t):
@@ -2112,12 +2112,12 @@ class FrictionVolFracVariableMu(SourceBase):
 		mu = self.compute_viscosity(Uq, physics)
 		fric_coeff = 8.0 * mu / self.conduit_radius**2.0
 		''' Compute indicator based on magma porosity '''
-		#I = self.compute_indicator( \
-		#	physics.compute_additional_variable("phi", Uq, True))
+		I = self.compute_indicator( \
+			physics.compute_additional_variable("phi", Uq, True))
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-		S[:, :, physics.get_momentum_slice()] = -fric_coeff * u
-		S[:, :, physics.get_state_slice("Energy")] = -fric_coeff * u**2.0
+		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
+		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
 		return S
 
 	def get_phi_gradient():

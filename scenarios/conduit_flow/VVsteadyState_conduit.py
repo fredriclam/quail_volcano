@@ -4,8 +4,8 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 1.50,
-	"NumTimeSteps" : 15000,
+	"FinalTime" : 2.50,
+	"NumTimeSteps" : 25000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduitSteadyStateVV",
+	"Prefix" : "conduitSteadyStateVV_smooth",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
@@ -78,7 +78,7 @@ InitialCondition = {
   "uL": 0.,
   "TL": 1000.,
   "arhoWtL": 100.0,
-  "arhoCL": 1e3, 
+  "arhoCL": 1e4, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
