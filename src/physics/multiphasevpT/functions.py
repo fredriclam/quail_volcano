@@ -2079,9 +2079,9 @@ class FrictionVolFracVariableMu(SourceBase):
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
-		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		#arhoC  = Uq[:, :, iarhoC:iarhoC+1]
 		arhoWd = arhoWt - arhoWv
-		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
+		arhoMelt = arhoM - arhoWd # partical density of melt ONLY
 		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
 		log_mfWd = np.log(mfWd*100)
 		log10_vis = -3.545 + 0.833 * log_mfWd
@@ -2112,12 +2112,12 @@ class FrictionVolFracVariableMu(SourceBase):
 		mu = self.compute_viscosity(Uq, physics)
 		fric_coeff = 8.0 * mu / self.conduit_radius**2.0
 		''' Compute indicator based on magma porosity '''
-		I = self.compute_indicator( \
-			physics.compute_additional_variable("phi", Uq, True))
+		#I = self.compute_indicator( \
+		#	physics.compute_additional_variable("phi", Uq, True))
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
-		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
+		S[:, :, physics.get_momentum_slice()] = -fric_coeff * u
+		S[:, :, physics.get_state_slice("Energy")] = -fric_coeff * u**2.0
 		return S
 
 	def get_phi_gradient():
