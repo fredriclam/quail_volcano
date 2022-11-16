@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduitSteadyStateVV_smooth",
+	"Prefix" : "conduitSteadyStateVV",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
@@ -78,7 +78,7 @@ InitialCondition = {
   "uL": 0.,
   "TL": 1000.,
   "arhoWtL": 100.0,
-  "arhoCL": 1e4, 
+  "arhoCL": 1e3, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
