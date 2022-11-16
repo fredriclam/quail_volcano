@@ -155,7 +155,7 @@ BoundaryConditions = {
       # To be replaced by an exit pressure boundary condition
       #"BCType" : "SlipWall"
       "BCType" : "MassFluxInlet1D",
-      "mass_flux" : 27000,
+      "mass_flux" : 2700,
       "p_chamber" : 2e8,
       "T_chamber" : 1000,
       # To use multiple domains (for parallelism), the below can be uncommented

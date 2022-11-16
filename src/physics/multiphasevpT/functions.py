@@ -2079,9 +2079,9 @@ class FrictionVolFracVariableMu(SourceBase):
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
-		#arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
 		arhoWd = arhoWt - arhoWv
-		arhoMelt = arhoM - arhoWd # partical density of melt ONLY
+		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
 		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
 		log_mfWd = np.log(mfWd*100)
 		log10_vis = -3.545 + 0.833 * log_mfWd
