@@ -2075,7 +2075,6 @@ class FrictionVolFracVariableMu(SourceBase):
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
 		phi = physics.compute_additional_variable("phi", Uq, True)
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
-		arhoA  = Uq[:, :, iarhoA:iarhoA+1]
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
