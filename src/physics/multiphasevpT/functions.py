@@ -130,9 +130,9 @@ class RiemannProblem(FcnBase):
 		location of initial discontinuity
 	'''
 	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0.,
-							 TL=1000., arhoWtL=10.0, arhoCL=100.0, arhoFmL=0.0,
-							 arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-6, uR=0.,
-							 TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0., arhoFmR=0.0):
+							 TL=1000., arhoWtL=10.0, arhoCL=1e-2, arhoFmL=1e-2,
+							 arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-5, uR=0.,
+							 TR=300., arhoWtR=1.161*5e-3, arhoCR=0.5e-5, xd=0., arhoFmR=0.5e-5):
 		'''
 		This method initializes the attributes.
 
