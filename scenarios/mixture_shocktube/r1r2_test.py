@@ -1,7 +1,7 @@
 import numpy as np
 
 Numerics = {
-	"SolutionOrder" : 2,
+	"SolutionOrder" : 0,
 	"SolutionBasis" : "LagrangeTri",
 	# "ApplyLimiters" : ["PositivityPreservingMultiphasevpT", "WENO", "PositivityPreservingMultiphasevpT"], "ShockIndicator": "MinMod", "TVBParameter": 0.0,
 	"Solver" : "DG",
@@ -20,8 +20,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_atm2",
-	"WriteInterval" : 30,
+	"Prefix" : "mixture_shocktube_atm2_trash",
+	"WriteInterval" : 50,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": True,
 }

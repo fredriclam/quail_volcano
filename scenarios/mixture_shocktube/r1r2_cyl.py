@@ -1,13 +1,5 @@
 import numpy as np
 
-TimeStepping = {
-	"InitialTime" : 0.0,
-	"FinalTime" : 500*1e-2, # 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 250*100, # 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-     # 100000 for generalB1, 400~K
-	"TimeStepper" : "FE",
-}
-
 Numerics = {
 	"SolutionOrder" : 2,
 	"SolutionBasis" : "LagrangeTri",
@@ -24,11 +16,11 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA1.msh",
+	"File" : "../meshes/volcanoA2.msh",
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_atm1_cyl",
+	"Prefix" : "mixture_shocktube_atm2_cyl",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -55,11 +47,16 @@ SourceTerms = {
 	}
 }
 
-if False:
-	# Sod state
-	rhoAmbient = 0.125
-	pAmbient = 0.1
-	eAmbient = pAmbient / (Physics["SpecificHeatRatio"] - 1.0)
+# Restart = {
+# 	"File" : "atm2SteadyState_inlet_640.pkl",
+# 	"StartFromFileTime" : True
+# }
+
+#if False:
+#	# Sod state
+#	rhoAmbient = 0.125
+#	pAmbient = 0.1
+#	eAmbient = pAmbient / (Physics["SpecificHeatRatio"] - 1.0)
 
 InitialCondition = {
 	"Function" : "LinearAtmosphere",
@@ -69,38 +66,33 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"r1" : {
+	"ground_far" : {
+		"BCType" : "SlipWall",
+	},
+	"symmetry_far" : {
+		"BCType" : "SlipWall",
+	},
+	"r2" : {
+		# "BCType" : "MultiphasevpT2D2D",
 		# "BCType" : "SlipWall",
+		"BCType" : "LinearizedImpedance2D",
+		# "bkey": "r2",
+	},
+	"r1" : {
 		"BCType" : "MultiphasevpT2D2D",
 		"bkey": "r1",
-	},
-	"ground" : {
-		"BCType" : "SlipWall",
-	},
-	"flare" : {
-		"BCType" : "SlipWall",
-	},
-	"pipewall" : {
-		"BCType" : "SlipWall",
-	},
-	"x2" : {
-		# "BCType" : "SlipWall",
-		"BCType" : "MultiphasevpT2D1D",
-		"bkey": "vent",
-	},
-	"symmetry" : {
-		"BCType" : "SlipWall",
 	},
 }
 
 # LinkedSolvers = []
-LinkedSolvers = [
-	{
-		"DeckName": "conduit.py",
-		"BoundaryName": "vent",
-	},
-	{
-		"DeckName": "r1r2_cyl.py",
-		"BoundaryName": "r1",
-	},
-]
+if False:
+	LinkedSolvers = [
+		#{
+		#	"DeckName": "conduit.py",
+		#	"BoundaryName": "vent",
+		#},
+		{
+			"DeckName": "r2r3.py",
+			"BoundaryName": "r2",
+		},
+	]

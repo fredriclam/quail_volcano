@@ -38,10 +38,10 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_conduit_trash",
-	"WriteInterval" : 30,#4*200,
+	"Prefix" : "mixture_shocktube_conduit_cyl",
+	"WriteInterval" : 200,#4*200,
 	"WriteInitialSolution" : True,
-	"AutoPostProcess": True,
+	"AutoPostProcess": False,
 }
 
 if use_P0_detailed:
@@ -110,6 +110,7 @@ def hydrostatic_solve(solver, owner_domain=None):
         p_bdry=1e5,
         is_jump_included=True,
         owner_domain=owner_domain,
+        constr_key="YEq",
         # traction_fn=lambda x: (-1e7/(50.0*np.sqrt(np.pi)))*np.exp(-((x-0.0)/50.0)**2.0)
     )
 
@@ -155,6 +156,25 @@ IsDecoupled = True
 if IsDecoupled:
     BoundaryConditions = {
         "x1" : {
+            "BCType" : "SlipWall"
+            # "BCType" : "MultiphasevpT1D1D",
+            # "bkey": "interface_-1",
+        },
+        "x2" : { 
+            # "BCType" : "SlipWall",
+            "BCType" : "MultiphasevpT2D1D",
+            "bkey": "vent",
+        },
+    }
+    LinkedSolvers = [
+        # {
+        #     "DeckName": "conduit2.py",
+        #     "BoundaryName": "interface_-1",
+        # },
+    ]
+elif not IsDecoupled:
+    BoundaryConditions = {
+        "x1" : {
             # "BCType" : "SlipWall"
             "BCType" : "MultiphasevpT1D1D",
             "bkey": "interface_-1",
@@ -172,7 +192,7 @@ if IsDecoupled:
             "BoundaryName": "interface_-1",
         },
     ]
-else:
+elif False is True:
     BoundaryConditions = {
         "x1" : {
             "BCType" : "MultiphasevpT1D1D",

@@ -20,8 +20,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "atm3SteadyState_inlet",
-	"WriteInterval" : 200,
+	"Prefix" : "atm3SteadyState_inlet_cont",
+	"WriteInterval" : 2*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -39,10 +39,10 @@ SourceTerms = {
 	},
 }
 
-# Restart = {
-# 	"File" : "atm3SteadyState_inlet_140.pkl",
-# 	"StartFromFileTime" : True
-# }
+Restart = {
+	"File" : "atm3SteadyState_inlet_640.pkl",
+	"StartFromFileTime" : True
+}
 
 InitialCondition = {
 	"Function" : "LinearAtmosphere",
