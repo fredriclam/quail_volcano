@@ -53,10 +53,13 @@ class MultiphasevpT(base.PhysicsBase):
 		2. mass per total volume, magma
 		3. momentum per total volume
 		4. total energy per total volume, including kinetic
+		----
 		5. mass per total volume, water, dissolved
-		6. crystallinity
-	where the last two states are passive tracers for the conservation equations
-	(pressure is not dependent on these states), but enter in the source term.
+		6. mass of crystals per total volume (crystallinity)
+		7. mass of fragmented magma per total volume (11/28/2022 Update)
+	where the last states after the line are passive tracers for the conservation
+	equations (pressure and sound speed are not dependent on these states), though
+	these tracer states can enter in the source term.
 
 	Abstract class. Inherited by MultiphasevpT1D and MultiphasevpT2D.
 	'''
@@ -178,8 +181,12 @@ class MultiphasevpT(base.PhysicsBase):
 		e = Uq[:, :, self.get_state_slice("Energy")]
 		arhoWt = Uq[:, :, self.get_state_slice("pDensityWt")]
 		arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
+		arhoFm = Uq[:, :, self.get_state_slice("pDensityFm")]
 
-		''' Flag non-physical state '''
+		''' Flag non-physical state
+		The EOS-constrained phases (A, Wv, M) are checked for positivity. Total
+		water content, which is used in dissolution/exsolution, is also checked.
+		'''
 		if flag_non_physical:
 			if np.any(arhoA < 0.) or np.any(arhoWv < 0.) or np.any(arhoM < 0.) \
 				 or np.any(arhoWt < 0.): # or np.any(arhoC < 0.):
@@ -443,7 +450,7 @@ class MultiphasevpT1D(MultiphasevpT):
 	'''
 	This class corresponds to 1D vpT-equations for a two-gas, one liquid mixture.
 	'''
-	NUM_STATE_VARS = 5+2 # (essential states + tracer states)
+	NUM_STATE_VARS = 5+3 # (essential states + tracer states)
 	NDIMS = 1
 
 	def set_maps(self):
@@ -480,6 +487,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		Energy = "e"
 		pDensityWt = "\\alpha_\{wt\} \\rho_\{wt\}"
 		pDensityC = "\\alpha_c \\rho_c"
+		pDensityFm = "\\alpha_\{fm\} \\rho_\{fm\}"
 
 	def get_state_indices(self):
 		iarhoA = self.get_state_index("pDensityA")
@@ -489,7 +497,8 @@ class MultiphasevpT1D(MultiphasevpT):
 		ie = self.get_state_index("Energy")
 		iarhoWt = self.get_state_index("pDensityWt")
 		iarhoC = self.get_state_index("pDensityC")
-		return iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC
+		iarhoFm = self.get_state_index("pDensityFm")
+		return iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm
 
 	def get_state_slices(self):
 		slarhoA = self.get_state_slice("pDensityA")
@@ -497,12 +506,13 @@ class MultiphasevpT1D(MultiphasevpT):
 		slarhoM = self.get_state_slice("pDensityM")
 		slmom = self.get_state_slice("XMomentum")
 		sle = self.get_state_slice("Energy")
-		slrhoWt = self.get_state_slice("pDensityWt")
-		slrhoC = self.get_state_slice("pDensityC")
-		return slarhoA, slarhoWv, slarhoM, slmom, sle, slrhoWt, slrhoC
+		slarhoWt = self.get_state_slice("pDensityWt")
+		slarhoC = self.get_state_slice("pDensityC")
+		slarhoFm = self.get_state_slice("pDensityFm")
+		return slarhoA, slarhoWv, slarhoM, slmom, sle, slarhoWt, slarhoC, slarhoFm
 
 	def get_mass_slice(self):
-		# Get mass component indices
+		# Get mass component indices of phases
 		mass_indices = [self.get_state_index("pDensityA"),
 										self.get_state_index("pDensityWv"),
 										self.get_state_index("pDensityM")]
@@ -532,7 +542,8 @@ class MultiphasevpT1D(MultiphasevpT):
 		# 	np.eye(7)).max() / np.linalg.cond(self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))))
 
 		# Get indices of state variables
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = self.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			self.get_state_indices()
 		# Extract data of size # [n, nq]
 		arhoA  = Uq[:, :, iarhoA]
 		arhoWv = Uq[:, :, iarhoWv]
@@ -541,6 +552,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		e      = Uq[:, :, ie]
 		arhoWt = Uq[:, :, iarhoWt]
 		arhoC  = Uq[:, :, iarhoC]
+		arhoFm = Uq[:, :, iarhoFm]
 
 		# Compute mixture (total) density
 		rho = arhoA + arhoWv + arhoM
@@ -558,6 +570,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		F[:, :, ie,      0] = (e + p) * u
 		F[:, :, iarhoWt,  0] = arhoWt * u
 		F[:, :, iarhoC,   0] = arhoC * u
+		F[:, :, iarhoFm,   0] = arhoFm * u
 		# Compute sound speed
 		a = self.compute_additional_variable("SoundSpeed", Uq, True)
 		a = np.squeeze(a, axis=2)
@@ -588,7 +601,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		ns = self.NUM_STATE_VARS
 
 		print("Warning: vpT eigenvector in get_conv_eigenvectors not fully implemented.")
-		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, = self.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, _ = self.get_state_indices()
 
 		arhoA  = U_bar[:, :, iarhoA]
 		arhoWv = U_bar[:, :, iarhoWv]
@@ -663,7 +676,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		# TODO: add NDIMS_ess to physics
 		ns_ess = self.NDIMS + 4
 
-		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, = self.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, _ = self.get_state_indices()
 
 		''' Compute required variables in squeezed shape [ne, nb,].
 		Requires are: y1, y2, y3, pi1, pi2, pi3, beta, u, a, H
@@ -716,7 +729,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		# TODO: add NDIMS_ess to physics
 		ns_ess = self.NDIMS + 4
 
-		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, = self.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, _ = self.get_state_indices()
 
 		''' Compute required variables in squeezed shape [ne, nb,].
 		Requires are: y1, y2, y3, pi1, pi2, pi3, beta, u, a, H
@@ -802,6 +815,8 @@ class MultiphasevpT1D(MultiphasevpT):
 		right_eigen[:, :, ns_ess, ns_u+1] = U[:,:,self.get_state_index("pDensityWt")]/rho * (a+u)/a
 		right_eigen[:, :, ns_ess+1, ns_u] = U[:,:,self.get_state_index("pDensityC")]/rho * (a-u)/a
 		right_eigen[:, :, ns_ess+1, ns_u+1] = U[:,:,self.get_state_index("pDensityC")]/rho * (a+u)/a
+		right_eigen[:, :, ns_ess+2, ns_u] = U[:,:,self.get_state_index("pDensityFm")]/rho * (a-u)/a
+		right_eigen[:, :, ns_ess+2, ns_u+1] = U[:,:,self.get_state_index("pDensityFm")]/rho * (a+u)/a
 
 		return right_eigen
 
@@ -848,6 +863,13 @@ class MultiphasevpT1D(MultiphasevpT):
 					[f1, f2, f3, (1-2*beta)*u, 2*beta,]),
 				axis=2
 			)
+		left_eigen[:, :, ns_ess+2, 0:ns_ess] = \
+			np.expand_dims(-U[:,:,self.get_state_index("pDensityFm")]/(rho*a2), axis=2) \
+			* np.concatenate(
+				tuple(np.expand_dims(v,axis=2) for v in 
+					[f1, f2, f3, (1-2*beta)*u, 2*beta,]),
+				axis=2
+			)
 
 		return left_eigen
 	
@@ -862,7 +884,7 @@ class MultiphasevpT2D(MultiphasevpT):
 
 	Additional methods and attributes are commented below.
 	'''
-	NUM_STATE_VARS = 6+2 # (essential states + tracer states)
+	NUM_STATE_VARS = 6+3 # (essential states + tracer states)
 	NDIMS = 2
 
 	def __init__(self, mesh):
@@ -903,6 +925,7 @@ class MultiphasevpT2D(MultiphasevpT):
 		Energy = "e"
 		pDensityWt = "\\alpha_\{wt\} \\rho_\{wt\}"
 		pDensityC = "\\alpha_c \\rho_c"
+		pDensityFm = "\\alpha_\{fm\} \\rho_\{fm\}"
 
 	def get_state_indices(self):
 		iarhoA = self.get_state_index("pDensityA")
@@ -913,7 +936,8 @@ class MultiphasevpT2D(MultiphasevpT):
 		ie = self.get_state_index("Energy")
 		iarhoWt = self.get_state_index("pDensityWt")
 		iarhoC = self.get_state_index("pDensityC")
-		return iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC
+		iarhoFm = self.get_state_index("pDensityFm")
+		return iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm
 
 	def get_mass_slice(self):
 		# Get mass component indices
@@ -930,7 +954,8 @@ class MultiphasevpT2D(MultiphasevpT):
 
 	def get_conv_flux_interior(self, Uq):
 		# Get indices/slices of state variables
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = self.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			self.get_state_indices()
 		smom = self.get_momentum_slice()
 		# Extract data of size [n, nq]
 		arhoA  = Uq[:, :, iarhoA]
@@ -941,6 +966,8 @@ class MultiphasevpT2D(MultiphasevpT):
 		e      = Uq[:, :, ie]
 		arhoWt = Uq[:, :, iarhoWt]
 		arhoC  = Uq[:, :, iarhoC]
+		arhoFm = Uq[:, :, iarhoFm]
+
 		# Extract momentum in vector form ([n, nq, ndims])
 		mom    = Uq[:, :, smom]
 
@@ -967,6 +994,7 @@ class MultiphasevpT2D(MultiphasevpT):
 		F[:, :, ie,      :] = np.expand_dims(e + p,axis=2) * vel    # Flux of energy in all directions
 		F[:, :, iarhoWt, :] = np.expand_dims(arhoWt,axis=2) * vel   # Flux of massWt in all directions
 		F[:, :, iarhoC,  :] = np.expand_dims(arhoC,axis=2) * vel    # Flux of massC in all directions
+		F[:, :, iarhoFm, :] = np.expand_dims(arhoFm,axis=2) * vel    # Flux of massFm in all directions
 
 		# Compute sound speed
 		a = self.compute_additional_variable("SoundSpeed", Uq, True).squeeze(axis=2)

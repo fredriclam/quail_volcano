@@ -36,9 +36,14 @@ Physics = {
     "ConvFluxNumerical" : "LaxFriedrichs",
 }
 
+# Location of jump (sync both initial condition to specify jump in fluid
+# composition, and in hydrostatic_solve to specify jump in pressure)
+x_jump = -550.0
+
 InitialCondition = {
 	# "Function" : "UniformExsolutionTest",
     "Function" : "RiemannProblem",
+    "xd": x_jump,
     # "rhoL": 12.5,
     # "uL": 0.0,
     # "pL": 10*1e5,
@@ -56,7 +61,7 @@ def hydrostatic_solve(solver, owner_domain=None):
         is_jump_included=True,
         owner_domain=owner_domain,
         constr_key="YEq",
-        x_jump=-250.0,
+        x_jump=x_jump,
     )
 
 Inject = [

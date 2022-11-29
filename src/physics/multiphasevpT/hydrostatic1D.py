@@ -115,8 +115,6 @@ class GlobalDG():
     '''
 
     physics = self.solver.physics
-    iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
-      physics.get_state_indices()
 
     # Copy origin state
     constrained_state = self.origin_state.copy()
@@ -213,6 +211,7 @@ class GlobalDG():
       yWt = self.origin_state[:,:,physics.get_state_slice("pDensityWt")] / rho_origin_state
       yMDry = 1.0 - yWt - yA
       yC = self.origin_state[:,:,physics.get_state_slice("pDensityC")] / rho_origin_state
+      yFm = self.origin_state[:,:,physics.get_state_slice("pDensityFm")] / rho_origin_state
       # Compute dissolved water from Henry's law or total water if unsaturated
       yWd = np.minimum(conc_eq * yMDry, yWt)
       # Compute mass fraction m: magma + dissolved water
@@ -233,6 +232,8 @@ class GlobalDG():
       constrained_state[:,:,physics.get_state_slice("pDensityA")] = rho * yA      
       # Recompute crystallinity
       constrained_state[:,:,physics.get_state_slice("pDensityC")] = rho * yC
+      # Recompute fragmented magma
+      constrained_state[:,:,physics.get_state_slice("pDensityFm")] = rho * yFm
     else:
       raise NotImplementedError(f"Unknown constraint key: {constr_key}." + 
         "Implemented constraints are WtEq, WvEq, MEq, YEq (default).")

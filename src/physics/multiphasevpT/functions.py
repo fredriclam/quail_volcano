@@ -129,8 +129,10 @@ class RiemannProblem(FcnBase):
 	xd: float
 		location of initial discontinuity
 	'''
-	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0., TL=1000., arhoWtL=10.0, arhoCL=100.0, 
-							 arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-6, uR=0., TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0.):
+	def __init__(self, arhoAL=1e-1, arhoWvL=8.686, arhoML=2496.3, uL=0.,
+							 TL=1000., arhoWtL=10.0, arhoCL=100.0, arhoFmL=0.0,
+							 arhoAR=1.161, arhoWvR=1.161*5e-3, arhoMR=1e-6, uR=0.,
+							 TR=300., arhoWtR=1.161*5e-3, arhoCR=0.0, xd=0., arhoFmR=0.0):
 		'''
 		This method initializes the attributes.
 
@@ -150,6 +152,7 @@ class RiemannProblem(FcnBase):
 		self.TL = TL
 		self.arhoWtL = arhoWtL
 		self.arhoCL = arhoCL
+		self.arhoFmL = arhoFmL
 		self.arhoAR = arhoAR
 		self.arhoWvR = arhoWvR
 		self.arhoMR = arhoMR
@@ -158,11 +161,13 @@ class RiemannProblem(FcnBase):
 		self.xd = xd
 		self.arhoWtR = arhoWtR
 		self.arhoCR = arhoCR
+		self.arhoFmR = arhoFmR
 
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
 		arhoAL = self.arhoAL
 		arhoWvL = self.arhoWvL
 		arhoML = self.arhoML
@@ -170,6 +175,7 @@ class RiemannProblem(FcnBase):
 		TL = self.TL
 		arhoWtL = self.arhoWtL
 		arhoCL = self.arhoCL
+		arhoFmL = self.arhoFmL
 		arhoAR = self.arhoAR
 		arhoWvR = self.arhoWvR
 		arhoMR = self.arhoMR
@@ -177,6 +183,7 @@ class RiemannProblem(FcnBase):
 		TR = self.TR
 		arhoWtR = self.arhoWtR
 		arhoCR = self.arhoCR
+		arhoFmR = self.arhoFmR
 
 		rhoL = arhoAL+arhoWvL+arhoML
 		eL = (arhoAL * physics.Gas[0]["c_v"] * TL + 
@@ -215,6 +222,8 @@ class RiemannProblem(FcnBase):
 			Uq[elem_ID, iright, iarhoWt] = arhoWtR
 			Uq[elem_ID, ileft, iarhoC] = arhoCL
 			Uq[elem_ID, iright, iarhoC] = arhoCR
+			Uq[elem_ID, ileft, iarhoFm] = arhoFmL
+			Uq[elem_ID, iright, iarhoFm] = arhoFmR
 		return Uq # [ne, nq, ns]
 
 class RightTravelingGaussian(FcnBase):
@@ -243,7 +252,8 @@ class RightTravelingGaussian(FcnBase):
 
 	def get_state(self, physics, x, t):
 		U = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
 
 		# Compute 
 		U[...,0] = 1.2
@@ -277,6 +287,7 @@ class RightTravelingGaussian(FcnBase):
 		U[...,3:4] = atomics.rho(U[...,0:3]) * u
 		U[...,4:5] = atomics.c_v(U[...,0:3], physics) * T \
 		+ 0.5 * atomics.rho(U[...,0:3]) * u**2
+		# Set all tracer quantities to zero
 		U[...,5:] = 0
 		return U # [ne, nq, ns]
 
@@ -298,7 +309,8 @@ class UniformExsolutionTest(FcnBase):
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
 		arhoA = self.arhoA
 		arhoWv = self.arhoWv
 		arhoM = self.arhoM
@@ -344,7 +356,7 @@ class IsothermalAtmosphere(FcnBase):
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
 		# Compute scale height
@@ -375,9 +387,9 @@ class IsothermalAtmosphere(FcnBase):
 		Uq[:, :, irhou] = rho * u
 		Uq[:, :, irhov] = rho * v
 		Uq[:, :, ie] = e
-		# Tracer quantities
-		Uq[:, :, iarhoWt] = arhoWt
-		Uq[:, :, iarhoC] = arhoC
+		# Leave tracer quantities as zero
+		# Uq[:, :, iarhoWt] = arhoWt
+		# Uq[:, :, iarhoC] = arhoC
 
 		return Uq # [ne, nq, ns]
 
@@ -404,7 +416,7 @@ class LinearAtmosphere(FcnBase):
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
 		# Compute scale height at reference temperature T0
@@ -422,7 +434,8 @@ class LinearAtmosphere(FcnBase):
 		arhoWv = (1.0 - alphaA) * p / (physics.Gas[1]["R"] * T)
 		arhoM = self.arhoMR*np.ones_like(p)
 		arhoWt = arhoWv
-		arhoC = self.arhoMR*np.ones_like(p) # In principle should be passive in 2D
+		arhoC = 0.1*self.arhoMR*np.ones_like(p) # In principle should be passive in 2D
+		arhoFm = 0.9*self.arhoMR*np.ones_like(p)
 		# Zero velocity
 		u = np.zeros_like(p)
 		v = np.zeros_like(p)
@@ -443,6 +456,7 @@ class LinearAtmosphere(FcnBase):
 		# Tracer quantities
 		Uq[:, :, iarhoWt] = arhoWt
 		Uq[:, :, iarhoC] = arhoC
+		Uq[:, :, iarhoFm] = arhoFm
 
 		return Uq # [ne, nq, ns]
 
@@ -467,7 +481,7 @@ class NohProblem(FcnBase):
 	def get_state(self, physics, x, t):
 		# Initialize and get useful index names
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 		# Take gamma of air
 		gamma = physics.Gas[0]["gamma"]
@@ -484,9 +498,7 @@ class NohProblem(FcnBase):
 		Uq[:, :, irhou]   = -self.rho0 * self.u0
 		Uq[:, :, irhov]   = 0.0
 		Uq[:, :, ie]      = e0
-		# Tracer quantities
-		Uq[:, :, iarhoWt] = 0.0
-		Uq[:, :, iarhoC] = 0.0
+		# Leave tracer quantities zero
 
 		return Uq # [ne, nq, ns]
 
@@ -2174,7 +2186,7 @@ class NohInlet(BCWeakRiemann):
 		e = 0.5 * rho * self.u0**2.0 + self.eps / (physics.Gas[0]["gamma"] - 1.0)
 
 		# Package boundary state
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 		UqB = UqI.copy()
 		UqB[:, :, iarhoA]  = rho
@@ -2185,6 +2197,7 @@ class NohInlet(BCWeakRiemann):
 		UqB[:, :, ie]      = e
 		UqB[:, :, iarhoWt] = 0.0
 		UqB[:, :, iarhoC]  = 0.0
+		UqB[:, :, iarhoFm]  = 0.0
 
 		return UqB
 
@@ -2232,7 +2245,7 @@ class CylindricalGeometricSource(SourceBase):
 		F_r = F[:, :, :, 0]
 		# Remove pressure contribution (isotropic tensor pI has no contribution to
 		# geometric source terms, unlike the momentum dyad)
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 		p = physics.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
 		F_r[:, :, irhou] -= p
@@ -2277,7 +2290,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		'''
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
 		phi = physics.compute_additional_variable("phi", Uq, True)
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
@@ -2305,7 +2318,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
 											f"{physics.NDIMS} spatial dimensions.")
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
 		''' Compute mixture density, u, friction coefficient '''
@@ -2345,7 +2358,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		(repeated construction for implicit source steps, followed by inversion).
 		'''
 
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
 		phi = physics.compute_additional_variable("phi", Uq, True)
@@ -2423,7 +2436,7 @@ class FrictionVolFracConstMu(SourceBase):
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
 											f"{physics.NDIMS} spatial dimensions.")
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
 		''' Compute mixture density, u, friction coefficient '''
@@ -2462,7 +2475,7 @@ class FrictionVolFracConstMu(SourceBase):
 		(repeated construction for implicit source steps, followed by inversion).
 		'''
 
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
 		phi = physics.compute_additional_variable("phi", Uq, True)
@@ -2512,13 +2525,15 @@ class GravitySource(SourceBase):
 		# Compute mixture density
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2)
 		if physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = physics.get_state_indices()
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
 			# Orient gravity in axial direction
 			S[:, :, imom] = -rho * self.gravity
 			S[:, :, ie]   = -Uq[:, :, imom] * self.gravity # rhou * g (gravity work)
 		elif physics.NDIMS == 2:
 			# Orient gravity in y direction
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = physics.get_state_indices()
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
 			S[:, :, irhov] = -rho * self.gravity
 			S[:, :, ie] = -Uq[:, :, irhov] * self.gravity
 		else:
@@ -2528,13 +2543,13 @@ class GravitySource(SourceBase):
 	def get_jacobian(self, physics, Uq, x, t):
 		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 		if physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 				physics.get_state_indices()
 			# Orient gravity in axial direction
 			jac[:, :, imom, [iarhoA, iarhoWv, iarhoM]] = -self.gravity
 			jac[:, :, ie, imom] = -self.gravity
 		elif physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 				physics.get_state_indices()
 			# Orient gravity in y-direction
 			jac[:, :, irhov, [iarhoA, iarhoWv, iarhoM]] = -self.gravity
@@ -2573,7 +2588,7 @@ class ExsolutionSource(SourceBase):
 		S = np.zeros_like(Uq)
 		if physics.NDIMS == 1:
 			# Extract variables
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 				physics.get_state_indices()
 			slarhoWv = physics.get_state_slice("pDensityWv")
 			slarhoM = physics.get_state_slice("pDensityM")
@@ -2613,7 +2628,7 @@ class ExsolutionSource(SourceBase):
 	def get_jacobian(self, physics, Uq, x, t):
 		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 		if physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 				physics.get_state_indices()
 			dSdU = self.compute_exsolution_source_sgradient(physics, Uq)
 			jac[:, :, iarhoWv, :] = dSdU
@@ -2642,7 +2657,7 @@ class ExsolutionSource(SourceBase):
 			" gradient is used typically for implicit source timestepping.")
 		
 		# Extract variables
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 		slarhoWv = physics.get_state_slice("pDensityWv")
 		slarhoM = physics.get_state_slice("pDensityM")
@@ -2690,7 +2705,7 @@ class WaterInflowSource(SourceBase):
 		S = np.zeros_like(Uq)
 		if physics.NDIMS == 1:
 			# Extract variables
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 				physics.get_state_indices()
 			slarhoWv = physics.get_state_slice("pDensityWv")
 			slarhoM = physics.get_state_slice("pDensityM")
