@@ -2578,16 +2578,18 @@ class ExsolutionSource(SourceBase):
 			slarhoWv = physics.get_state_slice("pDensityWv")
 			slarhoM = physics.get_state_slice("pDensityM")
 			slarhoWt = physics.get_state_slice("pDensityWt")
+			slarhoC = physics.get_state_slice("pDensityC")
 			arhoWv = Uq[:, :, slarhoWv]
 			arhoM = Uq[:, :, slarhoM]
 			arhoWt = Uq[:, :, slarhoWt]
+			arhoC = Uq[:, :, slarhoC]
 			p = physics.compute_additional_variable("Pressure", Uq, True)
 			
 			eq_conc = ExsolutionSource.get_eq_conc(physics, p)
 			S_scalar = (1.0/self.tau_d) * (
 				(1.0+eq_conc) * arhoWt 
 				- (1.0+eq_conc) * arhoWv
-				- eq_conc * arhoM)
+				- eq_conc * (arhoM-arhoC)) # arhoM - arhoC: melt with dissolved water
 			# Replace limiting value for absent magma and absent water
 			S_scalar[np.where(np.logical_and(
 				arhoWt-arhoWv <= general.eps,
@@ -2635,6 +2637,9 @@ class ExsolutionSource(SourceBase):
 		if physics.NDIMS != 1:
 			raise NotImplementedError(f"compute_exsolution_source_sgradient called for" +
 																f"NDIMS=={self.NDIMS}, which is not 1.")
+		raise NotImplementedError(f"Gradient does not account for cystal content. If" +
+		  " this is fine, remove the raise in compute_exsolution_source_sgradient. This" +
+			" gradient is used typically for implicit source timestepping.")
 		
 		# Extract variables
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC = \
