@@ -213,13 +213,28 @@ class Domain():
       if solver.physics.NDIMS == 2:
         # Compute boundary measure
         boundary_length = solver.bface_helpers.face_lengths_bgroups[bgroup.number].sum()
-        # Compute state averaged over the boundary
-        data["bdry_face_state_averaged"] = np.expand_dims(
-          np.einsum('ijm, ijk, jn -> k',
-          np.linalg.norm(normals, axis=2, keepdims=True),
-          UqI,
-          solver.bface_helpers.quad_wts) / boundary_length,
-          axis=(0,1))
+        # Check geometry by presence of geometric source term
+        if True in ["CylindricalGeometricSource" in str(source_term.__class__)
+            for source_term in solver.physics.source_terms]:
+          # Compute state averaged over the boundary (Polar)
+          # TODO: generalize boundary_measure to any r (here only [0,a])
+          boundary_measure = 0.5 * boundary_length**2
+          data["bdry_face_state_averaged"] = np.expand_dims(
+            np.einsum('ijm, ijk, jn, ij -> k',
+            np.linalg.norm(normals, axis=2, keepdims=True),
+            UqI,
+            solver.bface_helpers.quad_wts,
+            x[:,:,0] # r coordinate
+            ) / boundary_measure, 
+            axis=(0,1))
+        else:
+          # Compute state averaged over the boundary (Cartesian)
+          data["bdry_face_state_averaged"] = np.expand_dims(
+            np.einsum('ijm, ijk, jn -> k',
+            np.linalg.norm(normals, axis=2, keepdims=True),
+            UqI,
+            solver.bface_helpers.quad_wts) / boundary_length,
+            axis=(0,1))
 
       # Get data from BC method
       data["bdry_face_state"] = bdry_state

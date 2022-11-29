@@ -77,11 +77,14 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 			BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
+			BCType.MultiphasevpT2D1DCylindrical: mpvpT_fcns.MultiphasevpT2D1DCylindrical,
+			BCType.MultiphasevpT2D2DCylindrical: mpvpT_fcns.MultiphasevpT2D2DCylindrical,
 			BCType.NonReflective1D : mpvpT_fcns.NonReflective1D,
 			BCType.PressureOutlet1D : mpvpT_fcns.PressureOutlet1D,
 			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
 			BCType.MassFluxInlet1D: mpvpT_fcns.MassFluxInlet1D,
 			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
+			BCType.NohInlet: mpvpT_fcns.NohInlet,
 		})
 
 	def set_physical_params(self, 
@@ -862,6 +865,7 @@ class MultiphasevpT2D(MultiphasevpT):
 		d = {
 			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
 			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
+			FcnType.NohProblem: mpvpT_fcns.NohProblem,
 			# euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
 			# euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
 			# euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
@@ -873,6 +877,7 @@ class MultiphasevpT2D(MultiphasevpT):
 
 		self.source_map.update({
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
+			SourceType.CylindricalGeometricSource: mpvpT_fcns.CylindricalGeometricSource,
 		})
 
 		self.conv_num_flux_map.update({

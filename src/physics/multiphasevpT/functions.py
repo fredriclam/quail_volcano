@@ -23,6 +23,7 @@
 # ------------------------------------------------------------------------ #
 from abc import abstractmethod
 from enum import Enum, auto
+from re import U
 import numpy as np
 from scipy.optimize import fsolve, root
 
@@ -49,6 +50,7 @@ class FcnType(Enum):
 	IsothermalAtmosphere = auto()
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
+	NohProblem = auto()
 
 
 class BCType(Enum):
@@ -62,6 +64,8 @@ class BCType(Enum):
 	MultiphasevpT1D1D = auto()
 	MultiphasevpT2D1D = auto()
 	MultiphasevpT2D2D = auto()
+	MultiphasevpT2D1DCylindrical = auto()
+	MultiphasevpT2D2DCylindrical = auto()
 	NonReflective1D = auto()
 	PressureOutlet1D = auto()
 	PressureOutlet2D = auto()
@@ -70,23 +74,25 @@ class BCType(Enum):
 	# Not implemented (could use lumped magma chamber model for example)
 	EntropyTotalenthalpyInlet1D = auto()
 	EntropyPressureInlet1D = auto()
+	NohInlet = auto()
 
 
 class SourceType(Enum):
 	'''
 	Enum class that stores the types of source terms. These
-	source terms are specific to the available Euler equation sets.
+	source terms are specific to the available equation sets.
 	'''
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 	ExsolutionSource = auto()
 	WaterInflowSource = auto()
+	CylindricalGeometricSource = auto()
 
 
 class ConvNumFluxType(Enum):
 	'''
 	Enum class that stores the types of convective numerical fluxes. These
-	numerical fluxes are specific to the available Euler equation sets.
+	numerical fluxes are specific to the available equation sets.
 	'''
 	LaxFriedrichs = auto()
 
@@ -405,14 +411,14 @@ class LinearAtmosphere(FcnBase):
 		# Compute pressure linear in elevation
 		p = self.p_atm * (1.0 - (x[:,:,1:2] - self.h0)/hs0).squeeze(axis=2)
 		# Compute approx. volume fraction correcting for water partial pressure
-		prod = physics.Gas[1]["R"] * (1.0 - self.massFracWv)
-		alphaA = prod / (prod + physics.Gas[0]["R"] * self.massFracWv)
+		prod = physics.Gas[0]["R"] * (1.0 - self.massFracWv)
+		alphaA = prod / (prod + physics.Gas[1]["R"] * self.massFracWv)
 		# Constant pure air density at h0
 		arhoA = alphaA * self.p_atm / (physics.Gas[0]["R"]*self.T0)
 		# Compute temperature
-		T = p / (arhoA * physics.Gas[0]["R"])
+		T = alphaA * p / (arhoA * physics.Gas[0]["R"])
 		# Zero or trace amounts of Wv, M and tracers
-		arhoWv = (1.0- alphaA) * p / (physics.Gas[1]["R"] * T)
+		arhoWv = (1.0 - alphaA) * p / (physics.Gas[1]["R"] * T)
 		arhoM = self.arhoMR*np.ones_like(p)
 		arhoWt = arhoWv
 		arhoC = self.arhoMR*np.ones_like(p) # In principle should be passive in 2D
@@ -436,6 +442,50 @@ class LinearAtmosphere(FcnBase):
 		# Tracer quantities
 		Uq[:, :, iarhoWt] = arhoWt
 		Uq[:, :, iarhoC] = arhoC
+
+		return Uq # [ne, nq, ns]
+
+
+class NohProblem(FcnBase):
+	'''
+	Noh problem for axisymmetric testing in the (r,z) view. This is a shock
+	propagation test in the r-direction only (to test the implementation of the
+	radial geometric source term.)
+	See doi:10.1115/1.4041195
+	'''
+
+	def __init__(self, eps=1e-3, rho0=1.0, u0=1.0):
+		''' Set epsilon for pressure of the unshocked fluid, the density scale rho0,
+		and the velocity scale u0 > 0 of the converging unshocked fluid (magnitude
+		only).
+		'''
+		self.eps = eps
+		self.rho0 = rho0
+		self.u0 = u0
+
+	def get_state(self, physics, x, t):
+		# Initialize and get useful index names
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
+		# Take gamma of air
+		gamma = physics.Gas[0]["gamma"]
+
+		# Set pressure to epsilon (strong shock limit takes eps -> 0)
+		p = self.eps
+		# Compute energy resulting from epsilon
+		e0 = 0.5 * self.rho0 * self.u0**2.0 + p / (gamma - 1)
+
+		# Map single-phase (air) problem to multiphase state variables
+		Uq[:, :, iarhoA]  = self.rho0
+		Uq[:, :, iarhoWv] = 0.0
+		Uq[:, :, iarhoM]  = 0.0
+		Uq[:, :, irhou]   = -self.rho0 * self.u0
+		Uq[:, :, irhov]   = 0.0
+		Uq[:, :, ie]      = e0
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = 0.0
+		Uq[:, :, iarhoC] = 0.0
 
 		return Uq # [ne, nq, ns]
 
@@ -499,6 +549,64 @@ class SlipWall(BCWeakPrescribed):
 		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
 		UqB = UqI.copy()
 		UqB[:, :, smom] -= rhoveln * n_hat
+
+		return UqB
+		
+		# Ideal gas HACK: TODO: correction for
+		if np.any(UqI[...,1] + UqI[...,2] > 0):
+			raise NotImplementedError("Remove wall correction for non-ideal gas in functions.py")
+		gamma = physics.Gas[0]["gamma"]
+
+		# HACK to turn off enforcement on horizontal walls
+		# if np.abs(n_hat[0,0,0]) < np.abs(n_hat[0,0,1]):
+			# return UqB
+
+		if False:
+			# Compute isentropic deceleration quantity
+			rho = UqI[:, :, 0]
+			p = physics.compute_variable("Pressure", UqI)
+			Z = 0.5 * (gamma - 1) * rhoveln.squeeze(axis=2)**2.0 / rho / p.squeeze(axis=2)
+
+			# Compute density factor (density_new == densityFactor * density_old)
+			# Exponent 1/(gamma - 1) applies for specific energy conservation and
+			# 1/gamma applies for volumetric energy conservation
+			densityFactor = (1 + Z) ** (1/(gamma - 1))
+			# Prevent infinite compression for strong shock limit
+			densityFactor = np.clip(densityFactor, None, 2e2)
+			# Compute isentropically compressed mass density
+			UqB[:, :, 0] *= densityFactor
+			# Compute volumetric energy due to compressed mass density
+			UqB[:, :, 5] *= densityFactor
+		else:
+			''' Rankine-Hugoniot boundary construction '''
+			# Compute using inward normal
+			rhoveln *= -1
+			rhoveln = np.squeeze(rhoveln, axis=-1)
+			# Get nonzero sign of velocity
+			signum = np.sign(rhoveln)
+			signum[rhoveln == 0] = -1
+			# Define shock speed function
+			shock_speed = lambda rho, u, p, e: (3-gamma)/4*u - signum * np.sqrt(
+				((gamma-3)/4 * u)**2 + (gamma-1) * (e+p)/rho
+			)
+			# Compute density from air only
+			rho = UqI[:,:,0]
+			u = rhoveln / rho
+			e = UqI[:,:,5]
+			# Compute internal energy, removing all components
+			e_int = e - 0.5 * np.linalg.norm(UqI[:,:,3:5], axis=-1)**2 / rho
+			p = (gamma - 1) * e_int
+			c = np.sqrt(gamma*p/rho)
+			# Compute 1D projected shock speed
+			# S = shock_speed(rho, u, p, e_int + 0.5*rho*u*u)
+			S = shock_speed(rho, u, p, e)
+			# Compute and set target states
+			hat_rho = rho - rhoveln / S
+			hat_p = p + rhoveln * (u - S)
+			hat_e = e - u / S * (e + p)
+			hat_u = 0
+			UqB[:,:,0] = hat_rho
+			UqB[:,:,5] = hat_e
 
 		return UqB
 
@@ -1275,8 +1383,9 @@ class CouplingBC(BCWeakLLF):
 
 class MultiphasevpT2D1D(CouplingBC):
 	'''
-	This class couples a 2D Euler domain to a 1D Euler domain.
-	Broadcasts 1D states to 2D
+	This class couples a 2D multiphase domain to a 1D multiphase domain.
+	The representation of the solution at the boundary is done as follows:
+		* Broadcasts 1D states to 2D
 
 	Attributes:
 	-----------
@@ -1297,11 +1406,11 @@ class MultiphasevpT2D1D(CouplingBC):
 		if physics.NDIMS == 1:
 			# Lift boundary state U to 2D
 			self.bstate.Ulift = np.copy(self.bstate.U)
-			# Insert XMomentum(1D) -> YMomentum(2D)
+			# Insert XMomentum(2D), reassign XMomentum(1D) -> YMomentum(2D)
 			self.bstate.Ulift = np.insert(self.bstate.Ulift,
 				physics.get_momentum_slice(),
 				self.bstate.Ulift[:,:,physics.get_momentum_slice()], axis=2)
-			# Set XMomentum(1D) = 0
+			# Set XMomentum(2D) = 0
 			self.bstate.Ulift[:,:,physics.get_momentum_slice()] = 0.0
 			
 			np.append(self.bstate.Ucast, 
@@ -1577,6 +1686,20 @@ class MultiphasevpT2D1D(CouplingBC):
 		assert(UqB.shape == UqI.shape)
 
 		return UqB
+
+
+class MultiphasevpT2D1DCylindrical():
+	''' TODO: inherit MultiphasevpT2D1D, replacing the boundary integration of
+	int (f) dx with the radially weighted int (f * 2r/a) dr, where a is the
+	conduit radius. This is equivalent to replacing int (f) dx / int dx with
+	int (f) 2 pi r dr / int 2 pi r dr. The factor of 2 in 2r/a can be seen from
+	computing the average value of the function f = 1, which involves integration
+	of r -> r^2/2. '''
+	pass
+
+
+class MultiphasevpT2D2DCylindrical():
+	pass
 
 
 class Euler2D2D(BCWeakRiemann):
@@ -2026,6 +2149,45 @@ class MassFluxInlet1D(BCWeakPrescribed):
 
 		return UqB
 
+
+class NohInlet(BCWeakRiemann):
+	'''
+	Inlet conditions for the exact Noh solution (exact for the strong shock limit
+	with zero pressure in the unshocked fluid)
+	'''
+
+	def __init__(self, eps=1e-3, rho0=1.0, u0=1.0, L=1.0):
+		''' Set epsilon for pressure of the unshocked fluid, the density scale rho0,
+		the velocity scale u0 > 0 of the converging unshocked fluid (magnitude only)
+		and the distance of the boundary from the cylindrical axis.
+		'''
+		self.eps = eps
+		self.rho0 = rho0
+		self.u0 = u0
+		self.L = L
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):		
+		# Compute scalar values of exact unshocked solution for strong shock limit
+		rho = self.rho0 * (1.0 + self.u0 * t / self.L)
+		# Select larger eps of pressure to correct for nonzero interior pressure
+		e = 0.5 * rho * self.u0**2.0 + self.eps / (physics.Gas[0]["gamma"] - 1.0)
+
+		# Package boundary state
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
+		UqB = UqI.copy()
+		UqB[:, :, iarhoA]  = rho
+		UqB[:, :, iarhoWv] = 0.0
+		UqB[:, :, iarhoM]  = 0.0
+		UqB[:, :, irhou]   = -rho * self.u0
+		UqB[:, :, irhov]   = 0.0
+		UqB[:, :, ie]      = e
+		UqB[:, :, iarhoWt] = 0.0
+		UqB[:, :, iarhoC]  = 0.0
+
+		return UqB
+
+
 '''
 ---------------------
 Source term functions
@@ -2035,6 +2197,48 @@ comments of attributes and methods. Information specific to the
 corresponding child classes can be found below. These classes should
 correspond to the SourceType enum members above.
 '''
+
+class CylindricalGeometricSource(SourceBase):
+	'''
+	Geometric source term that arises when interpreting Cartesian coordinates
+	(x,z) as cylindrical coordinates (r,z) under axisymmetric conditions and zero
+	momentum in the azimuthal direction (if nonzero, Coriolis and centrifugal
+	effects need to be added).
+	'''
+
+	def __init__(self, **kwargs):
+		super().__init__(kwargs)
+
+	def get_source(self, physics, Uq, x, t):
+		''' Returns the geometric source due to divergences in polar (cylindrical)
+		coordinates. Interpret the first spatial coordinate as r, and incur the
+		geometric source term. '''
+
+		# Interpret first spatial coordinate as radial coordinate r
+		r = x[:,:,0:1]
+		# Compute 1/r for r > 0
+		r_inv = r.copy()
+		r_inv[np.nonzero(r_inv)] = 1.0 / r_inv[np.nonzero(r_inv)]
+		if np.any(r_inv > 1e10):
+			raise Exception("Poorly conditioned mesh: 1/r is large for r not equal to 0.")
+
+		''' Compute radial flux '''
+		# TODO: reduce redundant comps, use faster atomics. The fastest way is to
+		# re-use the computation of radial flux in the interior, and cache p to
+		# remove it from the source term.
+		F, (u2, v2, a) = physics.get_conv_flux_interior(Uq)
+		# Interpret first coordinate of flux as radial flux (does not copy F)
+		F_r = F[:, :, :, 0]
+		# Remove pressure contribution (isotropic tensor pI has no contribution to
+		# geometric source terms, unlike the momentum dyad)
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC = \
+			physics.get_state_indices()
+		p = physics.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
+		F_r[:, :, irhou] -= p
+
+		# Set source term equal to -1/r times the radial flux due to advection
+		return -r_inv * F_r
+
 
 class FrictionVolFracConstMu(SourceBase):
 	'''
