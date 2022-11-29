@@ -5,7 +5,7 @@ import scipy.optimize
 from time import perf_counter
 from typing import Callable
 
-from inv_steam_tabulation import InverseTabulation
+from physics.multiphasevpT.inv_steam_tabulation import InverseTabulation
 from pyXSteam.XSteam import RegionSelection
 
 class SteamCalc():
