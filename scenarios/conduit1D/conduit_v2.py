@@ -3,9 +3,9 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 # Set timestepper
 TimeStepping = {
-	"InitialTime" : 80,#0.0,
-	"FinalTime" : 85,#80,     #8*10.0, #2*2.50,
-	"NumTimeSteps" : 2*16000,#8*16000,     #8*40000, #2*25000,
+	"InitialTime" : 0.0,
+	"FinalTime" : 2.50,
+	"NumTimeSteps" : 25000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -36,40 +36,26 @@ Numerics = {
   #   |grad p| / p + |grad (alpha_a * rho_a)| / (alpha_a * rho_a),
   # the cube of the element size (h^3), and AVParameter.
   "ArtificialViscosity" : True,
-  "AVParameter" : 200,
+  "AVParameter" : 500,
   'L2InitialCondition': False, # If false, use interpolation instead of L2 projection of Riemann data
 }
 
 Output = {
-	"Prefix" : "conduitSteadyState_inlet_cont",
+	"Prefix" : "conduitSteadyState",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 400,
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
 }
 
-# Output = {
-# 	"Prefix" : "conduitSteadyState_inlet",
-#   # Write to disk every WriteInterval timesteps
-# 	"WriteInterval" : 200,
-# 	"WriteInitialSolution" : True,
-#   # Automatically queues up post_process.py after this file (see Quail examples)
-# 	"AutoPostProcess": False,
-# }
-
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 200, 
-    "xmin" : -5000.0,
+    "NumElemsX" : 600, 
+    "xmin" : -3000.0,
     "xmax" : 0.0,
-}
-
-Restart = {
-	"File" : "conduitSteadyState_inlet_640.pkl",
-	"StartFromFileTime" : True
 }
 
 Physics = {
@@ -86,12 +72,12 @@ InitialCondition = {
   # The following are optional parameters. If not provided, the default args
   # are used.
   # Left side values
-  "arhoAL": 1e-2,
+  "arhoAL": 1e-1,
   "arhoWvL": 8.686,
   "arhoML": 2496.3,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 3*25, #10.0 # (Test value)
+  "arhoWtL": 10.0,
   "arhoCL": 100.0, 
   # Right side values
   "arhoAR": 1.161,
@@ -128,11 +114,11 @@ def hydrostatic_solve(solver, owner_domain=None):
 # timestep. If Initial is provided True, the function runs before the first timestep.
 # If Postinitial is provided True, the function runs after each timestep.
 Inject = [
-    # {
-    #     "Function": hydrostatic_solve,
-    #     "Initial": True,
-    #     "Postinitial": False,
-    # }
+    {
+        "Function": hydrostatic_solve,
+        "Initial": True,
+        "Postinitial": False,
+    }
 ]
 
 # Add source terms here. Source terms just stack up, and can be named whatever
@@ -167,14 +153,12 @@ BoundaryConditions = {
     # The leftmost boundary
     "x1" : {
       # To be replaced by an exit pressure boundary condition
-      # "BCType" : "SlipWall"
+      "BCType" : "SlipWall"
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism
       # "BCType" : "MultiphasevpT1D1D",
       # "bkey": "interface_-1",
-      "BCType": "MassFluxInlet1D",
-      "mass_flux": 2e4,
     },
     "x2" : { 
         "BCType" : "MultiphasevpT2D1D",

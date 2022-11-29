@@ -28,7 +28,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "atmSteadyState",
+	"Prefix" : "atm1SteadyState",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -97,7 +97,7 @@ LinkedSolvers = [
 	#	"BoundaryName": "vent",
 	#},
 	{
-		"DeckName": "r1r2.py",
+		"DeckName": "steadyState_r1r2.py",
 		"BoundaryName": "r1",
 	},
 ]

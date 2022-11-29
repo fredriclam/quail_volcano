@@ -20,8 +20,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "atm2SteadyState_inlet_cont",
-	"WriteInterval" : 2*200,
+	"Prefix" : "atm2SteadyState",
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -43,10 +43,10 @@ SourceTerms = {
 	# },
 }
 
-Restart = {
-	"File" : "atm2SteadyState_inlet_640.pkl",
-	"StartFromFileTime" : True
-}
+# Restart = {
+# 	"File" : "atm2SteadyState_inlet_140.pkl",
+# 	"StartFromFileTime" : True
+# }
 
 #if False:
 #	# Sod state
