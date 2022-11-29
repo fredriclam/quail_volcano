@@ -166,6 +166,8 @@ class MultiphasevpT(base.PhysicsBase):
 		volFracA = "\\alpha_a"				# Volume fraction, air
 		volFracWv = "\\alpha_\{wv\}"	# Volume fraction, exsolved water vapour
 		volFracM = "\\alpha_m"				# Volume fraction, magma
+		# ---- Kate addition ----
+		Drag = "f" # friction term in momentum balance; proportional to wall shear stress
 
 	def compute_additional_variable(self, var_name, Uq, flag_non_physical):
 		''' Extract state variables '''
@@ -232,6 +234,10 @@ class MultiphasevpT(base.PhysicsBase):
 						+ arhoWv * self.Gas[1]["c_v"] \
 						+ arhoM * self.Liquid["c_m"]
 			return 1. + (arhoA * self.Gas[0]["R"] + arhoWv * self.Gas[1]["R"]) / c_mix
+		# ---- Kate addition ----
+		def get_Drag():
+			f = self.source_terms[1].get_source(self, Uq, None, None)
+			return f[:,:,self.get_momentum_slice()]
 
 		''' Compute '''
 		vname = self.AdditionalVariables[var_name].name
@@ -303,6 +309,8 @@ class MultiphasevpT(base.PhysicsBase):
 			varq[np.where(phi > 0)] = phi[np.where(phi > 0)] * (ppWv / (ppA + ppWv))
 		elif vname is self.AdditionalVariables["volFracM"].name:
 			varq = 1.0 - get_porosity()
+		elif vname is self.AdditionalVariables["Drag"].name:
+			varq = get_Drag()
 		elif vname is self.AdditionalVariables["SpecificEntropy"].name:
 			rho = (arhoA+arhoWv+arhoM)
 			y1 = arhoA / rho
@@ -453,6 +461,7 @@ class MultiphasevpT1D(MultiphasevpT):
 
 		self.source_map.update({
 			# SourceType.Exsolution: mpvpT_fcns.Exsolution,
+			SourceType.FrictionVolFracVariableMu: mpvpT_fcns.FrictionVolFracVariableMu,
 			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,

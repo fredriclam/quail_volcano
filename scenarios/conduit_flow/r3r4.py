@@ -1,12 +1,9 @@
 import numpy as np
 
-#TimeStepping = {
-#	"InitialTime" : 0.0,
-#	"FinalTime" : 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
-#	"NumTimeSteps" : 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-#     # 100000 for generalB1, 400~K
-#	"TimeStepper" : "FE",
-#}
+Restart = {
+    "File" : "atm4SteadyState_final.pkl",
+    "StartFromFileTime" : True,
+}
 
 Numerics = {
 	"SolutionOrder" : 1,
@@ -24,11 +21,11 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA1.msh",
+	"File" : "../meshes/volcanoA4.msh",
 }
 
 Output = {
-	"Prefix" : "atmSteadyState",
+	"Prefix" : "atm4SteadyState",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -45,17 +42,12 @@ SourceTerms = {
 		"gravity": 9.8,
 		# "source_treatment" : "Explicit",
 	},
-	# "source3": {
-	# 		"Function": "ExsolutionSource",
-	# 		"source_treatment" : "Implicit",
-	# },
 }
 
-#if False:
-#	# Sod state
-#	rhoAmbient = 0.125
-#	pAmbient = 0.1
-#	eAmbient = pAmbient / (Physics["SpecificHeatRatio"] - 1.0)
+# Restart = {
+# 	"File" : "atm3SteadyState_inlet_140.pkl",
+# 	"StartFromFileTime" : True
+# }
 
 InitialCondition = {
 	"Function" : "LinearAtmosphere",
@@ -65,39 +57,20 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"r1" : {
-		#"BCType" : "SlipWall",
+	"ground4" : {
+		"BCType" : "SlipWall",
+	},
+	"symmetry4" : {
+		"BCType" : "SlipWall",
+	},
+	"r4" : {
+		"BCType" : "LinearizedImpedance2D",
+		# "bkey": "r4",
+	},
+	"r3" : {
 		"BCType" : "MultiphasevpT2D2D",
-		"bkey": "r1",
-		# "BCType" : "SlipWall",
-	},
-	"ground" : {
-		"BCType" : "SlipWall",
-	},
-	"flare" : {
-		"BCType" : "SlipWall",
-	},
-	"pipewall" : {
-		"BCType" : "SlipWall",
-	},
-	"x2" : {
-		# "BCType" : "SlipWall",
-		"BCType" : "MultiphasevpT2D1D",
-		"bkey": "vent",
-	},
-	"symmetry" : {
-		"BCType" : "SlipWall",
+		"bkey": "r3",
 	},
 }
 
-# LinkedSolvers = []
-LinkedSolvers = [
-	#{
-	#	"DeckName": "conduit.py",
-	#	"BoundaryName": "vent",
-	#},
-	{
-		"DeckName": "r1r2.py",
-		"BoundaryName": "r1",
-	},
-]
+LinkedSolvers = []
