@@ -9,7 +9,7 @@ TimeStepping = {
 }
 
 Numerics = {
-    "SolutionOrder" : 1,
+    "SolutionOrder" : 0,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     # "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -43,7 +43,7 @@ Physics = {
 
 InitialCondition = {
     "Function" : "RightTravelingGaussian",
-    "amplitude": 1,
+    "amplitude": 100000,
     "location": 800,
 }
 
@@ -90,7 +90,7 @@ if IsDecoupled:
             "BCType" : "SlipWall"
         },
         "x2" : { 
-            "BCType" : "PressureOutlet1D",
+            "BCType" : "NonReflective1D",
             "p": 1e5,
         },
     }
