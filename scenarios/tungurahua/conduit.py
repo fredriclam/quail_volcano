@@ -18,7 +18,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "tung3_conduit1",
-	"WriteInterval" : 2000,#4*200,
+	"WriteInterval" : 400,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
