@@ -2,16 +2,15 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 500*1e-2, # 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 250*100, # 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+	"FinalTime" : 60*1, # 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
+	"NumTimeSteps" : 60*5000, # 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
      # 100000 for generalB1, 400~K
 	"TimeStepper" : "FE",
 }
 
 Numerics = {
-	"SolutionOrder" : 2,
+	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
-	# "ApplyLimiters" : ["PositivityPreservingMultiphasevpT", "WENO", "PositivityPreservingMultiphasevpT"], "ShockIndicator": "MinMod", "TVBParameter": 0.0,
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
 	"ArtificialViscosity" : True,
@@ -24,12 +23,12 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA1.msh",
+	"File" : "../meshes/tungurahuaA1.msh",
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_atm1_cyl",
-	"WriteInterval" : 200,
+	"Prefix" : "tung3_atm1",
+	"WriteInterval" : 500,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -43,7 +42,6 @@ SourceTerms = {
 	"source1": {
 		"Function" : "GravitySource",
 		"gravity": 9.8,
-		# "source_treatment" : "Explicit",
 	},
 	# "source3": {
 	# 		"Function": "ExsolutionSource",
@@ -55,22 +53,19 @@ SourceTerms = {
 	}
 }
 
-if False:
-	# Sod state
-	rhoAmbient = 0.125
-	pAmbient = 0.1
-	eAmbient = pAmbient / (Physics["SpecificHeatRatio"] - 1.0)
+# Restart = {
+# 	"File" : "___.pkl",
+# 	"StartFromFileTime" : True
+# }
 
 InitialCondition = {
 	"Function" : "LinearAtmosphere",
-	# "state" : UQuiescent,
 }
 
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
 	"r1" : {
-		# "BCType" : "SlipWall",
 		"BCType" : "MultiphasevpT2D2D",
 		"bkey": "r1",
 	},
@@ -84,7 +79,6 @@ BoundaryConditions = {
 		"BCType" : "SlipWall",
 	},
 	"x2" : {
-		# "BCType" : "SlipWall",
 		"BCType" : "MultiphasevpT2D1D",
 		"bkey": "vent",
 	},
@@ -100,7 +94,7 @@ LinkedSolvers = [
 		"BoundaryName": "vent",
 	},
 	{
-		"DeckName": "r1r2_cyl.py",
+		"DeckName": "r1r2.py",
 		"BoundaryName": "r1",
 	},
 ]

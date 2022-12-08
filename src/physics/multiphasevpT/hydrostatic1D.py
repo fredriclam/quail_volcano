@@ -366,7 +366,8 @@ class GlobalDG():
 
   def set_initial_condition(self, p_bdry:float=1e5, p_bc_loc:str="x2",
     is_jump_included:bool=False, x_jump:float=0.0, is_x_jump_exact:bool=False,
-    traction_fn:Callable=None, owner_domain=None, constr_key="MEq"):
+    traction_fn:Callable=None, owner_domain=None, constr_key="MEq",
+    p_jump_factor=1.0):
     ''' Replace the initial condition in self.solver with hydrostatic
     condition.
     
@@ -377,6 +378,9 @@ class GlobalDG():
     x_jump: nominal position for placing the pressure jump
     is_x_jump_exact: whether to force x_jump to be exact (True not recommended)
     traction_fn: function that specifies traction (momentum source term)
+    owner_domain
+    constr_key (str): setting to constrain state while computing hydrostatic
+    p_jump_factor (float=1): multiplicative factor on the pressure jump
     '''
 
     solver = self.solver
@@ -440,7 +444,7 @@ class GlobalDG():
       # Compute single pressure jump based on maximum pressure in unequilibrated
       # initial condition
       p_jump = -(np.max(self.solver.physics.compute_additional_variable(
-        "Pressure", self.origin_state, True)) - p_bdry)
+        "Pressure", self.origin_state, True)) - p_bdry) * p_jump_factor
       self.x_jump_actual = x_jump
 
       if is_x_jump_exact:

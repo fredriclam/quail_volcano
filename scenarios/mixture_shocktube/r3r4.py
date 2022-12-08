@@ -1,20 +1,20 @@
 import numpy as np
 
 Numerics = {
-	"SolutionOrder" : 2*0,
+	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
 	# "ApplyLimiters" : "PositivityPreserving", #["WENO", "PositivityPreserving"],
 	"Solver" : "DG",
 	"ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 1e4,#5e3,
+	"AVParameter" : 1e5,#5e3,
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoC2.msh",
+	"File" : "../meshes/volcanoA4.msh",
 }
 
 Physics = {
@@ -44,35 +44,32 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"ground_far" : {
+	"ground4" : {
 		"BCType" : "SlipWall",
 	},
-	"symmetry_far" : {
+	"symmetry4" : {
 		"BCType" : "SlipWall",
 	},
-	# "r2" : {
-	# 	"BCType" : "SlipWall",
-	# },
-	"r2" : {
+	"r4" : {
 		"BCType" : "Euler2D2D",
-		"bkey": "r2",
+		"bkey": "r4",
 	},
-	"r1" : {
+	"r3" : {
 		"BCType" : "Euler2D2D",
-		"bkey": "r1",
+		"bkey": "r3",
 	},
 }
 
 Output = {
-	"Prefix" : "referenceN2",
-	"WriteInterval" : 30,
+	"Prefix" : "referenceC4",
+	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
 
 LinkedSolvers = [
 	{
-		"DeckName": "r2r3.py",
-		"BoundaryName": "r2",
+		"DeckName": "r4r5.py",
+		"BoundaryName": "r4",
 	},
 ]

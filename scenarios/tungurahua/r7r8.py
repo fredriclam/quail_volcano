@@ -1,9 +1,8 @@
 import numpy as np
 
 Numerics = {
-	"SolutionOrder" : 0,
+	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
-	# "ApplyLimiters" : ["PositivityPreservingMultiphasevpT", "WENO", "PositivityPreservingMultiphasevpT"], "ShockIndicator": "MinMod", "TVBParameter": 0.0,
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
 	"ArtificialViscosity" : True,
@@ -16,14 +15,14 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoB2.msh",
+	"File" : "../meshes/tungurahuaA8.msh",
 }
 
 Output = {
-	"Prefix" : "mixture_shocktube_atm2_trash",
-	"WriteInterval" : 50,
+	"Prefix" : "tung3_atm8",
+	"WriteInterval" : 2000,
 	"WriteInitialSolution" : True,
-	"AutoPostProcess": True,
+	"AutoPostProcess": False,
 }
 
 Physics = {
@@ -35,54 +34,40 @@ SourceTerms = {
 	"source1": {
 		"Function" : "GravitySource",
 		"gravity": 9.8,
-		# "source_treatment" : "Explicit",
 	},
 	# "source3": {
 	# 		"Function": "ExsolutionSource",
 	# 		"source_treatment" : "Implicit",
 	# },
+	"source4": {
+		"Function" : "CylindricalGeometricSource",
+		# "source_treatment" : "Explicit",
+	}
 }
 
-if False:
-	# Sod state
-	rhoAmbient = 0.125
-	pAmbient = 0.1
-	eAmbient = pAmbient / (Physics["SpecificHeatRatio"] - 1.0)
+# Restart = {
+# 	"File" : "___.pkl",
+# 	"StartFromFileTime" : True
+# }
 
 InitialCondition = {
 	"Function" : "LinearAtmosphere",
-	# "state" : UQuiescent,
 }
 
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"ground_far" : {
+	"ground8" : {
 		"BCType" : "SlipWall",
 	},
-	"symmetry_far" : {
+	"symmetry8" : {
 		"BCType" : "SlipWall",
 	},
-	# "r2" : {
-	# 	"BCType" : "SlipWall",
-	# },
-	"r2" : {
-		"BCType" : "SlipWall",
+	"r8" : {
+		"BCType" : "LinearizedImpedance2D",
 	},
-	"r1" : {
+	"r7" : {
 		"BCType" : "MultiphasevpT2D2D",
-		"bkey": "r1",
+		"bkey": "r7",
 	},
 }
-
-LinkedSolvers = []
-# LinkedSolvers = [
-# 	{
-# 		"DeckName": "conduit.py",
-# 		"BoundaryName": "x2",
-# 	},
-# 	{
-# 		"DeckName": "r1r2.py",
-# 		"BoundaryName": "r1",
-# 	},
-# ]
