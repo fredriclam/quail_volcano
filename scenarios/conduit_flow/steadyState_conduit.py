@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduitSteadyStateVV",
+	"Prefix" : "conduitSteadyStateVV_crys",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
