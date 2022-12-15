@@ -2328,6 +2328,9 @@ class FrictionVolFracVariableMu(SourceBase):
 		
 		viscosity = meltVisc * crysVisc
 		viscosity[phi > self.crit_volfrac] = 0
+		
+		#fix = np.max(viscosity)
+		#viscosity[phi > self.crit_volfrac] = fix
 		return viscosity
 
 	def get_source(self, physics, Uq, x, t):
@@ -2378,6 +2381,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		Evaluation and inversions of jacobians are likely to be a comp. bottleneck
 		(repeated construction for implicit source steps, followed by inversion).
 		'''
+		raise NotImplementedError(f"Gradient not implemented for smoothed fragmentation.")
 
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
