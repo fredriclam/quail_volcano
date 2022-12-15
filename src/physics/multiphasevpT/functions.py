@@ -2315,7 +2315,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		gamma = 4.214
 		delta = 1.149
 		B = 2.5
-		rhoC = 2700 # kg/m^3 density of crystal phase
+		rhoC = 2700 #physics.Liquid["rho0"] crystal phasic density set to magma phasic density
 		crysVolFrac_suspension = arhoC / (rhoC * (1 - phi)) # crystal vol frac of magma
 		
 		phi_ratio = crysVolFrac_suspension / phi_cr
