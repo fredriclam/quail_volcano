@@ -472,6 +472,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
+			SourceType.FragmentationTimescaleSource: mpvpT_fcns.FragmentationTimescaleSource,
 			SourceType.WaterInflowSource: mpvpT_fcns.WaterInflowSource,
 		})
 

@@ -86,6 +86,7 @@ class SourceType(Enum):
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 	ExsolutionSource = auto()
+	FragmentationTimescaleSource = auto()
 	WaterInflowSource = auto()
 	CylindricalGeometricSource = auto()
 
@@ -419,8 +420,11 @@ class LinearAtmosphere(FcnBase):
 		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
+		# Mass-weighted gas constant R (approx. yM ~ 0)
+		R = (1.0 - self.massFracWv) * physics.Gas[0]["R"] \
+			+ self.massFracWv * physics.Gas[1]["R"]
 		# Compute scale height at reference temperature T0
-		hs0 = physics.Gas[0]["R"]*self.T0/self.gravity
+		hs0 = R*self.T0/self.gravity
 		# Compute pressure linear in elevation
 		p = self.p_atm * (1.0 - (x[:,:,1:2] - self.h0)/hs0).squeeze(axis=2)
 		# Compute approx. volume fraction correcting for water partial pressure
@@ -2685,6 +2689,47 @@ class ExsolutionSource(SourceBase):
 			))] = 0.0
 
 		return dSdU
+
+
+class FragmentationTimescaleSource(SourceBase):
+  '''
+  Fragmentation source term.
+  Converts unfragmented magma to fragmented magma over a timescale when
+  the fragmentation criterion is met.
+  Dynamic parameters (tau_f) are attributes of this class.
+  '''
+  def __init__(self, tau_f:float=1.0, **kwargs):
+    super().__init__(kwargs)
+    self.tau_f = tau_f; self.crit_volfrac = 0.8
+
+  def get_is_fragmenting(self, physics, arhoVec, T):
+      ''' Check volume fraction condition. '''
+      return (atomics.gas_volfrac(arhoVec, T, physics) > self.crit_volfrac).astype(float)
+
+  def get_source(self, physics, Uq, x, t):
+    S = np.zeros_like(Uq)
+    if physics.NDIMS == 1:
+      # Extract variables
+      slarhoM = physics.get_state_slice("pDensityM")
+      slarhoFm = physics.get_state_slice("pDensityFm")
+
+      mom = Uq[:, :, physics.get_momentum_slice()]
+      arho = Uq[:, :, physics.get_mass_slice()]
+      e = Uq[:, :, physics.get_state_slice("Energy")]
+      arhoM = Uq[:, :, slarhoM]
+      arhoFm = Uq[:, :, slarhoFm]
+
+      T = atomics.temperature(arho, mom, e, physics)
+      
+      # Compute reaction rate of current state
+      reaction_rate = (1.0/self.tau_f) * \
+        self.get_is_fragmenting(physics, arho, T) * (
+        arhoM - arhoFm) # Proportional to non-fragmented mass
+      # Apply reaction rate to only fragmented magma (arhom = fragmented + unfragmented)
+      S[:, :, slarhoFm]  = reaction_rate
+    else:
+      raise Exception("Unexpected physics num dimension in FragmentationTimescaleSource.")
+    return S # [ne, nq, ns]
 
 
 class WaterInflowSource(SourceBase):
