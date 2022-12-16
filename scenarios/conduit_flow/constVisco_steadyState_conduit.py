@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduitSteadyStateVV",
+	"Prefix" : "conduitSteadyState",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
@@ -77,8 +77,8 @@ InitialCondition = {
   "arhoML": 2496.3,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 100.0,
-  "arhoCL": 1e3, 
+  "arhoWtL": 10.0,
+  "arhoCL": 100.0, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
@@ -131,7 +131,7 @@ SourceTerms = {
     "source_treatment" : "Explicit",
 	},
   "source2": {
-      "Function": "FrictionVolFracVariableMu",
+      "Function": "FrictionVolFracConstMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values
       # "mu": 1e5,
@@ -155,9 +155,9 @@ BoundaryConditions = {
       # To be replaced by an exit pressure boundary condition
       #"BCType" : "SlipWall"
       "BCType" : "MassFluxInlet1D",
-      "mass_flux" : 2700,
+      "mass_flux" : 27000,
       "p_chamber" : 2e8,
-      "T_chamber" : 1000,
+      "T_chamber" : 1500,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism

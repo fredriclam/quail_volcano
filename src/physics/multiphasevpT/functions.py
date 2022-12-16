@@ -26,6 +26,7 @@ from enum import Enum, auto
 from re import U
 import numpy as np
 from scipy.optimize import fsolve, root
+import scipy.special as sp
 
 import errors
 import general
@@ -2290,8 +2291,9 @@ class FrictionVolFracVariableMu(SourceBase):
 	
 	def compute_viscosity(self, Uq, physics):
 		''' calculates the viscosity at each depth point as function of dissolved
-		water and crystal content.
+		water and crystal content (assumes crystal phase is incompressible)
 		'''
+		### calculating viscosity of melt without crystals
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
 		phi = physics.compute_additional_variable("phi", Uq, True)
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
@@ -2299,17 +2301,36 @@ class FrictionVolFracVariableMu(SourceBase):
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
 		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		
 		arhoWd = arhoWt - arhoWv
 		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
 		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
 		log_mfWd = np.log(mfWd*100)
+		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
 		log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
-		#fix = np.max(log10_vis)
-		#log10_vis[phi > self.crit_volfrac] = fix # XXX adhoc fix for above fragmentation
-		#print(log10_vis[phi > self.crit_volfrac]) #viscosity = 10**log10_vis
-		viscosity = 10**log10_vis
+		meltVisc = 10**log10_vis
+		meltVisc[phi > self.crit_volfrac] = 0
+		
+		### calculating relative viscosity due to crystals
+		alpha = 0.9995
+		phi_cr = 0.409
+		gamma = 4.214
+		delta = 1.149
+		B = 2.5
+		rhoC = 2700 # kg/m^3 density of crystal phase
+		crysVolFrac_suspension = arhoC / (rhoC * (1 - phi)) # crystal vol frac of magma
+		
+		phi_ratio = crysVolFrac_suspension / phi_cr
+		AA = np.sqrt(np.pi) / (2 * alpha)
+		erf = sp.erf(AA * phi_ratio * (1 + phi_ratio**gamma))
+		
+		num = 1 + phi_ratio**delta
+		denom = (1 - alpha * erf)**(-B * phi_cr)
+		crysVisc = num * denom
+		
+		viscosity = meltVisc * crysVisc
 		viscosity[phi > self.crit_volfrac] = 0
 		return viscosity
 

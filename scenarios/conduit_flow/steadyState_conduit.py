@@ -4,7 +4,7 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 2.50,
+	"FinalTime" : 5.0,
 	"NumTimeSteps" : 25000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
@@ -41,9 +41,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduitSteadyState",
+	"Prefix" : "conduitSteadyStateVV_crys",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 200,
+	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -77,8 +77,8 @@ InitialCondition = {
   "arhoML": 2496.3,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 10.0,
-  "arhoCL": 100.0, 
+  "arhoWtL": 100.0,
+  "arhoCL": 1e2, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
@@ -131,7 +131,7 @@ SourceTerms = {
     "source_treatment" : "Explicit",
 	},
   "source2": {
-      "Function": "FrictionVolFracConstMu",
+      "Function": "FrictionVolFracVariableMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values
       # "mu": 1e5,
@@ -155,9 +155,9 @@ BoundaryConditions = {
       # To be replaced by an exit pressure boundary condition
       #"BCType" : "SlipWall"
       "BCType" : "MassFluxInlet1D",
-      "mass_flux" : 27000,
+      "mass_flux" : 2700,
       "p_chamber" : 2e8,
-      "T_chamber" : 1500,
+      "T_chamber" : 1000,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism
