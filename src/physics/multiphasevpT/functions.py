@@ -2290,6 +2290,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		water and crystal content (assumes crystal phase is incompressible)
 		'''
 		### calculating viscosity of melt without crystals
+		### Hess & Dingwell 1996
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
 		phiM = physics.compute_additional_variable("volFracM", Uq, True)
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
@@ -2310,10 +2311,11 @@ class FrictionVolFracVariableMu(SourceBase):
 		meltVisc[(1 - phiM) > self.crit_volfrac] = 0
 		
 		### calculating relative viscosity due to crystals
-		alpha = 0.9995
-		phi_cr = 0.409
-		gamma = 4.214
-		delta = 1.149
+		### Costa 2005b
+		alpha = 0.999916
+		phi_cr = 0.673
+		gamma = 3.98937
+		delta = 16.9386
 		B = 2.5
 		rhoC = 2700 #physics.Liquid["rho0"] crystal phasic density set to magma phasic density
 		crysVolFrac_suspension = arhoC / (rhoC * phiM) # crystal vol frac of magma
