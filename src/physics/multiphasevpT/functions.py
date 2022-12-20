@@ -2291,7 +2291,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		'''
 		### calculating viscosity of melt without crystals
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
-		phi = physics.compute_additional_variable("phi", Uq, True)
+		phiM = physics.compute_additional_variable("volFracM", Uq, True)
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
@@ -2305,9 +2305,9 @@ class FrictionVolFracVariableMu(SourceBase):
 		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
 		meltVisc = 10**log10_vis
-		meltVisc[phi > self.crit_volfrac] = 0
+		meltVisc[(1 - phiM) > self.crit_volfrac] = 0
 		
 		### calculating relative viscosity due to crystals
 		alpha = 0.9995
@@ -2316,7 +2316,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		delta = 1.149
 		B = 2.5
 		rhoC = 2700 #physics.Liquid["rho0"] crystal phasic density set to magma phasic density
-		crysVolFrac_suspension = arhoC / (rhoC * (1 - phi)) # crystal vol frac of magma
+		crysVolFrac_suspension = arhoC / (rhoC * phiM) # crystal vol frac of magma
 		
 		phi_ratio = crysVolFrac_suspension / phi_cr
 		AA = np.sqrt(np.pi) / (2 * alpha)
@@ -2327,7 +2327,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		crysVisc = num * denom
 		
 		viscosity = meltVisc * crysVisc
-		viscosity[phi > self.crit_volfrac] = 0
+		viscosity[(1 - phiM) > self.crit_volfrac] = 0
 		
 		#fix = np.max(viscosity)
 		#viscosity[phi > self.crit_volfrac] = fix
@@ -2381,7 +2381,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		Evaluation and inversions of jacobians are likely to be a comp. bottleneck
 		(repeated construction for implicit source steps, followed by inversion).
 		'''
-		raise NotImplementedError(f"Gradient not implemented for smoothed fragmentation.")
+		raise NotImplementedError(f"Gradient not implemented for variable viscosity.")
 
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
