@@ -2331,7 +2331,8 @@ class FrictionVolFracVariableMu(SourceBase):
 		denom = (1 - alpha * erf)**(-B * phi_cr)
 		crysVisc = num * denom
 		
-		viscosity = meltVisc * crysVisc
+		viscosity = 4.386e5 * crysVisc
+		#viscosity = meltVisc * crysVisc
 		viscosity[(1 - phiM) > self.crit_volfrac] = 0
 		
 		#fix = np.max(viscosity)

@@ -43,7 +43,7 @@ Numerics = {
 Output = {
 	"Prefix" : "steadyState/conduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 200,
+	"WriteInterval" : 1000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
