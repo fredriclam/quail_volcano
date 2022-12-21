@@ -165,7 +165,7 @@ BoundaryConditions = {
     },
     "x2" : { 
         "BCType" : "MultiphasevpT1D1D",
-        "bkey" : "interface_-1",
+        "bkey" : "interface_-2",
     },
 }
 
@@ -184,7 +184,7 @@ LinkedSolvers = [
     #    "BoundaryName": "bottomconduit",
     #},
     {
-        "DeckName": "steadyState_conduit0.py",
-        "BoundaryName": "interface_-1",
+        "DeckName": "steadyState_conduit1.py",
+        "BoundaryName": "interface_-2",
     },
 ]

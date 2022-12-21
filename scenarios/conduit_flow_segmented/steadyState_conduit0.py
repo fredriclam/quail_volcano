@@ -53,8 +53,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 100, 
-    "xmin" : -500.0,
+    "NumElemsX" : 200, 
+    "xmin" : -1000.0,
     "xmax" : 0.0,
 }
 

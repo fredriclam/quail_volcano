@@ -55,7 +55,7 @@ Mesh = {
     # Use even number if using initial condition with discontinuous pressure
     "NumElemsX" : 300, 
     "xmin" : -2000.0,
-    "xmax" : -500.0,
+    "xmax" : -1000.0,
 }
 
 Physics = {
@@ -153,15 +153,15 @@ BoundaryConditions = {
     "x1" : {
       # To be replaced by an exit pressure boundary condition
       #"BCType" : "SlipWall"
-      "BCType" : "MassFluxInlet1D",
-      "mass_flux" : 2700,
-      "p_chamber" : 2e8,
-      "T_chamber" : 1000,
+      #"BCType" : "MassFluxInlet1D",
+      #"mass_flux" : 2700,
+      #"p_chamber" : 2e8,
+      #"T_chamber" : 1000,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism
-      #"BCType" : "MultiphasevpT1D1D",
-      #"bkey": "interface_-1",
+      "BCType" : "MultiphasevpT1D1D",
+      "bkey": "interface_-2",
     },
     "x2" : { 
         "BCType" : "MultiphasevpT1D1D",
@@ -179,10 +179,10 @@ BoundaryConditions = {
 # corresponding BoundaryCondition (for example, for boundary "x1" here and 
 # boundary "x2" in the linked parameter file).
 LinkedSolvers = [
-    #{
-    #    "DeckName": "steadyState_conduit0.py",
-    #    "BoundaryName": "bottomconduit",
-    #},
+    {
+        "DeckName": "steadyState_conduit2.py",
+        "BoundaryName": "interface_-2",
+    },
     {
         "DeckName": "steadyState_conduit0.py",
         "BoundaryName": "interface_-1",
