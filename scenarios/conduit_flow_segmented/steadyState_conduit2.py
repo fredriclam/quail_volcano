@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState/conduit1",
+	"Prefix" : "steadyState/conduit2",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
@@ -53,9 +53,9 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 300, 
-    "xmin" : -2000.0,
-    "xmax" : -500.0,
+    "NumElemsX" : 200, 
+    "xmin" : -3000.0,
+    "xmax" : -2000.0,
 }
 
 Physics = {

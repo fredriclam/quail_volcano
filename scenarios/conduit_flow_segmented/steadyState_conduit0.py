@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduit0SteadyState",
+	"Prefix" : "steadyState/conduit0",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
@@ -74,11 +74,11 @@ InitialCondition = {
   # Left side values
   "arhoAL": 1e-1,
   "arhoWvL": 8.686,
-  "arhoML": 2496.3,
+  "arhoML": 2600.,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 100.0,
-  "arhoCL": 1e2, 
+  "arhoWtL": 80.0,
+  "arhoCL": 800., 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,

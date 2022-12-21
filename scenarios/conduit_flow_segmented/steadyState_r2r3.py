@@ -20,7 +20,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "atm3SteadyState",
+	"Prefix" : "steadyState/atm3",
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
