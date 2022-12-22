@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState/conduit0",
+	"Prefix" : "steadyState_cVF40/conduit0",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
@@ -53,8 +53,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 200, 
-    "xmin" : -1000.0,
+    "NumElemsX" : 500, 
+    "xmin" : -2500.0,
     "xmax" : 0.0,
 }
 
@@ -77,8 +77,8 @@ InitialCondition = {
   "arhoML": 2600.,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 80.0,
-  "arhoCL": 800., 
+  "arhoWtL": 75.0,
+  "arhoCL": 1.05e3, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
