@@ -43,7 +43,7 @@ Numerics = {
 Output = {
 	"Prefix" : "steadyState_cVF40/conduit1",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 100,
+	"WriteInterval" : 4000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -53,7 +53,7 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 2000, 
+    "NumElemsX" : 1000, 
     "xmin" : -3500.0,
     "xmax" : -2500.0,
 }
@@ -183,8 +183,8 @@ LinkedSolvers = [
         "DeckName": "steadyState_conduit2.py",
         "BoundaryName": "interface_-2",
     },
-    {
-        "DeckName": "steadyState_conduit0.py",
-        "BoundaryName": "interface_-1",
-    },
+    #{
+    #    "DeckName": "steadyState_conduit0.py",
+    #    "BoundaryName": "interface_-1",
+    #},
 ]

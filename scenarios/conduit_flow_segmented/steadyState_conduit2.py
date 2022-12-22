@@ -43,7 +43,7 @@ Numerics = {
 Output = {
 	"Prefix" : "steadyState_cVF40/conduit2",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 100,
+	"WriteInterval" : 4000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -183,8 +183,8 @@ LinkedSolvers = [
     #    "DeckName": "steadyState_conduit0.py",
     #    "BoundaryName": "bottomconduit",
     #},
-    {
-        "DeckName": "steadyState_conduit1.py",
-        "BoundaryName": "interface_-2",
-    },
+    #{
+    #    "DeckName": "steadyState_conduit1.py",
+    #    "BoundaryName": "interface_-2",
+    #},
 ]
