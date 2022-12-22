@@ -4,8 +4,8 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 140.0,
-	"NumTimeSteps" : 700000,
+	"FinalTime" : 2.5,
+	"NumTimeSteps" : 12500,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -77,8 +77,8 @@ InitialCondition = {
   "arhoML": 2600.,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 80.0,
-  "arhoCL": 800., 
+  "arhoWtL": 100.0,
+  "arhoCL": 4e2, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
