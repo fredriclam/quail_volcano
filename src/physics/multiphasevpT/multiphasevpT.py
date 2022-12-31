@@ -595,7 +595,8 @@ class MultiphasevpT1D(MultiphasevpT):
 			left_eigen: Left eigenvector matrix [ne, 1, ns, ns]
 		'''
 
-
+		# Skip legacy code and reroute to analytic eigenvector matrix
+		return self.get_eigenvectors_R(U_bar), self.get_eigenvectors_L(U_bar)
 
 		# Unpack
 		ne = U_bar.shape[0]
