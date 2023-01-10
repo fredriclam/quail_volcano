@@ -20,8 +20,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/atm2",
-	"WriteInterval" : 160000,
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40_3m/atm2",
+	"WriteInterval" : 4000,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -86,7 +86,7 @@ LinkedSolvers = [
 	#	"BoundaryName": "vent",
 	#},
 	{
-		"DeckName": "steadyState_r2r3.py",
+		"DeckName": "steadyState_r2r3_3m.py",
 		"BoundaryName": "r2",
 	},
 ]

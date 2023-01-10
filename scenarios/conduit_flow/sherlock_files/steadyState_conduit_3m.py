@@ -41,9 +41,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/conduit",
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40_3m/conduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 200,
+	"WriteInterval" : 8000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -181,7 +181,7 @@ BoundaryConditions = {
 # boundary "x2" in the linked parameter file).
 LinkedSolvers = [
     {
-        "DeckName": "steadyState_vent_region.py",
+        "DeckName": "steadyState_vent_region_3m.py",
         "BoundaryName": "vent",
     },
 ]

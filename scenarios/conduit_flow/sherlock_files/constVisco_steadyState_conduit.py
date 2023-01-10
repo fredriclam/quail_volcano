@@ -4,8 +4,8 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 600.0,
-	"NumTimeSteps" : 12000000,
+	"FinalTime" : 2.50,
+	"NumTimeSteps" : 25000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/conduit",
+	"Prefix" : "conduitSteadyState",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
@@ -53,8 +53,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 2000, 
-    "xmin" : -6000.0,
+    "NumElemsX" : 400, 
+    "xmin" : -2000.0,
     "xmax" : 0.0,
 }
 
@@ -74,11 +74,11 @@ InitialCondition = {
   # Left side values
   "arhoAL": 1e-1,
   "arhoWvL": 8.686,
-  "arhoML": 2600.,
+  "arhoML": 2496.3,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 75.0,
-  "arhoCL": 1.05e3, 
+  "arhoWtL": 10.0,
+  "arhoCL": 100.0, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
@@ -87,7 +87,7 @@ InitialCondition = {
   "TR": 300.,
   "arhoWtR": 1.161*5e-3,
   "arhoCR": 1e-6,
-  "xd": -1500.0, # Position of the discontinuity
+  "xd": -400.0, # Position of the discontinuity
 }
 
 # Define the hydrostatic steady-state solver that operates on the initial
@@ -99,7 +99,7 @@ def hydrostatic_solve(solver, owner_domain=None):
         p_bdry=1e5,
         is_jump_included=True,
         owner_domain=owner_domain,
-        x_jump=-1500.0,
+        x_jump=-400.0,
         constr_key="YEq",
         # To set the traction function, use the following line and prescribe
         # traction as a function of x. The traction function needs to be
@@ -131,7 +131,7 @@ SourceTerms = {
     "source_treatment" : "Explicit",
 	},
   "source2": {
-      "Function": "FrictionVolFracVariableMu",
+      "Function": "FrictionVolFracConstMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values
       # "mu": 1e5,
@@ -155,9 +155,9 @@ BoundaryConditions = {
       # To be replaced by an exit pressure boundary condition
       #"BCType" : "SlipWall"
       "BCType" : "MassFluxInlet1D",
-      "mass_flux" : 2700,
+      "mass_flux" : 27000,
       "p_chamber" : 2e8,
-      "T_chamber" : 1000,
+      "T_chamber" : 1500,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism
