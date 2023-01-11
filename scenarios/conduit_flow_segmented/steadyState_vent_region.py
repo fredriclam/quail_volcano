@@ -29,7 +29,7 @@ Mesh = {
 
 Output = {
 	"Prefix" : "steadyState_cVF40/atm1",
-	"WriteInterval" : 4000,
+	"WriteInterval" : 40000,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }

@@ -5,7 +5,7 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 600.0,
-	"NumTimeSteps" : 6000000,
+	"NumTimeSteps" : 12000000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -43,7 +43,7 @@ Numerics = {
 Output = {
 	"Prefix" : "steadyState_cVF40/conduit0",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 4000,
+	"WriteInterval" : 1000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,

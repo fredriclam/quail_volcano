@@ -137,7 +137,7 @@ SourceTerms = {
     "source_treatment" : "Explicit",
 	},
   "source2": {
-      "Function": "FrictionVolFracConstMu",
+      "Function": "FrictionVolFracVariableMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values
       # "mu": 1e5,
