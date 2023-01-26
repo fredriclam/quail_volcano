@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState/CONSTMUconduit",
+	"Prefix" : "steadyState/LONGTDconduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 500,
 	"WriteInitialSolution" : True,
@@ -131,7 +131,7 @@ SourceTerms = {
     "source_treatment" : "Explicit",
 	},
   "source2": {
-      "Function": "FrictionVolFracConstMu",
+      "Function": "FrictionVolFracVariableMu",
       #"Function": "FrictionVolFracVariableMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values

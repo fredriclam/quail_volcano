@@ -2596,7 +2596,7 @@ class ExsolutionSource(SourceBase):
 	object (those quantities are also used to set up initial conditions).
 	Dynamic parameters (tau_d) are attributes of this class.
 	'''
-	def __init__(self, tau_d:float=10.0, **kwargs):
+	def __init__(self, tau_d:float=1.0, **kwargs):
 		super().__init__(kwargs)
 		self.tau_d = tau_d
 
