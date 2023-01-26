@@ -2436,7 +2436,7 @@ class FrictionVolFracConstMu(SourceBase):
 	crit_volfrac: critical volume fraction at which friction model transitions (-)
 	logistic_scale: scale of logistic function (-)
 	'''
-	def __init__(self, mu:float=1e5, conduit_radius:float=50.0,
+	def __init__(self, mu:float=1.4e6, conduit_radius:float=50.0,
 							 crit_volfrac:float=0.8, logistic_scale:float=0.01,**kwargs):
 		super().__init__(kwargs)
 		self.mu = mu

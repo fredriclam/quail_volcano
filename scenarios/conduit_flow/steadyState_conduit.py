@@ -4,8 +4,8 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 600.0,
-	"NumTimeSteps" : 12000000,
+	"FinalTime" : 3.0,
+	"NumTimeSteps" : 60000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -41,9 +41,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/conduit",
+	"Prefix" : "steadyState/CONSTMUconduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 200,
+	"WriteInterval" : 500,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -53,7 +53,7 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 2000, 
+    "NumElemsX" : 3000, 
     "xmin" : -6000.0,
     "xmax" : 0.0,
 }
@@ -131,7 +131,8 @@ SourceTerms = {
     "source_treatment" : "Explicit",
 	},
   "source2": {
-      "Function": "FrictionVolFracVariableMu",
+      "Function": "FrictionVolFracConstMu",
+      #"Function": "FrictionVolFracVariableMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values
       # "mu": 1e5,
