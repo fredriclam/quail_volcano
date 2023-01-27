@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState/LONGTDconduit",
+	"Prefix" : "steadyState/conduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 500,
 	"WriteInitialSolution" : True,
