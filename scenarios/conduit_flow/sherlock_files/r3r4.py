@@ -1,5 +1,10 @@
 import numpy as np
 
+Restart = {
+    "File" : "/scratch/users/kcoppess/steadyState_cVF40_3m/atm4_1770.pkl",
+    "StartFromFileTime" : True,
+}
+
 Numerics = {
 	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
@@ -16,12 +21,12 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA2.msh",
+	"File" : "../meshes/volcanoA4.msh",
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/atm2",
-	"WriteInterval" : 160000,
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40_3m_r2/atm4",
+	"WriteInterval" : 8000,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -37,22 +42,12 @@ SourceTerms = {
 		"gravity": 9.8,
 		# "source_treatment" : "Explicit",
 	},
-	# "source3": {
-	# 		"Function": "ExsolutionSource",
-	# 		"source_treatment" : "Implicit",
-	# },
 }
 
 # Restart = {
-# 	"File" : "atm2SteadyState_inlet_140.pkl",
+# 	"File" : "atm3SteadyState_inlet_140.pkl",
 # 	"StartFromFileTime" : True
 # }
-
-#if False:
-#	# Sod state
-#	rhoAmbient = 0.125
-#	pAmbient = 0.1
-#	eAmbient = pAmbient / (Physics["SpecificHeatRatio"] - 1.0)
 
 InitialCondition = {
 	"Function" : "LinearAtmosphere",
@@ -62,31 +57,20 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"ground_far" : {
+	"ground4" : {
 		"BCType" : "SlipWall",
 	},
-	"symmetry_far" : {
+	"symmetry4" : {
 		"BCType" : "SlipWall",
 	},
-	"r2" : {
-		"BCType" : "MultiphasevpT2D2D",
-		# "BCType" : "LinearizedImpedance2D",
-		"bkey": "r2",
+	"r4" : {
+		"BCType" : "LinearizedImpedance2D",
+		# "bkey": "r4",
 	},
-	"r1" : {
+	"r3" : {
 		"BCType" : "MultiphasevpT2D2D",
-		"bkey": "r1",
+		"bkey": "r3",
 	},
 }
 
-# LinkedSolvers = []
-LinkedSolvers = [
-	#{
-	#	"DeckName": "conduit.py",
-	#	"BoundaryName": "vent",
-	#},
-	{
-		"DeckName": "steadyState_r2r3.py",
-		"BoundaryName": "r2",
-	},
-]
+LinkedSolvers = []

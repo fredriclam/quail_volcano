@@ -1,15 +1,20 @@
 import numpy as np
 from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
-## Set timestepper
-#TimeStepping = {
-#	"InitialTime" : 0.0,
-#	"FinalTime" : 5.0,
-#	"NumTimeSteps" : 25000,
-#  # TimeStepper options:
-#  # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
-#	"TimeStepper" : "FE",
-#}
+Restart = {
+	"File" : "/scratch/users/kcoppess/steadyState_cVF40_3m/conduit_885.pkl",
+	"StartFromFileTime" : True,
+}
+
+# Set timestepper
+TimeStepping = {
+	"InitialTime" : 354.0,
+	"FinalTime" : 954.0,
+	"NumTimeSteps" : 12000000,
+  # TimeStepper options:
+  # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
+	"TimeStepper" : "FE",
+}
 
 Numerics = {
   # Solution order; these correspond to:
@@ -41,9 +46,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/conduit1",
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40_3m_r2/conduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 1000,
+	"WriteInterval" : 8000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -53,9 +58,9 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 1000, 
-    "xmin" : -3500.0,
-    "xmax" : -2500.0,
+    "NumElemsX" : 2000, 
+    "xmin" : -6000.0,
+    "xmax" : 0.0,
 }
 
 Physics = {
@@ -63,6 +68,7 @@ Physics = {
     "ConvFluxNumerical" : "LaxFriedrichs",
 }
 
+# NOTE: following aren't necessarily representative values when using restart files
 InitialCondition = {
 	# Initial condition (not necessarily hydrostatic; the injected function (see
   # below) takes this initial condition and computes the hydrostatic solution).
@@ -74,11 +80,11 @@ InitialCondition = {
   # Left side values
   "arhoAL": 1e-1,
   "arhoWvL": 8.686,
-  "arhoML": 2600.,
+  "arhoML": 2496.3,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 75.0,
-  "arhoCL": 1.05e3, 
+  "arhoWtL": 10.0,
+  "arhoCL": 100.0, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
@@ -87,7 +93,7 @@ InitialCondition = {
   "TR": 300.,
   "arhoWtR": 1.161*5e-3,
   "arhoCR": 1e-6,
-  "xd": -400.0, # Position of the discontinuity
+  "xd": -600.0, # Position of the discontinuity
 }
 
 # Define the hydrostatic steady-state solver that operates on the initial
@@ -96,9 +102,10 @@ InitialCondition = {
 # See hydrostatic1D.py for more details
 def hydrostatic_solve(solver, owner_domain=None):
     GlobalDG(solver).set_initial_condition(
-        p_bdry=None,
-        is_jump_included=False,
+        p_bdry=1e5,
+        is_jump_included=True,
         owner_domain=owner_domain,
+        x_jump=-600.0,
         constr_key="YEq",
         # To set the traction function, use the following line and prescribe
         # traction as a function of x. The traction function needs to be
@@ -115,7 +122,7 @@ def hydrostatic_solve(solver, owner_domain=None):
 Inject = [
     {
         "Function": hydrostatic_solve,
-        "Initial": True,
+        "Initial": False,
         "Postinitial": False,
     }
 ]
@@ -152,20 +159,19 @@ BoundaryConditions = {
     # The leftmost boundary
     "x1" : {
       # To be replaced by an exit pressure boundary condition
-      #"BCType" : "SlipWall"
-      #"BCType" : "MassFluxInlet1D",
-      #"mass_flux" : 2700,
-      #"p_chamber" : 2e8,
-      #"T_chamber" : 1000,
+      "BCType" : "MassFluxInlet1D",
+      "mass_flux" : 2700,
+      "p_chamber" : 2e8,
+      "T_chamber" : 1000,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism
-      "BCType" : "MultiphasevpT1D1D",
-      "bkey": "interface_-2",
+      # "BCType" : "MultiphasevpT1D1D",
+      # "bkey": "interface_-1",
     },
     "x2" : { 
-        "BCType" : "MultiphasevpT1D1D",
-        "bkey" : "interface_-1",
+        "BCType" : "MultiphasevpT2D1D",
+        "bkey" : "vent",
     },
 }
 
@@ -180,11 +186,7 @@ BoundaryConditions = {
 # boundary "x2" in the linked parameter file).
 LinkedSolvers = [
     {
-        "DeckName": "steadyState_conduit2.py",
-        "BoundaryName": "interface_-2",
+        "DeckName": "vent_region.py",
+        "BoundaryName": "vent",
     },
-    #{
-    #    "DeckName": "steadyState_conduit0.py",
-    #    "BoundaryName": "interface_-1",
-    #},
 ]

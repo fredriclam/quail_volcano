@@ -69,7 +69,7 @@ def plot_mean(x, q, clims):
 	for i in range(x.shape[0]):
 		pp = plt.Polygon([[x[i,0,0], x[i,0,1]],
 			[x[i,1,0], x[i,1,1]],
-			[x[i,2,0], x[i,2,1]]], facecolor=cmap(cnorm(q[i,:,0].mean())))
+			[x[i,2,0], x[i,2,1]]], facecolor=cmap(cnorm(q[i,:,0].mean())), linewidth=0)
 		plt.gca().add_patch(pp)
 	plt.axis("auto")
 	plt.axis("equal")
@@ -80,7 +80,7 @@ def plot_mean1D(x, q, clims, xscale=1.0, xshift=0.0):
 	cnorm = matplotlib.colors.Normalize(vmin=clims[0], vmax=clims[1]) 
 	for i in range(x.shape[0]):
 		pp = plt.Rectangle((xshift, x[i,0,0]), width=xscale, height=x[i,1,0]-x[i,0,0],
-			facecolor=cmap(cnorm(q[i,:,0].mean())))
+			facecolor=cmap(cnorm(q[i,:,0].mean())), linewidth=0)
 		plt.gca().add_patch(pp)
 	plt.axis("auto")
 	plt.axis("equal")
