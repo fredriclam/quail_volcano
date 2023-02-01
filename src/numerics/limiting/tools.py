@@ -76,7 +76,7 @@ def set_shock_indicator(limiter, shock_indicator_type):
 			general.ShockIndicatorType.MinMod:
 		limiter.shock_indicator = minmod_shock_indicator
 		
-
+# Version from quail (overwritten below)
 def minmod_shock_indicator(limiter, solver, Uc):
 	'''
 	TVB modified Minmod calculation used to detect shocks
@@ -184,6 +184,133 @@ def minmod_shock_indicator(limiter, solver, Uc):
 
 	shock_elems = np.where((np.abs(check1[:,:,0]) > 1.e-12)
 			| (np.abs(check2[:,:,0]) > 1.e-12))[0]
+
+	# print(shock_elems)
+	return shock_elems
+
+def minmod_shock_indicator(limiter, solver, Uc):
+# def minmod_shock_indicator_extended(limiter, solver, Uc):
+	'''
+	Extension of minmod_shock_indicator to use different indicator variables.
+	TVB modified Minmod calculation used to detect shocks
+
+	Inputs:
+	-------
+		limiter: limiter object
+		solver: solver object
+		Uc: state coefficients [ne, nb, ns]
+
+	Outputs:
+	--------
+		shock_elems: array with IDs of elements flagged for limiting
+	'''
+	# Unpack
+	physics = solver.physics
+	tvb_param = limiter.tvb_param
+	ns = physics.NUM_STATE_VARS
+
+	elem_helpers = solver.elem_helpers
+	
+	elemP_IDs = limiter.elemP_IDs
+	elemM_IDs = limiter.elemM_IDs
+	djacs = limiter.djac_elems
+	djacP = limiter.djac_elems[elemP_IDs]
+	djacM = limiter.djac_elems[elemM_IDs]
+
+	UcP = solver.state_coeffs[elemP_IDs]
+	UcM = solver.state_coeffs[elemM_IDs]
+
+	# Interpolate state at quadrature points over element and on faces
+	U_elem_faces = helpers.evaluate_state(Uc, limiter.basis_val_elem_faces, 
+			skip_interp=solver.basis.skip_interp)
+	nq_elem = limiter.quad_wts_elem.shape[0]
+	U_elem = U_elem_faces[:, :nq_elem, :]
+	U_face = U_elem_faces[:, nq_elem:, :]
+	
+	if solver.basis.skip_interp is True:
+		U_face = np.zeros([U_elem.shape[0], 2, ns])
+		U_face[:, 0, :] = U_elem[:, 0, :]
+		U_face[:, -1, :] = U_elem[:, -1, :] # Replaces boundary face values
+
+	# Average value of states
+	U_bar = helpers.get_element_mean(U_elem, limiter.quad_wts_elem, djacs, 
+			limiter.elem_vols)
+
+	# UcP neighbor evaluated at quadrature points
+	Up_elem = helpers.evaluate_state(UcP, elem_helpers.basis_val, 
+			skip_interp=solver.basis.skip_interp)
+	# Average value of state
+	Up_bar = helpers.get_element_mean(Up_elem, limiter.quad_wts_elem, djacP, 
+			limiter.elem_vols[elemP_IDs])
+
+	# UcM neighbor evaluated at quadrature points
+	Um_elem = helpers.evaluate_state(UcM, elem_helpers.basis_val, 
+			skip_interp=solver.basis.skip_interp)
+	# Average value of state
+	Um_bar = helpers.get_element_mean(Um_elem, limiter.quad_wts_elem, djacM, 
+			limiter.elem_vols[elemM_IDs])
+
+	# Store the polynomial coeff values for Up, Um, and U.
+	limiter.U_elem = Uc
+	limiter.Up_elem = UcP
+	limiter.Um_elem = UcM
+
+	# Store the average values for Up, Um, and U.
+	limiter.U_bar = U_bar
+	limiter.Up_bar = Up_bar
+	limiter.Um_bar = Um_bar
+
+	U_tilde = (U_face[:, 1, :] - U_bar[:, 0, :]).reshape(U_bar.shape)
+	U_dtilde = (U_bar[:, 0, :] - U_face[:, 0, :]).reshape(U_bar.shape)
+
+	deltaP_u_bar = Up_bar - U_bar
+	deltaM_u_bar = U_bar - Um_bar
+	
+	def minmod(a):
+		# Take a collection of triplets a[ne,3,ns] and returns the smallest
+		# magnitude entry within each triplet if signs same, else zero.
+		# May shadow another `minmod`.
+		return np.where( # signs equal among triplet of values in 1D element
+			(np.sign(a[:, 0, :]) == np.sign(a[:, 1, :])) & 
+ 			(np.sign(a[:, 0, :]) == np.sign(a[:, 2, :])), # take smallest-sized value
+			np.sign(a[:, 0, :]) * np.abs(a).min(axis=1), 0.0)
+	
+	# Package triplet of value for each element, :, state
+	aj = np.zeros([U_tilde.shape[0], 3, ns])
+	aj[:, 0, :] = U_tilde[:, 0, :]			# Right-face excess w.r.t. elt mean
+	aj[:, 1, :] = deltaP_u_bar[:, 0, :] # Up_bar - U_bar with padded axis 1
+	aj[:, 2, :] = deltaM_u_bar[:, 0, :] # U_bar - Um_bar with padded axis 1
+	# Use modified u tilde where u tilde is too large
+	u_tilde_mod = np.where(np.abs(U_tilde[:, 0, :]) 
+		<= tvb_param * limiter.elem_vols[0]**2,
+		U_tilde[:, 0, :],
+		minmod(aj))
+	# Repeat for each left face
+	aj[:, 0, :] = U_dtilde[:, 0, :]     # Elt mean excess w.r.t. left face
+	u_dtilde_mod = np.where(np.abs(U_dtilde[:, 0, :]) 
+		<= tvb_param * limiter.elem_vols[0]**2,
+		U_dtilde[:, 0, :],
+		minmod(aj))
+
+	# Shape padding for axis 1
+	u_tilde_mod = np.expand_dims(u_tilde_mod,axis=1)
+	u_dtilde_mod = np.expand_dims(u_dtilde_mod,axis=1)
+
+	check1 = u_tilde_mod - U_tilde
+	check2 = u_dtilde_mod - U_dtilde
+
+	# Select troubled elements based on indicator variables
+	shock_elems = np.where((np.abs(check1[:,:,0]) > 1.e-12)
+			| (np.abs(check2[:,:,0]) > 1.e-12)
+			| (np.abs(check1[:,:,1]) > 1.e-12)
+			| (np.abs(check2[:,:,1]) > 1.e-12)
+			| (np.abs(check1[:,:,2]) > 1.e-12)
+			| (np.abs(check2[:,:,2]) > 1.e-12)
+			# | (np.abs(check1[:,:,4]) > 1.e-12)
+			# | (np.abs(check2[:,:,4]) > 1.e-12)
+	)[0]
+
+	assert(len(shock_elems) == len(list(set(shock_elems))))
 
 	# print(shock_elems)
 	return shock_elems
