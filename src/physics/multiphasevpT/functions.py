@@ -2312,7 +2312,8 @@ class FrictionVolFracVariableMu(SourceBase):
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
 		log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
 		meltVisc = 10**log10_vis
-		meltVisc[(1 - phiM) > self.crit_volfrac] = 0
+		limit = np.max(abs(meltVisc))
+		meltVisc[(1 - phiM) > self.crit_volfrac] = limit
 		
 		### calculating relative viscosity due to crystals
 		### Costa 2005b
