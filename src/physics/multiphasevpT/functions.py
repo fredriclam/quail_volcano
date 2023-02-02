@@ -2338,7 +2338,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		
 		#viscosity = 4.386e5 * crysVisc
 		viscosity = meltVisc * crysVisc
-		viscosity[(1 - phiM) > self.crit_volfrac] = 0
+		#viscosity[(1 - phiM) > self.crit_volfrac] = 0
 		
 		#fix = np.max(viscosity)
 		#viscosity[phi > self.crit_volfrac] = fix
