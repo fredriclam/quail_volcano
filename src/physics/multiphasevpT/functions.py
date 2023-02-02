@@ -2352,21 +2352,24 @@ class FrictionVolFracVariableMu(SourceBase):
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
 											f"{physics.NDIMS} spatial dimensions.")
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
+		#iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		#	physics.get_state_indices()
 
 		''' Compute mixture density, u, friction coefficient '''
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
 		mu = self.compute_viscosity(Uq, physics)
 		fric_coeff = 8.0 * mu / self.conduit_radius**2.0
-		''' Compute indicator based on magma porosity '''
-		#I = self.compute_indicator( \
-		#	physics.compute_additional_variable("phi", Uq, True))
+		''' Compute indicator based on proportion of fragmented phase '''
+		slarhoFm = physics.get_state_slice("pDensityFm")
+		slarhoM = physics.get_state_slice("pDensityM")
+		arhoFm = Uq[:,:,slarhoFm]
+		arhoM = Uq[:,:,slarhoM]
+		I = np.clip(1 - arhoFm / arhoM, 0, 1)
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-		S[:, :, physics.get_momentum_slice()] = -fric_coeff * u
-		S[:, :, physics.get_state_slice("Energy")] = -fric_coeff * u**2.0
+		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
+		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
 		return S
 
 	def get_phi_gradient():
