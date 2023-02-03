@@ -2303,6 +2303,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
 		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		arhoFm  = Uq[:, :, iarhoFm:iarhoFm+1]
 		
 		arhoWd = arhoWt - arhoWv
 		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
@@ -2311,10 +2312,10 @@ class FrictionVolFracVariableMu(SourceBase):
 		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		log10_vis[arhoM - arhoFm < 0] = 0 # turning off friction above fragmentation
 		meltVisc = 10**log10_vis
 		limit = np.max(abs(meltVisc))
-		meltVisc[(1 - phiM) > self.crit_volfrac] = limit
+		meltVisc[arhoM - arhoFm < 0] = limit
 		
 		### calculating relative viscosity due to crystals
 		### Costa 2005b
