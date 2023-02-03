@@ -2258,7 +2258,7 @@ class CylindricalGeometricSource(SourceBase):
 		# Set source term equal to -1/r times the radial flux due to advection
 		return -r_inv * F_r
 
-class FrictionVolFracVariableMu_smooth(SourceBase):
+class FrictionVolFracVariableMu(SourceBase):
 	'''
 	Friction term for a volume fraction fragmentation criterion, equipped with a
 	variable viscosity depending on crystal and dissolved water content.
@@ -2434,7 +2434,7 @@ class FrictionVolFracVariableMu_smooth(SourceBase):
 		return friction_jacobian + np.einsum('lmi, lmj -> lmij',
 			friction_vec, indicator_jacobian)
 
-class FrictionVolFracVariableMu(SourceBase):
+class FrictionVolFracVariableMu_SHARP(SourceBase):
 	'''
 	Friction term for a volume fraction fragmentation criterion, equipped with a
 	variable viscosity depending on crystal and dissolved water content.
