@@ -2258,7 +2258,7 @@ class CylindricalGeometricSource(SourceBase):
 		# Set source term equal to -1/r times the radial flux due to advection
 		return -r_inv * F_r
 
-class FrictionVolFracVariableMu(SourceBase):
+class FrictionVolFracVariableMu_smooth(SourceBase):
 	'''
 	Friction term for a volume fraction fragmentation criterion, equipped with a
 	variable viscosity depending on crystal and dissolved water content.
@@ -2303,7 +2303,6 @@ class FrictionVolFracVariableMu(SourceBase):
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
 		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
-		arhoFm  = Uq[:, :, iarhoFm:iarhoFm+1]
 		
 		arhoWd = arhoWt - arhoWv
 		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
@@ -2312,10 +2311,10 @@ class FrictionVolFracVariableMu(SourceBase):
 		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		log10_vis[arhoM - arhoFm < 0] = 0 # turning off friction above fragmentation
+		log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
 		meltVisc = 10**log10_vis
 		limit = np.max(abs(meltVisc))
-		meltVisc[arhoM - arhoFm < 0] = limit
+		meltVisc[(1 - phiM) > self.crit_volfrac] = limit
 		
 		### calculating relative viscosity due to crystals
 		### Costa 2005b
@@ -2435,7 +2434,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		return friction_jacobian + np.einsum('lmi, lmj -> lmij',
 			friction_vec, indicator_jacobian)
 
-class FrictionVolFracVariableMu_SHARP(SourceBase):
+class FrictionVolFracVariableMu(SourceBase):
 	'''
 	Friction term for a volume fraction fragmentation criterion, equipped with a
 	variable viscosity depending on crystal and dissolved water content.
@@ -2915,8 +2914,7 @@ class FragmentationTimescaleSource(SourceBase):
 
   def get_is_fragmenting(self, physics, arhoVec, T):
       ''' Check volume fraction condition. '''
-      gas_volfrac = atomics.gas_volfrac(arhoVec, T, physics)
-      return ((1 - atomics.volfrac_magma(gas_volfrac)) > self.crit_volfrac).astype(float)
+      return (atomics.gas_volfrac(arhoVec, T, physics) > self.crit_volfrac).astype(float)
 
   def get_source(self, physics, Uq, x, t):
     S = np.zeros_like(Uq)
