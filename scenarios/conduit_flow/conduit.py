@@ -2,15 +2,15 @@ import numpy as np
 from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 Restart = {
-	"File" : "conduitSteadyState_final.pkl",
-	"StartFromFileTime" : True,
+	"File" : "steadyState_3m_sherlock_r4/conduit_519.pkl",
+	"StartFromFileTime" : False,
 }
 
 # Set timestepper
 TimeStepping = {
-	"InitialTime" : 2.50,
+	"InitialTime" : 0.0,
 	"FinalTime" : 5.0,
-	"NumTimeSteps" : 25000,
+	"NumTimeSteps" : 100000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -46,9 +46,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "conduit",
+	"Prefix" : "steadyState_smoothing/conduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 200,
+	"WriteInterval" : 800,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -58,8 +58,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 600, 
-    "xmin" : -3000.0,
+    "NumElemsX" : 2000, 
+    "xmin" : -6000.0,
     "xmax" : 0.0,
 }
 
@@ -77,22 +77,22 @@ InitialCondition = {
   # The following are optional parameters. If not provided, the default args
   # are used.
   # Left side values
-  "arhoAL": 1e-1,
-  "arhoWvL": 8.686,
-  "arhoML": 2496.3,
-  "uL": 0.,
-  "TL": 1000.,
-  "arhoWtL": 10.0,
-  "arhoCL": 100.0, 
-  # Right side values
-  "arhoAR": 1.161,
-  "arhoWvR": 1.161*5e-3,
-  "arhoMR": 1e-6,
-  "uR": 0.,
-  "TR": 300.,
-  "arhoWtR": 1.161*5e-3,
-  "arhoCR": 1e-6,
-  "xd": -600.0, # Position of the discontinuity
+  #"arhoAL": 1e-1,
+  #"arhoWvL": 8.686,
+  #"arhoML": 2496.3,
+  #"uL": 0.,
+  #"TL": 1000.,
+  #"arhoWtL": 10.0,
+  #"arhoCL": 100.0, 
+  ## Right side values
+  #"arhoAR": 1.161,
+  #"arhoWvR": 1.161*5e-3,
+  #"arhoMR": 1e-6,
+  #"uR": 0.,
+  #"TR": 300.,
+  #"arhoWtR": 1.161*5e-3,
+  #"arhoCR": 1e-6,
+  #"xd": -600.0, # Position of the discontinuity
 }
 
 # Define the hydrostatic steady-state solver that operates on the initial
@@ -149,6 +149,11 @@ SourceTerms = {
       "source_treatment" : "Implicit",
       "tau_d": 1.0,
   },
+  "source4": {
+      "Function": "FragmentationTimescaleSource",
+      "source_treatment" : "Explicit",
+      "tau_f": 1.0,
+  },
 }
 
 # Fake exact solution
@@ -158,7 +163,10 @@ BoundaryConditions = {
     # The leftmost boundary
     "x1" : {
       # To be replaced by an exit pressure boundary condition
-      "BCType" : "SlipWall"
+      "BCType" : "MassFluxInlet1D",
+      "mass_flux" : 2700,
+      "p_chamber" : 2e8,
+      "T_chamber" : 1000,
       # To use multiple domains (for parallelism), the below can be uncommented
       # and bkey set to a name that is known to this solver and a linked solver.
       # See LinkedSolvers below for parallelism

@@ -1,8 +1,8 @@
 import numpy as np
 
 Restart = {
-    "File" : "atm2SteadyState_final.pkl",
-    "StartFromFileTime" : True,
+    "File" : "steadyState_3m_sherlock_r4/atm2_519.pkl",
+    "StartFromFileTime" : False,
 }
 
 Numerics = {
@@ -25,8 +25,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "atm2SteadyState",
-	"WriteInterval" : 200,
+	"Prefix" : "steadyState_smoothing/atm2",
+	"WriteInterval" : 800,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
