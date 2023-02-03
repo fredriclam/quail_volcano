@@ -79,14 +79,16 @@ InitialCondition = {
   "TL": 1000.,
   "arhoWtL": 75.0,
   "arhoCL": 1.05e3, 
+  "arhoFmL": 5e-5,
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
-  "arhoMR": 1e-6,
+  "arhoMR": 1e-5,
   "uR": 0.,
   "TR": 300.,
   "arhoWtR": 1.161*5e-3,
   "arhoCR": 1e-6,
+  "arhoFmR": 5e-5,
   "xd": -1500.0, # Position of the discontinuity
 }
 
@@ -144,6 +146,11 @@ SourceTerms = {
       "Function": "ExsolutionSource",
       "source_treatment" : "Implicit",
       "tau_d": 1.0,
+  },
+  "source4": {
+      "Function": "FragmentationTimescaleSource",
+      "source_treatment" : "Explicit",
+      "tau_f": 1.0,
   },
 }
 
