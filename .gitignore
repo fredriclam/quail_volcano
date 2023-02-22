@@ -69,3 +69,4 @@ test_case_[0-9]*.py
 scenarios/conduit_flow/exploration/
 scenarios/conduit_flow/steadyState_3m_sherlock_r3/
 scenarios/conduit_flow_segmented/sherlock_error/
+scenarios/conduit_flow_segmented/steadyState_smoothing/

@@ -1,8 +1,8 @@
 import numpy as np
 
 Restart = {
-    "File" : "steadyState_3m_sherlock_r4/atm2_519.pkl",
-    #"File" : "steadyState_smoothing/r3atm2_final.pkl",
+    #"File" : "steadyState_3m_sherlock_r4/atm2_519.pkl",
+    "File" : "steadyState_smoothing/r1atm2_final.pkl",
     "StartFromFileTime" : False,
 }
 
@@ -26,8 +26,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "steadyState_smoothing/r1atm2",
-	#"Prefix" : "injections/atm2",
+	#"Prefix" : "steadyState_smoothing/r1atm2",
+	"Prefix" : "injections/atm2",
 	"WriteInterval" : 800,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
