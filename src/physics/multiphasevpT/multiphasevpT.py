@@ -93,7 +93,7 @@ class MultiphasevpT(base.PhysicsBase):
 	def set_physical_params(self, 
 													Gas1={"R": 287., "gamma": 1.4},
 													Gas2={"R": 8.314/18.02e-3, "c_p": 2.288e3}, 
-													Liquid={"K": 10e9, "rho0": 2.5e3, "p0": 5e6,
+													Liquid={"K": 10e9, "rho0": 2.7e3, "p0": 5e6,
 																	"E_m0": 0, "c_m": 3e3},
 													Solubility={"k": 5e-6, "n": 0.5},
 													Viscosity={"mu0": 3e5},
@@ -460,6 +460,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
+			FcnType.SteadyState: mpvpT_fcns.SteadyState,
 		}
 
 		self.IC_fcn_map.update(d)

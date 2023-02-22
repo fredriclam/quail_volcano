@@ -200,11 +200,6 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 		# Calculate smoothness switch
 		f = norm_grad_p / (pressure + 1e-12)
 	elif physics.PHYSICS_TYPE == general.PhysicsType.MultiphasevpT:
-		# Compute pressure gradient
-		# grad_p = physics.compute_pressure_gradient(Uq, grad_Uq)
-		# norm_grad_p = np.linalg.norm(grad_p, axis=2)
-		# f = norm_grad_p / (pressure + 1e-12)
-
 		# U0 = Uq[:, :, 0]
 		# grad_U0 = grad_Uq[:, :, 0]
 		# norm_grad_U0 = np.linalg.norm(grad_U0, axis = 2)
@@ -218,9 +213,20 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 		# f =  0*norm_grad_U0 / (U0 + 1e-12) \
 		# 	 + np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12)
 
-		# Turns out the first solution variable (low amount of air) is the one that needs limiting
+		# Empirically the first solution variable (low amount of air) needs limiting
+		# f =  np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12) \
+			#  + np.linalg.norm(physics.compute_pressure_gradient(Uq, grad_Uq), axis=2) / (pressure + 1e-12)
+		# Hydrostatic-relative limiting
+		pgrad = physics.compute_pressure_gradient(Uq, grad_Uq)
+		# pgrad[...,-1] += 9.8 * Uq[:, :, physics.get_mass_slice()].sum(axis=2)
 		f =  np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12) \
-			 + np.linalg.norm(physics.compute_pressure_gradient(Uq, grad_Uq), axis=2) / (pressure + 1e-12)
+			 + np.linalg.norm(pgrad, axis=2) / (pressure + 1e-12)
+		
+		# f =  np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12) \
+		# 	 + np.linalg.norm(grad_Uq[:, :, 1], axis=2) / (Uq[:, :, 1] + 1e-12) \
+		# 	 + np.linalg.norm(grad_Uq[:, :, 2], axis=2) / (Uq[:, :, 2] + 1e-12) \
+		# 	 + np.linalg.norm(grad_Uq[:, :, 3], axis=2) / (Uq[:, :, 3] + 1e-12) \
+		# 	 + np.linalg.norm(physics.compute_pressure_gradient(Uq, grad_Uq), axis=2) / (pressure + 1e-12)
 
 	# For everything else, use the first solution variable
 	else:
@@ -244,7 +250,7 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 	h = np.empty_like(s)
 	# Loop over dimensions
 	for k in range(ndims):
-		h[:, k] = s[:, k] * (vol_elems / np.prod(s, axis=1))**(1/3)
+		h[:, k] = s[:, k] * (vol_elems / np.prod(s, axis=1))**(1/3) # TODO: Check 1/3 for ndims == 2. For ndims == 1, s==2V/2==V so pow (1/3) does nothing
 	# Scale with polynomial order
 	h_tilde = h / (p + 1)
 	# Compute dissipation scaling

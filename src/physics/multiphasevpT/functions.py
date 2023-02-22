@@ -35,6 +35,8 @@ import logging
 from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
 				SourceBase, ConvNumFluxBase)
 import physics.multiphasevpT.atomics as atomics
+import physics.multiphasevpT.conduit_ss as conduit_ss
+import physics.multiphasevpT.conduit_ss.steady_state
 
 from dataclasses import dataclass
 import copy
@@ -51,6 +53,7 @@ class FcnType(Enum):
 	IsothermalAtmosphere = auto()
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
+	SteadyState = auto()
 	NohProblem = auto()
 
 
@@ -292,6 +295,45 @@ class RightTravelingGaussian(FcnBase):
 		# Set all tracer quantities to zero
 		U[...,5:] = 0
 		return U # [ne, nq, ns]
+
+class SteadyState(FcnBase):
+	''' 1D steady state. Calls submodule conduit-ss
+	  (https://github.com/fredriclam/conduit-ss).
+	'''
+	def __init__(self, p_vent:float=1e5, inlet_input_val=1.0, input_type="u",
+	  yC=0.0, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, crit_volfrac=0.7,
+		tau_d=1.0, mu=5e2, conduit_radius=50, conduit_length=4000,
+		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3,
+		K_magma=10e9, p0_magma=10e6, solubility_k=5e-6, solubility_n=0.5):
+		'''
+		Interface to conduit_ss.SteadyState.
+		'''
+		props = {
+				"yC": yC,
+				"yWt": yWt,
+				"yA": yA,
+				"yWvInletMin": yWvInletMin,
+				"crit_volfrac": crit_volfrac,
+				"tau_d": tau_d,
+				"mu": mu,
+				"conduit_radius": conduit_radius,
+				"conduit_length": conduit_length,
+				"T_chamber": T_chamber,
+				"c_v_magma": c_v_magma,
+				"rho0_magma": rho0_magma,
+				"K_magma": K_magma,
+				"p0_magma": p0_magma,
+				"solubility_k": solubility_k,
+				"solubility_n": solubility_n,
+		}
+		self.f = conduit_ss.steady_state.SteadyState(p_vent,inlet_input_val,
+		  input_type=input_type, # "u", "j", "p" as specified input
+		  override_properties=props)
+
+	def get_state(self, physics, x, t):
+		# Map to unique x
+		unique_x = np.unique(x)
+		return self.f(np.unique(x))
 
 class UniformExsolutionTest(FcnBase):
 	'''
@@ -2083,14 +2125,94 @@ class MassFluxInlet1D(BCWeakPrescribed):
 
 	'''
 	def __init__(self, mass_flux:float=20e3, p_chamber:float=100e6,
-			T_chamber:float=1e3, newton_tol:float=1e-7, newton_iter_max=20):
-		self.mass_flux, self.p_chamber, self.T_chamber, self.newton_tol, \
-			self.newton_iter_max = \
-			mass_flux, p_chamber, T_chamber, newton_tol, newton_iter_max
+			T_chamber:float=1e3, trace_arho:float=1e-6, yWt:float=0.04, yC:float=0.1,
+			use_linearized:bool=True, newton_tol:float=1e-7, newton_iter_max=20):
+		# Ingest args
+		self.mass_flux, self.p_chamber, self.T_chamber, self.trace_arho = \
+			mass_flux, p_chamber, T_chamber, trace_arho
+		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max = \
+			yWt, yC, use_linearized, newton_tol, newton_iter_max
+
+	def get_linearized_boundary_state(self, physics, UqI, normals, x, t):
+		''' Compute a boundary state by replacing Riemann problem with acoustic
+		waves, and then approximating the acoustic wave. '''
+		UqB = UqI.copy()
+		''' Check validity of flow state, check number of boundary points. '''
+		if UqI.shape[0] * UqI.shape[1] > 1:
+			raise NotImplementedError('''Not implemented: for-loop over more than one
+				inflow boundary point.''')
+
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to outgoing acoustic waves) of the interior
+		solution. '''
+		# Extract data from node values
+		arhoVecI = UqI[:,:,physics.get_mass_slice()]
+		momxI = UqI[...,physics.get_momentum_slice()]
+		eI = UqI[...,physics.get_state_slice("Energy")]
+		# Extract specified mass flux and prescribed chamber/reservoir values
+		j, p_chamber, T_chamber = self.mass_flux, self.p_chamber, self.T_chamber
+		# Extract material properties
+		K, rho0, p0 = \
+			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
+		# Approximate desired mass flux
+		u = j / rho0
+		
+		# Compute grid primitives
+		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
+		gas_volfrac = atomics.gas_volfrac(arhoVecI, TGrid, physics)
+		pGrid = atomics.pressure(arhoVecI, TGrid, gas_volfrac, physics)
+		rhoGrid = atomics.rho(arhoVecI)
+		GammaGrid = atomics.Gamma(arhoVecI, physics)
+		cGrid = atomics.sound_speed(GammaGrid, pGrid, rhoGrid, gas_volfrac, physics)
+		uGrid = momxI / rhoGrid
+		# Compute composition-based properties
+		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
+			# Outflow
+			Gamma = atomics.Gamma(arhoVecI, physics)
+			y = atomics.massfrac(arhoVecI)
+			S = TGrid / pGrid**((Gamma-1)/Gamma)
+		else:
+			# Inflow
+			arhoVecB = arhoVecI.copy()
+			arhoVecB[...,0] = 1e-6 # Small amount of air to prevent oscillations
+			arhoVecB[...,1] = 1e-6 # Small amount of water to prevent oscillations
+			# Approximate partial density of magma by density
+			arhoVecB[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+			Gamma = atomics.Gamma(arhoVecB, physics)
+			y = atomics.massfrac(arhoVecB)
+			S = T_chamber / p_chamber**((Gamma-1)/Gamma)
+
+		# Specific gas constant for R
+		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
+		# Evaluate primitive variables for boundary state
+		p = pGrid - (rhoGrid * cGrid) * (uGrid - u)
+		T = S * p**((Gamma-1)/Gamma)
+		rho = atomics.mixture_density(y, p, T, physics)
+
+		''' Check positivity of computed state. '''
+		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
+			raise errors.NotPhysicalError
+
+		''' Map to conservative variables '''
+		UqB[:,:,physics.get_mass_slice()] = rho * y
+		UqB[:,:,physics.get_momentum_slice()] = rho0 * u
+		UqB[:,:,physics.get_state_slice("Energy")] = \
+			atomics.c_v(rho * y, physics) * T \
+			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
+			+ 0.5 * rho0 * u * u
+		# Update adiabatically compressed/expanded tracer partial densities
+		UqB[:,:,5:6] = self.yWt * rho
+		UqB[:,:,6:7] = self.yC * rho
+		# UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+
+		return UqB
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		''' Computes the boundary state that satisfies the pressure BC strongly. '''
 
+		if self.use_linearized:
+			# Delegate to linearized
+			return self.get_linearized_boundary_state(physics, UqI, normals, x, t)
 		UqB = UqI.copy()
 		''' Check validity of flow state, check number of boundary points. '''
 		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
@@ -2293,44 +2415,68 @@ class FrictionVolFracVariableMu(SourceBase):
 		''' calculates the viscosity at each depth point as function of dissolved
 		water and crystal content (assumes crystal phase is incompressible)
 		'''
-		### calculating viscosity of melt without crystals
+		# ### calculating viscosity of melt without crystals
+		# temp = physics.compute_additional_variable("Temperature", Uq, True)
+		# phi = physics.compute_additional_variable("phi", Uq, True)
+		# iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
+		# arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
+		# arhoM  = Uq[:, :, iarhoM:iarhoM+1]
+		# arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
+		# arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		
+		# arhoWd = arhoWt - arhoWv
+		# arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
+		# mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
+		# log_mfWd = np.log(mfWd*100)
+		
+		# log10_vis = -3.545 + 0.833 * log_mfWd
+		# log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
+		# log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		# meltVisc = 10**log10_vis
+		# meltVisc[phi > self.crit_volfrac] = 0
+		
+		# ### calculating relative viscosity due to crystals
+		# alpha = 0.9995
+		# phi_cr = 0.409
+		# gamma = 4.214
+		# delta = 1.149
+		# B = 2.5
+		# rhoC = 2700 # kg/m^3 density of crystal phase
+		# crysVolFrac_suspension = arhoC / (rhoC * (1 - phi)) # crystal vol frac of magma
+		
+		# phi_ratio = crysVolFrac_suspension / phi_cr
+		# AA = np.sqrt(np.pi) / (2 * alpha)
+		# erf = sp.erf(AA * phi_ratio * (1 + phi_ratio**gamma))
+		
+		# num = 1 + phi_ratio**delta
+		# denom = (1 - alpha * erf)**(-B * phi_cr)
+		# crysVisc = num * denom
+		
+		# viscosity = meltVisc * crysVisc
+		# viscosity[phi > self.crit_volfrac] = 0
+		# return viscosity
+
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
 		phi = physics.compute_additional_variable("phi", Uq, True)
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, _ = physics.get_state_indices()
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
 		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
-		
 		arhoWd = arhoWt - arhoWv
 		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
 		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
 		log_mfWd = np.log(mfWd*100)
-		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
 		log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
-		meltVisc = 10**log10_vis
-		meltVisc[phi > self.crit_volfrac] = 0
-		
-		### calculating relative viscosity due to crystals
-		alpha = 0.9995
-		phi_cr = 0.409
-		gamma = 4.214
-		delta = 1.149
-		B = 2.5
-		rhoC = 2700 # kg/m^3 density of crystal phase
-		crysVolFrac_suspension = arhoC / (rhoC * (1 - phi)) # crystal vol frac of magma
-		
-		phi_ratio = crysVolFrac_suspension / phi_cr
-		AA = np.sqrt(np.pi) / (2 * alpha)
-		erf = sp.erf(AA * phi_ratio * (1 + phi_ratio**gamma))
-		
-		num = 1 + phi_ratio**delta
-		denom = (1 - alpha * erf)**(-B * phi_cr)
-		crysVisc = num * denom
-		
-		viscosity = meltVisc * crysVisc
+		#fix = np.max(log10_vis)
+		#log10_vis[phi > self.crit_volfrac] = fix # XXX adhoc fix for above fragmentation
+		#print(log10_vis[phi > self.crit_volfrac]) #viscosity = 10**log10_vis
+		viscosity = 10**log10_vis
+		# TEST
+		# viscosity[:] = 1.55e7
+		# ENDTEST
 		viscosity[phi > self.crit_volfrac] = 0
 		return viscosity
 
@@ -2845,6 +2991,10 @@ class LaxFriedrichs1D(ConvNumFluxBase):
 		wR = np.empty(u2R.shape + (1,))
 		wL[:, :, 0] = np.sqrt(u2L) + aL
 		wR[:, :, 0] = np.sqrt(u2R) + aR
+		# Fixed sound speed upper # TODO: debug #HACK
+		# wL[:, :, 0] = np.sqrt(u2L) + 1924.5008972987525
+		# wR[:, :, 0] = np.sqrt(u2R) + 1924.5008972987525
+		
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)

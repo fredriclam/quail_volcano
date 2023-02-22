@@ -1,0 +1,3 @@
+[submodule "compressible-conduit-steady"]
+	path = compressible-conduit-steady
+	url = https://github.com/fredriclam/compressible-conduit-steady
