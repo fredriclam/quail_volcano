@@ -2,7 +2,8 @@ import numpy as np
 from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 Restart = {
-	"File" : "steadyState_3m_sherlock_r4/conduit_519.pkl",
+	#"File" : "steadyState_3m_sherlock_r4/conduit_519.pkl",
+	"File" : "steadyState_smoothing/r3conduit_final.pkl",
 	"StartFromFileTime" : False,
 }
 
@@ -46,7 +47,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_smoothing/conduit",
+	#"Prefix" : "steadyState_smoothing/r3conduit",
+	"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 800,
 	"WriteInitialSolution" : True,
