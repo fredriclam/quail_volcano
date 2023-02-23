@@ -469,6 +469,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		self.source_map.update({
 			# SourceType.Exsolution: mpvpT_fcns.Exsolution,
 			SourceType.FrictionVolFracVariableMu: mpvpT_fcns.FrictionVolFracVariableMu,
+			SourceType.FrictionVolFracVariableMu_SHARP: mpvpT_fcns.FrictionVolFracVariableMu_SHARP,
 			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,

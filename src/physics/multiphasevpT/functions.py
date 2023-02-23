@@ -84,6 +84,7 @@ class SourceType(Enum):
 	source terms are specific to the available equation sets.
 	'''
 	FrictionVolFracVariableMu = auto()
+	FrictionVolFracVariableMu_SHARP = auto()
 	FrictionVolFracConstMu = auto()
 	GravitySource = auto()
 	ExsolutionSource = auto()
