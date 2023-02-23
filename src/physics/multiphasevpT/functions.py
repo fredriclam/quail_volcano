@@ -2164,10 +2164,10 @@ class MassFluxInlet1D(BCWeakPrescribed):
 			+ 0.5 * j * u
 		# Update adiabatically compressed/expanded tracer partial densities
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
-		phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * 0.25 * t)) # crystal vol / suspension vol
-		chi_water = 0.05055
-		UqB[:,:,5] = rho * chi_water * (1 - phi_crys) / (1 + chi_water)
-		UqB[:,:,6] = rho * phi_crys
+		#phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * 0.25 * t)) # crystal vol / suspension vol
+		#chi_water = 0.05055
+		#UqB[:,:,5] = rho * chi_water * (1 - phi_crys) / (1 + chi_water)
+		#UqB[:,:,6] = rho * phi_crys
 
 		return UqB
 
