@@ -35,8 +35,7 @@ import logging
 from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
 				SourceBase, ConvNumFluxBase)
 import physics.multiphasevpT.atomics as atomics
-import physics.multiphasevpT.conduit_ss as conduit_ss
-import physics.multiphasevpT.conduit_ss.steady_state
+import compressible_conduit_steady.steady_state as plugin_steady_state
 
 from dataclasses import dataclass
 import copy
@@ -301,18 +300,20 @@ class SteadyState(FcnBase):
 	  (https://github.com/fredriclam/conduit-ss).
 	'''
 	def __init__(self, p_vent:float=1e5, inlet_input_val=1.0, input_type="u",
-	  yC=0.0, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, crit_volfrac=0.7,
-		tau_d=1.0, mu=5e2, conduit_radius=50, conduit_length=4000,
+	  yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5, crit_volfrac=0.7,
+		tau_d=1.0, mu=1e5, conduit_radius=50, conduit_length=4000,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3,
-		K_magma=10e9, p0_magma=10e6, solubility_k=5e-6, solubility_n=0.5):
+		K_magma=10e9, p0_magma=10e6, solubility_k=5e-6, solubility_n=0.5,
+		NumElems=200):
 		'''
-		Interface to conduit_ss.SteadyState.
+		Interface to compressible_conduit_steady.SteadyState.
 		'''
 		props = {
 				"yC": yC,
 				"yWt": yWt,
 				"yA": yA,
 				"yWvInletMin": yWvInletMin,
+				"yCMin": yCMin,
 				"crit_volfrac": crit_volfrac,
 				"tau_d": tau_d,
 				"mu": mu,
@@ -325,15 +326,24 @@ class SteadyState(FcnBase):
 				"p0_magma": p0_magma,
 				"solubility_k": solubility_k,
 				"solubility_n": solubility_n,
+				"NumElems": NumElems,
 		}
-		self.f = conduit_ss.steady_state.SteadyState(p_vent,inlet_input_val,
+		self.f = plugin_steady_state.SteadyState(p_vent,inlet_input_val,
 		  input_type=input_type, # "u", "j", "p" as specified input
 		  override_properties=props)
 
 	def get_state(self, physics, x, t):
-		# Map to unique x
+		# Map to unique x, 1d array
 		unique_x = np.unique(x)
-		return self.f(np.unique(x))
+		unique_U = self.f(np.unique(x))
+		# Associative map from value of x to state vector U
+		vals = {x: unique_U[i,:] for i,x in enumerate(unique_x)}
+		# Fill initial condition state coefficient vector
+		U = np.zeros((*x.shape[:-1],8))
+		for i in range(U.shape[0]):
+			for j in range(U.shape[1]):
+				U[i,j,:] = vals[x[i,j,0]]
+		return U
 
 class UniformExsolutionTest(FcnBase):
 	'''
@@ -2761,34 +2771,54 @@ class ExsolutionSource(SourceBase):
 			# Extract variables
 			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 				physics.get_state_indices()
+			slarhoA = physics.get_state_slice("pDensityA")
 			slarhoWv = physics.get_state_slice("pDensityWv")
 			slarhoM = physics.get_state_slice("pDensityM")
 			slarhoWt = physics.get_state_slice("pDensityWt")
 			slarhoC = physics.get_state_slice("pDensityC")
+			arhoA = Uq[:, :, slarhoA]
 			arhoWv = Uq[:, :, slarhoWv]
 			arhoM = Uq[:, :, slarhoM]
 			arhoWt = Uq[:, :, slarhoWt]
 			arhoC = Uq[:, :, slarhoC]
 			p = physics.compute_additional_variable("Pressure", Uq, True)
 			
+			# Corrected source term (vapour difference)
 			eq_conc = ExsolutionSource.get_eq_conc(physics, p)
-			S_scalar = (1.0/self.tau_d) * (
-				(1.0+eq_conc) * arhoWt 
-				- (1.0+eq_conc) * arhoWv
-				- eq_conc * (arhoM-arhoC)) # arhoM - arhoC: melt with dissolved water
+			# Mixture density
+			rho = Uq[:, :, physics.get_mass_slice()].sum(axis=-1, keepdims=True)
+			yWt, yA, yC = arhoWt / rho, arhoA / rho, arhoC / rho
+			yL = 1.0 - yWt - yA - yC
+			# Clipped target vapour mass fraction
+			yWvTarget = np.clip(
+				yWt - yL * ExsolutionSource.get_eq_conc(physics, p),
+				1e-7, 1.0)
+			S_scalar = (1.0/self.tau_d) * rho * (
+				yWvTarget - arhoWv/rho
+			)
+
+			# # Legacy 
+			# eq_conc = ExsolutionSource.get_eq_conc(physics, p)
+			# S_scalar = (1.0/self.tau_d) * (
+			# 	(1.0+eq_conc) * arhoWt 
+			# 	- (1.0+eq_conc) * arhoWv
+			# 	- eq_conc * (arhoM-arhoC)) # arhoM - arhoC: melt with dissolved water
+
 			# Replace limiting value for absent magma and absent water
 			S_scalar[np.where(np.logical_and(
 				arhoWt-arhoWv <= general.eps,
 				arhoM <= general.eps
 			))] = 0.0
-			# Switch-off of source term for zero exsolved water
-			# Set epsilon below which the source term is quadratic in arhoWv. Must be
-			# large enough to limit stiff sources.
-			quadr_eps = 1e-1
-			# Compute rate factor <= 1 that smoothly goes to zero when arhoWv goes to
-			# zero, but is 1 when arhoWv > quadr_eps
-			rateFactor = np.minimum(arhoWv, quadr_eps) / quadr_eps 
-			S_scalar *= rateFactor**2.0
+			
+			# # Legacy
+			# # Switch-off of source term for zero exsolved water
+			# # Set epsilon below which the source term is quadratic in arhoWv. Must be
+			# # large enough to limit stiff sources.
+			# quadr_eps = 1e-1
+			# # Compute rate factor <= 1 that smoothly goes to zero when arhoWv goes to
+			# # zero, but is 1 when arhoWv > quadr_eps
+			# rateFactor = np.minimum(arhoWv, quadr_eps) / quadr_eps 
+			# S_scalar *= rateFactor**2.0
 
 			S[:, :, slarhoWv] =  S_scalar
 			S[:, :, slarhoM]  = -S_scalar
