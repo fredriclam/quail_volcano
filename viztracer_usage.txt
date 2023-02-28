@@ -1,0 +1,3 @@
+python -m viztracer --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_dev\\src\\quail runmushroom.py
+
+python -m viztracer --generate_flamegraph result.json
