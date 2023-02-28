@@ -301,9 +301,9 @@ class SteadyState(FcnBase):
 	'''
 	def __init__(self, p_vent:float=1e5, inlet_input_val=1.0, input_type="u",
 	  yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5, crit_volfrac=0.7,
-		tau_d=1.0, mu=1e5, conduit_radius=50, conduit_length=4000,
+		tau_d=1.0, tau_f=1.0, conduit_radius=50, conduit_length=4000,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3,
-		K_magma=10e9, p0_magma=10e6, solubility_k=5e-6, solubility_n=0.5,
+		K_magma=10e9, p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
 		NumElems=200):
 		'''
 		Interface to compressible_conduit_steady.SteadyState.
@@ -316,7 +316,7 @@ class SteadyState(FcnBase):
 				"yCMin": yCMin,
 				"crit_volfrac": crit_volfrac,
 				"tau_d": tau_d,
-				"mu": mu,
+				"tau_f": tau_f,
 				"conduit_radius": conduit_radius,
 				"conduit_length": conduit_length,
 				"T_chamber": T_chamber,
@@ -2425,69 +2425,55 @@ class FrictionVolFracVariableMu(SourceBase):
 		''' calculates the viscosity at each depth point as function of dissolved
 		water and crystal content (assumes crystal phase is incompressible)
 		'''
-		# ### calculating viscosity of melt without crystals
-		# temp = physics.compute_additional_variable("Temperature", Uq, True)
-		# phi = physics.compute_additional_variable("phi", Uq, True)
-		# iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
-		# arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
-		# arhoM  = Uq[:, :, iarhoM:iarhoM+1]
-		# arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
-		# arhoC  = Uq[:, :, iarhoC:iarhoC+1]
-		
-		# arhoWd = arhoWt - arhoWv
-		# arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
-		# mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
-		# log_mfWd = np.log(mfWd*100)
-		
-		# log10_vis = -3.545 + 0.833 * log_mfWd
-		# log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		# log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
-		# meltVisc = 10**log10_vis
-		# meltVisc[phi > self.crit_volfrac] = 0
-		
-		# ### calculating relative viscosity due to crystals
-		# alpha = 0.9995
-		# phi_cr = 0.409
-		# gamma = 4.214
-		# delta = 1.149
-		# B = 2.5
-		# rhoC = 2700 # kg/m^3 density of crystal phase
-		# crysVolFrac_suspension = arhoC / (rhoC * (1 - phi)) # crystal vol frac of magma
-		
-		# phi_ratio = crysVolFrac_suspension / phi_cr
-		# AA = np.sqrt(np.pi) / (2 * alpha)
-		# erf = sp.erf(AA * phi_ratio * (1 + phi_ratio**gamma))
-		
-		# num = 1 + phi_ratio**delta
-		# denom = (1 - alpha * erf)**(-B * phi_cr)
-		# crysVisc = num * denom
-		
-		# viscosity = meltVisc * crysVisc
-		# viscosity[phi > self.crit_volfrac] = 0
-		# return viscosity
-
+		### calculating viscosity of melt without crystals
+		### Hess & Dingwell 1996
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
-		phi = physics.compute_additional_variable("phi", Uq, True)
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, _ = physics.get_state_indices()
+		phiM = physics.compute_additional_variable("volFracM", Uq, True)
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
 		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		
 		arhoWd = arhoWt - arhoWv
 		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
 		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
 		log_mfWd = np.log(mfWd*100)
+		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		log10_vis[phi > self.crit_volfrac] = 0 # turning off friction above fragmentation
-		#fix = np.max(log10_vis)
-		#log10_vis[phi > self.crit_volfrac] = fix # XXX adhoc fix for above fragmentation
-		#print(log10_vis[phi > self.crit_volfrac]) #viscosity = 10**log10_vis
-		viscosity = 10**log10_vis
-		# TEST
-		# viscosity[:] = 1.55e7
-		# ENDTEST
-		viscosity[phi > self.crit_volfrac] = 0
+		log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		meltVisc = 10**log10_vis
+		limit = np.max(abs(meltVisc))
+		meltVisc[(1 - phiM) > self.crit_volfrac] = limit
+		
+		### calculating relative viscosity due to crystals
+		### Costa 2005b
+		alpha = 0.999916
+		phi_cr = 0.673
+		gamma = 3.98937
+		delta = 16.9386
+		B = 2.5
+		#rhoC = arhoM / phiM #crystal phasic density set to magma phasic density
+		# since setting crystal phasic density equal to magma phasic density,
+		# crystal vol frac of magma is ratio of partial densities
+		# WILL NEED TO CHANGE IF CRYSTAL PHASIC DENSITY DIFFERS
+		crysVolFrac_suspension = arhoC / arhoM # crystal vol frac of magma
+		
+		phi_ratio = crysVolFrac_suspension / phi_cr
+		AA = np.sqrt(np.pi) / (2 * alpha)
+		erf = sp.erf(AA * phi_ratio * (1 + phi_ratio**gamma))
+		
+		num = 1 + phi_ratio**delta
+		denom = (1 - alpha * erf)**(-B * phi_cr)
+		crysVisc = num * denom
+		
+		#viscosity = 4.386e5 * crysVisc
+		viscosity = meltVisc * crysVisc
+		#viscosity[(1 - phiM) > self.crit_volfrac] = 0
+		
+		#fix = np.max(viscosity)
+		#viscosity[phi > self.crit_volfrac] = fix
 		return viscosity
 
 	def get_source(self, physics, Uq, x, t):
@@ -2499,21 +2485,24 @@ class FrictionVolFracVariableMu(SourceBase):
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
 											f"{physics.NDIMS} spatial dimensions.")
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
+		#iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		#	physics.get_state_indices()
 
 		''' Compute mixture density, u, friction coefficient '''
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
 		mu = self.compute_viscosity(Uq, physics)
 		fric_coeff = 8.0 * mu / self.conduit_radius**2.0
-		''' Compute indicator based on magma porosity '''
-		#I = self.compute_indicator( \
-		#	physics.compute_additional_variable("phi", Uq, True))
+		''' Compute indicator based on proportion of fragmented phase '''
+		slarhoFm = physics.get_state_slice("pDensityFm")
+		slarhoM = physics.get_state_slice("pDensityM")
+		arhoFm = Uq[:,:,slarhoFm]
+		arhoM = Uq[:,:,slarhoM]
+		I = np.clip(1 - arhoFm / arhoM, 0, 1)
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-		S[:, :, physics.get_momentum_slice()] = -fric_coeff * u
-		S[:, :, physics.get_state_slice("Energy")] = -fric_coeff * u**2.0
+		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
+		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
 		return S
 
 	def get_phi_gradient():
@@ -2895,9 +2884,9 @@ class FragmentationTimescaleSource(SourceBase):
   the fragmentation criterion is met.
   Dynamic parameters (tau_f) are attributes of this class.
   '''
-  def __init__(self, tau_f:float=1.0, **kwargs):
+  def __init__(self, tau_f:float=1.0, crit_volfrac:float=0.8, **kwargs):
     super().__init__(kwargs)
-    self.tau_f = tau_f; self.crit_volfrac = 0.8
+    self.tau_f, self.crit_volfrac = tau_f, crit_volfrac
 
   def get_is_fragmenting(self, physics, arhoVec, T):
       ''' Check volume fraction condition. '''
