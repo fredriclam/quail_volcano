@@ -1,11 +1,24 @@
 import numpy as np
 from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
+
+# Temporary, for testing fragmentation
+TimeStepping = {
+	"InitialTime" : 0.0,
+	"FinalTime" : 6*1, # 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
+	"NumTimeSteps" : 6*5000, # 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
+     # 100000 for generalB1, 400~K
+	"TimeStepper" : "FE",
+}
+
 Numerics = {
-    "SolutionOrder" : 0,
+    "SolutionOrder" : 2,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
+    # "ApplyLimiters" : ["WENO", "PositivityPreservingMultiphasevpT"],
+    # "ApplyLimiters" : ["WENO"],
+    # "ShockIndicator": "MinMod", "TVBParameter": 0.2,
     # "NodeType" : "Equidistant",
     "ElementQuadrature" : "GaussLegendre",
     "FaceQuadrature" : "GaussLegendre",
@@ -17,8 +30,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "tung3_conduit1",
-	"WriteInterval" : 400,
+	"Prefix" : "featuretest_conduit1",
+	"WriteInterval" : 200, # CHANGED
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -52,6 +65,11 @@ InitialCondition = {
     # "pR": 1e5,
     # arhoAL=1., arhoWvL=1., arhoML=2e5, uL=0., TL=1000., 
 	            #  arhoAR=10., arhoWvR=0., arhoMR=0.125, uR=0., TR=300., xd=0.)
+    "arhoAL": 1e-3, # 4wt%, 5 MPa water design
+    "arhoWvL": 9.474849008229967e+00,
+    "arhoML": 3.142648542057735e+02, # Near critical, plenty of initial exsolved
+	"TL": 1000.,
+    "arhoWtL": 1.294958812856014e+01,
 }
 
 # List of functions to inject in custom user function
@@ -81,17 +99,22 @@ SourceTerms = {
     "source2": {
         "Function": "FrictionVolFracConstMu",
         "source_treatment" : "Explicit",
+        "crit_volfrac": 0.6,
     },
     "source3": {
         "Function": "ExsolutionSource",
         "source_treatment" : "Explicit",
     },
+    "source4": {
+        "Function": "FragmentationTimescaleSource",
+        "source_treatment": "Explicit",
+    }
 }
 
 # Fake exact solution
 ExactSolution = InitialCondition.copy()
 
-extend_conduit = True
+extend_conduit = False # TODO: change back
 if extend_conduit:
     BoundaryConditions = {
         "x1" : {
@@ -116,7 +139,11 @@ else:
             "BCType" : "SlipWall",
         },
         "x2" : { 
-            "BCType" : "MultiphasevpT2D1D", # TODO: implement r-weighted integration
-            "bkey": "vent",
+            "BCType" : "SlipWall", # TODO: implement r-weighted integration (check)
+            # "bkey": "vent",
         },
+        # "x2" : { 
+        #     "BCType" : "MultiphasevpT2D1D", # TODO: implement r-weighted integration
+        #     "bkey": "vent",
+        # },
     }
