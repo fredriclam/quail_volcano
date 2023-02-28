@@ -2296,6 +2296,10 @@ class MassFluxInlet1D(BCWeakPrescribed):
 			+ 0.5 * j * u
 		# Update adiabatically compressed/expanded tracer partial densities
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+		#phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * 0.25 * t)) # crystal vol / suspension vol
+		#chi_water = 0.05055
+		#UqB[:,:,5] = rho * (1 - phi_crys) / (1 + chi_water)
+		#UqB[:,:,6] = rho * phi_crys
 
 		return UqB
 
@@ -2394,6 +2398,7 @@ class FrictionVolFracVariableMu(SourceBase):
 	'''
 	Friction term for a volume fraction fragmentation criterion, equipped with a
 	variable viscosity depending on crystal and dissolved water content.
+	WITH SMOOTHING
 
 	Attributes:
 	-----------
@@ -2527,6 +2532,181 @@ class FrictionVolFracVariableMu(SourceBase):
 		Evaluation and inversions of jacobians are likely to be a comp. bottleneck
 		(repeated construction for implicit source steps, followed by inversion).
 		'''
+		raise NotImplementedError(f"Gradient not implemented for variable viscosity.")
+
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
+
+		phi = physics.compute_additional_variable("phi", Uq, True)
+
+		''' Compute Jacobian of physical expression for friction, times I '''
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+		mu = self.compute_viscosity(Uq, physics)
+		fric_coeff = 8.0 * mu / self.conduit_radius**2.0		
+		friction_jacobian = np.zeros(
+			[Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+		# friction_jacobian[:, :, imom, physics.get_mass_slice()] = u / rho
+		# friction_jacobian[:, :, imom, imom] = -1.0 / rho
+		# friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2*u**2.0 / rho
+		# friction_jacobian[:, :, ie, ie] = -2.0 * u / rho
+		# Broadcasted multiplication
+		# friction_jacobian *= fric_coeff * self.compute_indicator( \
+		# 	physics.compute_additional_variable("phi", Uq, True))
+		''' Optimized construction '''
+		coeffinvrho = fric_coeff / rho * self.compute_indicator(phi)
+		coeffuinvrho = u * coeffinvrho
+		friction_jacobian[:, :, imom, physics.get_mass_slice()] = coeffuinvrho
+		friction_jacobian[:, :, imom, physics.get_momentum_slice()] = -coeffinvrho
+		friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2.0 * u * coeffuinvrho
+		friction_jacobian[:, :, ie, physics.get_momentum_slice()] = -2.0 * coeffuinvrho		
+
+		''' Compute Jacobian of indicator, times max amount of friction '''
+		friction_vec = self.get_source(physics, Uq, x, t)
+		indicator_jacobian = self.get_indicator_deriv(phi) \
+			* physics.compute_phi_sgradient(Uq)
+
+		''' Return product derivative '''
+		return friction_jacobian + np.einsum('lmi, lmj -> lmij',
+			friction_vec, indicator_jacobian)
+
+class FrictionVolFracVariableMu_SHARP(SourceBase):
+	'''
+	Friction term for a volume fraction fragmentation criterion, equipped with a
+	variable viscosity depending on crystal and dissolved water content.
+
+	Attributes:
+	-----------
+	conduit_radius: conduit radius used in Poiseuille approximation (units m)
+	crit_volfrac: critical volume fraction at which friction model transitions (-)
+	logistic_scale: scale of logistic function (-)
+	'''
+	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
+							 logistic_scale:float=0.004,**kwargs):
+		super().__init__(kwargs)
+		self.conduit_radius = conduit_radius
+		self.crit_volfrac = crit_volfrac
+		self.logistic_scale = logistic_scale
+
+	def compute_indicator(self, phi):
+		''' Defines smoothed indicator for turning on friction. Takes value 1
+		when friction should be maximized, and value 0 when friction should be off.
+		'''
+		return 1.0 / (
+			1.0 + np.exp((phi - self.crit_volfrac) / self.logistic_scale))
+	
+	def get_indicator_deriv(self, phi):
+		''' Defines derivative of the smoothed indicator.
+		'''
+		return (1.0/self.logistic_scale) * self.compute_indicator(phi) \
+			* (self.compute_indicator(phi) - 1.0)
+	
+	def compute_viscosity(self, Uq, physics):
+		''' calculates the viscosity at each depth point as function of dissolved
+		water and crystal content (assumes crystal phase is incompressible)
+		'''
+		### calculating viscosity of melt without crystals
+		### Hess & Dingwell 1996
+		temp = physics.compute_additional_variable("Temperature", Uq, True)
+		phiM = physics.compute_additional_variable("volFracM", Uq, True)
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
+		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
+		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
+		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
+		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
+		
+		arhoWd = arhoWt - arhoWv
+		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
+		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
+		log_mfWd = np.log(mfWd*100)
+		
+		log10_vis = -3.545 + 0.833 * log_mfWd
+		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
+		log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		meltVisc = 10**log10_vis
+		meltVisc[(1 - phiM) > self.crit_volfrac] = 0
+		
+		### calculating relative viscosity due to crystals
+		### Costa 2005b
+		alpha = 0.999916
+		phi_cr = 0.673
+		gamma = 3.98937
+		delta = 16.9386
+		B = 2.5
+		#rhoC = arhoM / phiM #crystal phasic density set to magma phasic density
+		# since setting crystal phasic density equal to magma phasic density,
+		# crystal vol frac of magma is ratio of partial densities
+		# WILL NEED TO CHANGE IF CRYSTAL PHASIC DENSITY DIFFERS
+		crysVolFrac_suspension = arhoC / arhoM # crystal vol frac of magma
+		
+		phi_ratio = crysVolFrac_suspension / phi_cr
+		AA = np.sqrt(np.pi) / (2 * alpha)
+		erf = sp.erf(AA * phi_ratio * (1 + phi_ratio**gamma))
+		
+		num = 1 + phi_ratio**delta
+		denom = (1 - alpha * erf)**(-B * phi_cr)
+		crysVisc = num * denom
+		
+		#viscosity = 4.386e5 * crysVisc
+		viscosity = meltVisc * crysVisc
+		viscosity[(1 - phiM) > self.crit_volfrac] = 0
+		
+		#fix = np.max(viscosity)
+		#viscosity[phi > self.crit_volfrac] = fix
+		return viscosity
+
+	def get_source(self, physics, Uq, x, t):
+		'''
+		Output:
+		-----------
+		source vector S [ne, nd, ns]
+		'''
+		if physics.NDIMS != 1:
+			raise Exception(f"Conduit friction source not suitable for use in " +
+											f"{physics.NDIMS} spatial dimensions.")
+		#iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		#	physics.get_state_indices()
+
+		''' Compute mixture density, u, friction coefficient '''
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+		mu = self.compute_viscosity(Uq, physics)
+		fric_coeff = 8.0 * mu / self.conduit_radius**2.0
+		''' Compute indicator based on proportion of fragmented phase '''
+		slarhoFm = physics.get_state_slice("pDensityFm")
+		slarhoM = physics.get_state_slice("pDensityM")
+		arhoFm = Uq[:,:,slarhoFm]
+		arhoM = Uq[:,:,slarhoM]
+		I = np.clip(1 - arhoFm / arhoM, 0, 1)
+		''' Compute source vector at each element [ne, nq] '''
+		S = np.zeros_like(Uq)
+		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
+		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
+		return S
+
+	def get_phi_gradient():
+		''' Compute gradient of total gas volume fraction with respect to state
+		vector.
+
+		The gradient of total gas volume fraction (appearing as a negative) is
+		needed in gradients of friction terms with volume fraction fragmentation
+		criteria, e.g., friction source terms that contain smoothed indicators of
+		magma volume fraction. Here magma volume fraction is 1 - phi, and phi is the
+		sum of volume fractions of all exsolved gas components.
+		'''
+		pass
+
+	def get_jacobian(self, physics, Uq, x, t):
+		''' Computes the Jacobian of the source vector f_i = s_i I(phi(U)), where I
+		is a smoothed indicator dependent on the complete state U. Using the product
+		rule, we write
+				d_j(f_i) = I * d_j(s_i) + I' * s_i * d_j(phi),
+		where d_j is the j-th partial and I' is the ordinary derivative of I.
+
+		Evaluation and inversions of jacobians are likely to be a comp. bottleneck
+		(repeated construction for implicit source steps, followed by inversion).
+		'''
+		raise NotImplementedError(f"Gradient not implemented for variable viscosity.")
 
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
@@ -2576,7 +2756,7 @@ class FrictionVolFracConstMu(SourceBase):
 	crit_volfrac: critical volume fraction at which friction model transitions (-)
 	logistic_scale: scale of logistic function (-)
 	'''
-	def __init__(self, mu:float=1e5, conduit_radius:float=50.0,
+	def __init__(self, mu:float=1.4e6, conduit_radius:float=50.0,
 							 crit_volfrac:float=0.8, logistic_scale:float=0.01,**kwargs):
 		super().__init__(kwargs)
 		self.mu = mu

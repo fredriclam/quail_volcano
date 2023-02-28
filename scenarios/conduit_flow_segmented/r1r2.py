@@ -1,5 +1,10 @@
 import numpy as np
 
+Restart = {
+    "File" : "atm2SteadyState_final.pkl",
+    "StartFromFileTime" : True,
+}
+
 Numerics = {
 	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
@@ -20,8 +25,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/atm2",
-	"WriteInterval" : 800,
+	"Prefix" : "atm2SteadyState",
+	"WriteInterval" : 200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -86,7 +91,7 @@ LinkedSolvers = [
 	#	"BoundaryName": "vent",
 	#},
 	{
-		"DeckName": "steadyState_r2r3.py",
+		"DeckName": "r2r3.py",
 		"BoundaryName": "r2",
 	},
 ]

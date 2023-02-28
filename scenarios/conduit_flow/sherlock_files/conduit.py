@@ -1,11 +1,16 @@
 import numpy as np
 from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
+Restart = {
+	"File" : "/scratch/users/kcoppess/steadyState_cVF40_3m/conduit_885.pkl",
+	"StartFromFileTime" : True,
+}
+
 # Set timestepper
 TimeStepping = {
-	"InitialTime" : 0.0,
-	"FinalTime" : 2.0,
-	"NumTimeSteps" : 40000,
+	"InitialTime" : 354.0,
+	"FinalTime" : 954.0,
+	"NumTimeSteps" : 12000000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -41,9 +46,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/3Mconduit",
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40_3m_r2/conduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 800,
+	"WriteInterval" : 8000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -63,6 +68,7 @@ Physics = {
     "ConvFluxNumerical" : "LaxFriedrichs",
 }
 
+# NOTE: following aren't necessarily representative values when using restart files
 InitialCondition = {
 	# Initial condition (not necessarily hydrostatic; the injected function (see
   # below) takes this initial condition and computes the hydrostatic solution).
@@ -74,22 +80,20 @@ InitialCondition = {
   # Left side values
   "arhoAL": 1e-1,
   "arhoWvL": 8.686,
-  "arhoML": 2600.,
+  "arhoML": 2496.3,
   "uL": 0.,
   "TL": 1000.,
-  "arhoWtL": 75.0,
-  "arhoCL": 1.05e3, 
-  "arhoFmL": 1e-5,
+  "arhoWtL": 10.0,
+  "arhoCL": 100.0, 
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
-  "arhoMR": 1e-5,
+  "arhoMR": 1e-6,
   "uR": 0.,
   "TR": 300.,
   "arhoWtR": 1.161*5e-3,
   "arhoCR": 1e-6,
-  "arhoFmR": 1e-5,
-  "xd": -1500.0, # Position of the discontinuity
+  "xd": -600.0, # Position of the discontinuity
 }
 
 # Define the hydrostatic steady-state solver that operates on the initial
@@ -101,7 +105,7 @@ def hydrostatic_solve(solver, owner_domain=None):
         p_bdry=1e5,
         is_jump_included=True,
         owner_domain=owner_domain,
-        x_jump=-1500.0,
+        x_jump=-600.0,
         constr_key="YEq",
         # To set the traction function, use the following line and prescribe
         # traction as a function of x. The traction function needs to be
@@ -118,7 +122,7 @@ def hydrostatic_solve(solver, owner_domain=None):
 Inject = [
     {
         "Function": hydrostatic_solve,
-        "Initial": True,
+        "Initial": False,
         "Postinitial": False,
     }
 ]
@@ -134,7 +138,6 @@ SourceTerms = {
 	},
   "source2": {
       "Function": "FrictionVolFracVariableMu",
-      #"Function": "FrictionVolFracVariableMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values
       # "mu": 1e5,
@@ -147,11 +150,6 @@ SourceTerms = {
       "source_treatment" : "Implicit",
       "tau_d": 1.0,
   },
-  "source4": {
-      "Function": "FragmentationTimescaleSource",
-      "source_treatment" : "Explicit",
-      "tau_f": 1.0,
-  },
 }
 
 # Fake exact solution
@@ -161,7 +159,6 @@ BoundaryConditions = {
     # The leftmost boundary
     "x1" : {
       # To be replaced by an exit pressure boundary condition
-      #"BCType" : "SlipWall"
       "BCType" : "MassFluxInlet1D",
       "mass_flux" : 2700,
       "p_chamber" : 2e8,
@@ -189,7 +186,7 @@ BoundaryConditions = {
 # boundary "x2" in the linked parameter file).
 LinkedSolvers = [
     {
-        "DeckName": "steadyState_vent_region.py",
+        "DeckName": "vent_region.py",
         "BoundaryName": "vent",
     },
 ]

@@ -20,8 +20,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/atm2",
-	"WriteInterval" : 800,
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40/atm2",
+	"WriteInterval" : 4000,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }

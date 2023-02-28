@@ -16,12 +16,12 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/volcanoA2.msh",
+	"File" : "../meshes/volcanoA3.msh",
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/atm2",
-	"WriteInterval" : 800,
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40_3m/atm3",
+	"WriteInterval" : 4000,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -37,22 +37,12 @@ SourceTerms = {
 		"gravity": 9.8,
 		# "source_treatment" : "Explicit",
 	},
-	# "source3": {
-	# 		"Function": "ExsolutionSource",
-	# 		"source_treatment" : "Implicit",
-	# },
 }
 
 # Restart = {
-# 	"File" : "atm2SteadyState_inlet_140.pkl",
+# 	"File" : "atm3SteadyState_inlet_140.pkl",
 # 	"StartFromFileTime" : True
 # }
-
-#if False:
-#	# Sod state
-#	rhoAmbient = 0.125
-#	pAmbient = 0.1
-#	eAmbient = pAmbient / (Physics["SpecificHeatRatio"] - 1.0)
 
 InitialCondition = {
 	"Function" : "LinearAtmosphere",
@@ -62,31 +52,34 @@ InitialCondition = {
 ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
-	"ground_far" : {
+	"ground3" : {
 		"BCType" : "SlipWall",
 	},
-	"symmetry_far" : {
+	"symmetry3" : {
 		"BCType" : "SlipWall",
+	},
+	# "r3" : {
+	# 	"BCType" : "Euler2D2D",
+	# 	"bkey": "r3",
+	# },
+	"r3" : {
+		"BCType" : "MultiphasevpT2D2D",
+		"bkey": "r3",
 	},
 	"r2" : {
 		"BCType" : "MultiphasevpT2D2D",
-		# "BCType" : "LinearizedImpedance2D",
 		"bkey": "r2",
-	},
-	"r1" : {
-		"BCType" : "MultiphasevpT2D2D",
-		"bkey": "r1",
 	},
 }
 
-# LinkedSolvers = []
+LinkedSolvers = []
 LinkedSolvers = [
 	#{
 	#	"DeckName": "conduit.py",
 	#	"BoundaryName": "vent",
 	#},
 	{
-		"DeckName": "steadyState_r2r3.py",
-		"BoundaryName": "r2",
+		"DeckName": "steadyState_r3r4_3m.py",
+		"BoundaryName": "r3",
 	},
 ]

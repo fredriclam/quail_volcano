@@ -4,8 +4,8 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 2.0,
-	"NumTimeSteps" : 40000,
+	"FinalTime" : 600.0,
+	"NumTimeSteps" : 12000000,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "FE",
@@ -41,9 +41,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_cVF40/3Mconduit",
+	"Prefix" : "/scratch/users/kcoppess/steadyState_cVF40_3m/conduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 800,
+	"WriteInterval" : 8000,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -79,16 +79,14 @@ InitialCondition = {
   "TL": 1000.,
   "arhoWtL": 75.0,
   "arhoCL": 1.05e3, 
-  "arhoFmL": 1e-5,
   # Right side values
   "arhoAR": 1.161,
   "arhoWvR": 1.161*5e-3,
-  "arhoMR": 1e-5,
+  "arhoMR": 1e-6,
   "uR": 0.,
   "TR": 300.,
   "arhoWtR": 1.161*5e-3,
   "arhoCR": 1e-6,
-  "arhoFmR": 1e-5,
   "xd": -1500.0, # Position of the discontinuity
 }
 
@@ -134,7 +132,6 @@ SourceTerms = {
 	},
   "source2": {
       "Function": "FrictionVolFracVariableMu",
-      #"Function": "FrictionVolFracVariableMu",
       "source_treatment" : "Explicit",
       # Some options, and their default values
       # "mu": 1e5,
@@ -146,11 +143,6 @@ SourceTerms = {
       "Function": "ExsolutionSource",
       "source_treatment" : "Implicit",
       "tau_d": 1.0,
-  },
-  "source4": {
-      "Function": "FragmentationTimescaleSource",
-      "source_treatment" : "Explicit",
-      "tau_f": 1.0,
   },
 }
 
@@ -189,7 +181,7 @@ BoundaryConditions = {
 # boundary "x2" in the linked parameter file).
 LinkedSolvers = [
     {
-        "DeckName": "steadyState_vent_region.py",
+        "DeckName": "steadyState_vent_region_3m.py",
         "BoundaryName": "vent",
     },
 ]
