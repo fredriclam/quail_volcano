@@ -3,7 +3,7 @@ from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 Restart = {
 	"File" : "steadyState_3m_sherlock_r4/conduit_519.pkl",
-	#"File" : "steadyState_smoothing/r1conduit_final.pkl",
+	#"File" : "steadyState_smoothing/init_conduit_final.pkl",
 	"StartFromFileTime" : False,
 }
 

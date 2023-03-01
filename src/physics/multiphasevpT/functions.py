@@ -2546,7 +2546,7 @@ class FrictionVolFracVariableMu_SHARP(SourceBase):
 		slarhoM = physics.get_state_slice("pDensityM")
 		arhoFm = Uq[:,:,slarhoFm]
 		arhoM = Uq[:,:,slarhoM]
-		I = 1#np.clip(1 - arhoFm / arhoM, 0, 1)
+		I = 1
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
 		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
