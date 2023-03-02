@@ -1,19 +1,21 @@
 import numpy as np
-from physics.multiphasevpT.hydrostatic1D import GlobalDG
+# from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
-REFINEMENT_FACTOR = 1.0
+# 2214 s wall: 2000 elts(P2),8000 stepsRK3
+
+REFINEMENT_FACTOR = 1
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 2.0,
-	"NumTimeSteps" : 40000 * REFINEMENT_FACTOR,
+	"FinalTime" : 20,
+	"NumTimeSteps" : 80000, #SSPRK3: 5000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
-	"TimeStepper" : "FE",
+	"TimeStepper" : "SSPRK3",
 }
 
 Numerics = {
-    "SolutionOrder" : 0,
+    "SolutionOrder" : 2,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -26,12 +28,12 @@ Numerics = {
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 500,#500,# 150, # 150 ~ 500 is ok for this commit #150, #50, #1e-5, #1e3, 5e3,
+	"AVParameter" : 0.1, # 0.1~10 # Note: scaling against p in denom
     'L2InitialCondition': False, # False <-> Use interpolation instead of L2 projection of Riemann data
 }
 
 Output = {
-	"Prefix" : "oscillationtest_conduit1_BCIC_p0",
+	"Prefix" : "oscillationtest_conduit1_BCIC_4s",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 400 * REFINEMENT_FACTOR,
 	"WriteInitialSolution" : True,
@@ -43,8 +45,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 3000, 
-    "xmin" : -6000.0,
+    "NumElemsX" : 1500,
+    "xmin" : -3000.0,
     "xmax" : 0.0,
 }
 
@@ -104,19 +106,28 @@ Physics = {
 #   "xd": x_jump, # Position of the discontinuity
 # }
 
+# Initalization mass fractions
+phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(0.0))
+chi_water = 0.05055
+yWt_init = chi_water * (1 - phi_crys) / (1 + chi_water)
+yC_init = phi_crys
+
 InitialCondition = {
     "Function": "SteadyState",
-    "yC": 0.01,
-    "yWt": 0.03,
+    "p_vent": 1e5,
+    "inlet_input_val": 1.0,
+    "input_type": "u",
+    "yC": yC_init,
+    "yWt": yWt_init,
     "yA": 1e-7,
     "yWvInletMin": 1e-7,
     "yCMin": 1e-7,
     "crit_volfrac": 0.7,
-    "tau_d": 10.0,
-    "tau_f": 10.0,
+    "tau_d": 2.0,
+    "tau_f": 2.0,
     "conduit_radius": 50,
     "conduit_length": Mesh["xmax"] - Mesh["xmin"],
-    "T_chamber": 800+273.15,
+    "T_chamber": 1000,
     "c_v_magma": 3e3,
     "rho0_magma": 2.7e3,
     "K_magma": 10e9,
@@ -161,13 +172,13 @@ SourceTerms = {
     "source3": {
         "Function": "ExsolutionSource", # likely problematic: check again after adjusting target y function?
         "source_treatment" : "Explicit",
-        "tau_d": 10.0,
+        "tau_d": InitialCondition["tau_d"],
     },
     "source4": {
         "Function": "FragmentationTimescaleSource",
         "source_treatment": "Explicit",
-        "crit_volfrac": 0.7,
-        "tau_f": 10.0,
+        "crit_volfrac": InitialCondition["crit_volfrac"],
+        "tau_f": InitialCondition["tau_f"],
     }
 }
 
@@ -203,10 +214,17 @@ else:
         "x1" : {
             # To be replaced by an exit pressure boundary condition
             #"BCType" : "SlipWall"
-            "BCType" : "MassFluxInlet1D",
-            "mass_flux" : 2700,
-            "p_chamber" : 2e8,
-            "T_chamber" : 800+273.15,
+            # "BCType" : "MassFluxInlet1D",
+            # "mass_flux" : 2700,
+            # "p_chamber" : 2e8,
+            # "T_chamber" : 800+273.15,
+            "BCType" : "VelocityInlet1D",
+            "u" : 1.0,
+            "p_chamber" : 100e6,
+            "T_chamber" : 1000,
+            "trace_arho": 1e-7*2700, # Slightly inconsistent?
+            "yWt": None, # Unused
+            "yC": None,  # Unused
             # To use multiple domains (for parallelism), the below can be uncommented
             # and bkey set to a name that is known to this solver and a linked solver.
             # See LinkedSolvers below for parallelism

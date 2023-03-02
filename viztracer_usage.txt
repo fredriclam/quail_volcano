@@ -1,3 +1,11 @@
-python -m viztracer --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_dev\\src\\quail runmushroom.py
+in folder containing conduit.py, replacing with path to quail
+
+python -m viztracer --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\src\\quail conduit.py
 
 python -m viztracer --generate_flamegraph result.json
+
+to show: use colab vizviewer server
+
+legacy:
+
+python -m viztracer --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_dev\\src\\quail runmushroom.py

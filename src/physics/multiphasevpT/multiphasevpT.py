@@ -86,6 +86,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.PressureOutlet1D : mpvpT_fcns.PressureOutlet1D,
 			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
 			BCType.MassFluxInlet1D: mpvpT_fcns.MassFluxInlet1D,
+			BCType.VelocityInlet1D: mpvpT_fcns.VelocityInlet1D,
 			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
 		})
