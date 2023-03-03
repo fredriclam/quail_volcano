@@ -41,6 +41,7 @@ from physics.multiphasevpT.functions import BCType
 from physics.multiphasevpT.functions import ConvNumFluxType
 from physics.multiphasevpT.functions import FcnType
 from physics.multiphasevpT.functions import SourceType
+import physics.multiphasevpT.atomics as atomics
 
 import numerics.helpers.helpers as helpers
 from dataclasses import dataclass
@@ -544,41 +545,43 @@ class MultiphasevpT1D(MultiphasevpT):
 		# 	self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))) - 
 		# 	np.eye(7)).max() / np.linalg.cond(self.get_eigenvectors_R(np.tile(Uq,(1,1,1)))))
 
-		# Get indices of state variables
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-			self.get_state_indices()
 		# Extract data of size # [n, nq]
-		arhoA  = Uq[:, :, iarhoA]
-		arhoWv = Uq[:, :, iarhoWv]
-		arhoM  = Uq[:, :, iarhoM]
-		mom    = Uq[:, :, imom]
-		e      = Uq[:, :, ie]
-		arhoWt = Uq[:, :, iarhoWt]
-		arhoC  = Uq[:, :, iarhoC]
-		arhoFm = Uq[:, :, iarhoFm]
+		mom    = Uq[:, :, self.get_momentum_slice()]
+		e      = Uq[:, :, self.get_state_slice("Energy")]
 
 		# Compute mixture (total) density
-		rho = arhoA + arhoWv + arhoM
-		p = self.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
+		rho = Uq[:, :, self.get_mass_slice()].sum(axis=2, keepdims=True)
+		T = atomics.temperature(Uq[:, :, self.get_mass_slice()],
+			Uq[:, :, self.get_momentum_slice()],
+			Uq[:, :, self.get_state_slice("Energy")],
+			self)
+		gas_volfrac = atomics.gas_volfrac(Uq[:, :, self.get_mass_slice()], T, self)
+		p = atomics.pressure(Uq[:, :, self.get_mass_slice()], T, gas_volfrac, self)
+		# p = self.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
 		u = mom / rho
-		u2 = u**2.0
 		# u2 = np.sum(mom**2, axis=2, keepdims=True) / np.power(rho, 2.)
 		
 		# Construct physical flux
-		F = np.empty(Uq.shape + (self.NDIMS,)) # [n, nq, ns, ndims]
-		F[:, :, iarhoA,  0] = arhoA * u
-		F[:, :, iarhoWv, 0] = arhoWv * u
-		F[:, :, iarhoM,  0] = arhoM * u
-		F[:, :, imom,    0] = rho * u2 + p
-		F[:, :, ie,      0] = (e + p) * u
-		F[:, :, iarhoWt,  0] = arhoWt * u
-		F[:, :, iarhoC,   0] = arhoC * u
-		F[:, :, iarhoFm,   0] = arhoFm * u
+		# Set F (shape ne, nq, ns, nd) = Uq (shape ne, nq, ns) 
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			self.get_state_indices()
+		F = np.repeat(Uq[...,np.newaxis], self.NDIMS, axis=-1)
+		F[:, :, iarhoA,  0:] *= u
+		F[:, :, iarhoWv, 0:] *= u
+		F[:, :, iarhoM,  0:] *= u
+		F[:, :, imom,    0:] = rho * u * u + p
+		F[:, :, ie,      0:] = (e + p) * u
+		F[:, :, iarhoWt, 0:] *= u
+		F[:, :, iarhoC,  0:] *= u
+		F[:, :, iarhoFm, 0:] *= u
 		# Compute sound speed
-		a = self.compute_additional_variable("SoundSpeed", Uq, True)
-		a = np.squeeze(a, axis=2)
+		a = atomics.sound_speed(
+			atomics.Gamma(Uq[:, :, self.get_mass_slice()], self),
+			p, rho, gas_volfrac, self)
+		# a = self.compute_additional_variable("SoundSpeed", Uq, True)
+		# a = np.squeeze(a, axis=2)
 
-		return F, (u2, a)
+		return F, ((u*u).squeeze(axis=2), a.squeeze(axis=2))
 
 	def get_conv_eigenvectors(self, U_bar):
 		'''

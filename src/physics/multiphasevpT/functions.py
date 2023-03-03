@@ -2644,9 +2644,14 @@ class FrictionVolFracVariableMu(SourceBase):
 		'''
 		### calculating viscosity of melt without crystals
 		### Hess & Dingwell 1996
-		temp = physics.compute_additional_variable("Temperature", Uq, True)
-		phiM = physics.compute_additional_variable("volFracM", Uq, True)
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
+		temp = atomics.temperature(Uq[..., physics.get_mass_slice()],
+			Uq[..., physics.get_momentum_slice()],
+			Uq[..., physics.get_state_variable("Energy")],
+			physics)
+		phi = atomics.gas_volfrac(Uq[..., physics.get_mass_slice()], temp, physics)
+		phiM = 1.0 - phi
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
@@ -2659,7 +2664,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
-		log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		# log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
 		meltVisc = 10**log10_vis
 		limit = np.max(abs(meltVisc))
 		meltVisc[(1 - phiM) > self.crit_volfrac] = limit

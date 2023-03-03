@@ -3,12 +3,22 @@ import numpy as np
 
 # 2214 s wall: 2000 elts(P2),8000 stepsRK3
 
+# Last report:
+# -------------------------------------------------------------------------------
+# 80000: Time = 20 - Time step = 0.00025 - Residual norm = 4.50438e+07
+# -------------------------------------------------------------------------------
+
+# Wall clock time = 16583.3 seconds
+# -------------------------------------------------------------------------------
+# Global prep time  = 24.87570 seconds
+# Global solve time = 16585.00653 seconds
+
 REFINEMENT_FACTOR = 1
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 20,
-	"NumTimeSteps" : 80000, #SSPRK3: 5000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
+	"FinalTime" : 0.2,
+	"NumTimeSteps" : 800, #SSPRK3: 5000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "SSPRK3",
@@ -33,7 +43,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "oscillationtest_conduit1_BCIC_4s",
+	"Prefix" : "oscillationtest_conduit1_BCIC_4s_opt",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 400 * REFINEMENT_FACTOR,
 	"WriteInitialSolution" : True,
