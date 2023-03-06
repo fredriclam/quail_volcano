@@ -300,15 +300,19 @@ class SteadyState(FcnBase):
 	''' 1D steady state. Calls submodule compressible-conduit-steady
 	  (https://github.com/fredriclam/compressible-conduit-steady).
 	'''
-	def __init__(self, p_vent:float=1e5, inlet_input_val=1.0, input_type="u",
-	  yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5, crit_volfrac=0.7,
-		tau_d=1.0, tau_f=1.0, conduit_radius=50, conduit_length=4000,
-		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3,
-		K_magma=10e9, p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
-		NumElems=200):
+	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,
+		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
+		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
+		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
+		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5):
 		'''
 		Interface to compressible_conduit_steady.SteadyState.
 		'''
+		if x_global is None:
+			raise ValueError(
+				"x_global must be specified in the SteadyState initial condition. " +
+				"x_global provides 1D mesh information across all partitions of " +
+				"the 1D domain.")
 		props = {
 				"yC": yC,
 				"yWt": yWt,
@@ -319,7 +323,6 @@ class SteadyState(FcnBase):
 				"tau_d": tau_d,
 				"tau_f": tau_f,
 				"conduit_radius": conduit_radius,
-				"conduit_length": conduit_length,
 				"T_chamber": T_chamber,
 				"c_v_magma": c_v_magma,
 				"rho0_magma": rho0_magma,
@@ -327,24 +330,13 @@ class SteadyState(FcnBase):
 				"p0_magma": p0_magma,
 				"solubility_k": solubility_k,
 				"solubility_n": solubility_n,
-				"NumElems": NumElems,
 		}
-		self.f = plugin_steady_state.SteadyState(p_vent,inlet_input_val,
+		self.f = plugin_steady_state.SteadyState(x_global, p_vent, inlet_input_val,
 		  input_type=input_type, # "u", "j", "p" as specified input
 		  override_properties=props)
 
 	def get_state(self, physics, x, t):
-		# Map to unique x, 1d array
-		unique_x = np.unique(x)
-		unique_U = self.f(np.unique(x))
-		# Associative map from value of x to state vector U
-		vals = {x: unique_U[i,:] for i,x in enumerate(unique_x)}
-		# Fill initial condition state coefficient vector
-		U = np.zeros((*x.shape[:-1],8))
-		for i in range(U.shape[0]):
-			for j in range(U.shape[1]):
-				U[i,j,:] = vals[x[i,j,0]]
-		return U
+		return self.f(x)
 
 class UniformExsolutionTest(FcnBase):
 	'''
@@ -2646,7 +2638,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		### Hess & Dingwell 1996
 		temp = atomics.temperature(Uq[..., physics.get_mass_slice()],
 			Uq[..., physics.get_momentum_slice()],
-			Uq[..., physics.get_state_variable("Energy")],
+			Uq[..., physics.get_state_slice("Energy")],
 			physics)
 		phi = atomics.gas_volfrac(Uq[..., physics.get_mass_slice()], temp, physics)
 		phiM = 1.0 - phi
@@ -2724,7 +2716,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
 		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
-		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
+		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u * u
 		return S
 
 	def get_phi_gradient():
@@ -3287,7 +3279,8 @@ class FragmentationTimescaleSource(SourceBase):
 
   def get_is_fragmenting(self, physics, arhoVec, T):
       ''' Check volume fraction condition. '''
-      return (atomics.gas_volfrac(arhoVec, T, physics) > self.crit_volfrac).astype(float)
+      return (atomics.gas_volfrac(arhoVec, T, physics) > self.crit_volfrac
+				).astype(float)
 
   def get_source(self, physics, Uq, x, t):
     S = np.zeros_like(Uq)
@@ -3407,10 +3400,6 @@ class LaxFriedrichs1D(ConvNumFluxBase):
 		wR = np.empty(u2R.shape + (1,))
 		wL[:, :, 0] = np.sqrt(u2L) + aL
 		wR[:, :, 0] = np.sqrt(u2R) + aR
-		# Fixed sound speed upper # TODO: debug #HACK
-		# wL[:, :, 0] = np.sqrt(u2L) + 1924.5008972987525
-		# wR[:, :, 0] = np.sqrt(u2R) + 1924.5008972987525
-		
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)

@@ -249,7 +249,7 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 				# Direct computation of Fjac * gradF
 				# Convective flux part du/dq * q * dq/dx
 				gradF = np.einsum("ijm, ijn, ijnd -> ijm", Uq, usgrad, grad_Uq,
-					optimize="greedy")
+					optimize=['einsum_path', (1, 2), (0, 1)])
 				# Convective flux part u * dq/dx
 				gradF += np.einsum("ebx, ebid -> ebi", u, grad_Uq)
 				# dp/dq part in momentum equation
@@ -260,6 +260,7 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 					"ebi, ebid -> ebd", u*psgrad + pressure*usgrad, grad_Uq)
 
 			# Compute source in strong residual [ne, nq, ns]
+			Sq = np.zeros_like(Uq) # [ne, nq, ns]
 			Sq = physics.eval_source_terms(Uq, elem_helpers.x_elems,
 				lambda: NotImplementedError(
 					"Time dependence not implemented in Artificial Viscosity mod in tools.py"),

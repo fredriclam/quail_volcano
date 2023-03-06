@@ -294,6 +294,10 @@ class SSPRK3(StepperBase):
 		for istage in range(self.nstages):
 			dt = self.dt
 
+			# For multidomain communication, additional sync needed
+			if istage > 0:
+				solver.custom_user_function(solver)
+
 			res = solver.get_residual(U, res)
 			dUtemp = solver_tools.mult_inv_mass_matrix(mesh, solver, dt, res)
 			solver.time = Time + dt

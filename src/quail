@@ -620,7 +620,9 @@ def main(argv):
 												domain_edge_list=_domain_edge_list,
 												edge_name_to_loc_bdry=edge_name_to_loc_bdry)
 		
-		_num_timesteps = domain_list[0].solver.params["NumTimeSteps"]
+		# Calculate total number of syncs (num time steps * syncs per timestep)
+		_num_timesteps = getattr(domain_list[0].solver.stepper, "nstages", 1) \
+			* domain_list[0].solver.params["NumTimeSteps"]
 
 		for domain in domain_list:
 			# Attach domain topology to each domain
@@ -709,7 +711,6 @@ def main(argv):
 				observer_process.join()
 
 				# Generate uptime report
-				domain_list
 				with open("performance_report.log", "w") as f:
 					[f.write(f"{dom.id}: {boundaryData[dom.id]}\n") for dom in domain_list]
 

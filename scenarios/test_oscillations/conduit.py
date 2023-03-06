@@ -13,12 +13,10 @@ import numpy as np
 # Global prep time  = 24.87570 seconds
 # Global solve time = 16585.00653 seconds
 
-REFINEMENT_FACTOR = 1
-
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 0.2,
-	"NumTimeSteps" : 800, #SSPRK3: 5000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
+	"FinalTime" : 0.1,#180,
+	"NumTimeSteps" : 400,#720000, #SSPRK3: 4000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "SSPRK3",
@@ -43,9 +41,9 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "oscillationtest_conduit1_BCIC_4s_opt",
+	"Prefix" : "oscillationtest_conduit1_BCIC_4s_partiming",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 400 * REFINEMENT_FACTOR,
+	"WriteInterval" : 400,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -55,9 +53,9 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 1500,
-    "xmin" : -3000.0,
-    "xmax" : 0.0,
+    "NumElemsX" : 625,
+    "xmin" : -2500.0,
+    "xmax" : -1250.0,
 }
 
 Physics = {
@@ -122,8 +120,22 @@ chi_water = 0.05055
 yWt_init = chi_water * (1 - phi_crys) / (1 + chi_water)
 yC_init = phi_crys
 
+# Get number of nodes in global ODE mesh (across ALL 1D Domains)
+n_elems_per_part = 625
+n_elems_global = 2*n_elems_per_part
+if Numerics["SolutionOrder"] == 0:
+    n_nodes_global = n_elems_global
+elif Numerics["SolutionOrder"] == 1:
+    n_nodes_global = n_elems_global + 1
+elif Numerics["SolutionOrder"] == 2:
+    n_nodes_global = 2*n_elems_global + 1
+else:
+    raise ValueError("Oops, is there solution order > 2?")
+x_global = np.linspace(-2500, 0, n_nodes_global)
+
 InitialCondition = {
     "Function": "SteadyState",
+    "x_global": x_global,
     "p_vent": 1e5,
     "inlet_input_val": 1.0,
     "input_type": "u",
@@ -136,7 +148,6 @@ InitialCondition = {
     "tau_d": 2.0,
     "tau_f": 2.0,
     "conduit_radius": 50,
-    "conduit_length": Mesh["xmax"] - Mesh["xmin"],
     "T_chamber": 1000,
     "c_v_magma": 3e3,
     "rho0_magma": 2.7e3,
@@ -144,7 +155,6 @@ InitialCondition = {
     "p0_magma": 5e6,
     "solubility_k": 5e-6,
     "solubility_n": 0.5,
-    "NumElems": Mesh["NumElemsX"],
 }
 
 # # List of functions to inject in custom user function
@@ -193,7 +203,9 @@ SourceTerms = {
 }
 
 # Fake exact solution
-ExactSolution = InitialCondition.copy()
+ExactSolution = {
+    "Function": "RiemannProblem",
+}
 
 extend_conduit = False # TODO: change back
 if extend_conduit:
@@ -215,6 +227,12 @@ if extend_conduit:
         },
     ]
 else:
+    LinkedSolvers = [
+        {
+            "DeckName": "conduit2.py",
+            "BoundaryName": "comm_1_2",
+        },
+    ]
     BoundaryConditions = {
         # "x1" : {
         #     "BCType" : "SlipWall",
@@ -250,9 +268,14 @@ else:
         #     # "bkey": "vent",
         # },
         "x2" : { 
-            "BCType" : "PressureOutlet1D", # TODO: implement r-weighted integration (check)
-            "p": 1e5,
+            "BCType" : "MultiphasevpT1D1D", # TODO: implement r-weighted integration (check)
+            "bkey": "comm_1_2",
+            # "p": 1e5,
         },
+        # "x2" : { 
+        #     "BCType" : "PressureOutlet1D", # TODO: implement r-weighted integration (check)
+        #     "p": 1e5,
+        # },
         # "x2" : { 
         #     "BCType" : "MultiphasevpT2D1D", # TODO: implement r-weighted integration
         #     "bkey": "vent",
