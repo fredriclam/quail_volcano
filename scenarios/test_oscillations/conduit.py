@@ -15,8 +15,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 0.2,#180,
-	"NumTimeSteps" : 800,#720000, #SSPRK3: 4000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
+	"FinalTime" : 5,#180,
+	"NumTimeSteps" : 20000*3,#720000, #SSPRK3: 4000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "SSPRK3",
@@ -41,7 +41,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "oscillationtest_conduit1_BCIC_4s_partiming",
+	"Prefix" : "par1D2D_test_conduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 400,
 	"WriteInitialSolution" : True,

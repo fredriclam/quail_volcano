@@ -214,19 +214,26 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 		gas_volfrac = atomics.gas_volfrac(arhoVec, T, physics)
 		pressure = atomics.pressure(arhoVec, T, gas_volfrac, physics)
 
-		# Test line
-		psgrad = atomics.pressure_sgrad(arhoVec, pressure, T, u, physics)
-		# psgrad = physics.compute_pressure_sgradient(Uq)
-		pgrad = np.einsum('ijk, ijkl -> ijl', psgrad, grad_Uq)
-
-		pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
-		f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:, :, 0] + 1e-12)
-
 		# Additional weighting with approximate residual with pressure dominated
 		# flow.
 		# Strong form residual is (df/dU) dU/dx evaluated at the quadrature points.
 		# Approximating momentum flux helps with condensed-state flow (no exsolution)
-		if physics.NDIMS == 1:
+		if physics.NDIMS == 2:
+			pgrad = physics.compute_pressure_gradient(Uq, grad_Uq)
+			pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
+			f = np.linalg.norm(pgrad, axis=2) / (pressure[:, :, 0] + 1e-12)
+			# f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:, :, 0] + 1e-12)
+		elif physics.NDIMS == 1:
+
+			# TODO: move this with NDIMS == 2 (temporarily in here because NDIMS==2
+			# does not have the updated AV implementation)
+			psgrad = atomics.pressure_sgrad(arhoVec, pressure, T, u, physics)
+			# psgrad = physics.compute_pressure_sgradient(Uq)
+			pgrad = np.einsum('ijk, ijkl -> ijl', psgrad, grad_Uq)
+
+			pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
+			f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:, :, 0] + 1e-12)
+
 			# Compute u gradient wrt state
 			usgrad = np.zeros_like(psgrad)
 			usgrad[:,:,physics.get_mass_slice()] = -u
