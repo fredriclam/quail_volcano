@@ -23,9 +23,8 @@
 # ------------------------------------------------------------------------ #
 from abc import abstractmethod
 from enum import Enum, auto
-from re import U
 import numpy as np
-from scipy.optimize import fsolve, root, brenth
+import scipy.integrate
 import scipy.special as sp
 
 import errors
@@ -1960,6 +1959,22 @@ class PressureOutlet1D(BCWeakRiemann):
 	This class corresponds to an outflow boundary condition with static
 	pressure prescribed.
 	The boundary state is computed using acoustic Riemann invariants in 1D.
+	Since the Riemann invariants are constants along the eigenvector path, it is
+	equivalent to integrate along the eigenvector corresponding to outgoing waves;
+	mixture entropy per mass is held constant; pressure and density are
+	related by the sound speed; pressure and velocity are related by the acoustic
+	impedance. To capture choked flow efficiently, the approach here is to compute
+	velocity in the following initial value problem (IVP) in state space:
+	  du/dp = 1/(rho*c),
+		u(p = p0) = u0
+  where rho*c is a function of pressure at constant entropy. The boundary state
+	is computed as a function of self.p and u(p = self.p) when the flow is
+	subsonic. Otherwise, sonic pressure is found, and the boundary state is
+	computed as a function of p_sonic and u(p = p_sonic).
+	The choking condition is treated as a termination event for the wave speed
+	u - c, as a function of p. Note that rho, c are functions of p, and this
+	initial value problem form is sufficiently general.
+
 	Attributes:
 	-----------
 	p: float
@@ -1972,15 +1987,13 @@ class PressureOutlet1D(BCWeakRiemann):
 		''' Computes the boundary state that satisfies the pressure BC strongly. '''
 
 		UqB = UqI.copy()
-		''' Compute normal velocity. '''
+
+		''' Compute 1D velocity. '''
 		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-		# rhoI = UqI[:, :, physics.get_mass_slice()].sum(axis=2, keepdims=True)
 		arhoVec = UqI[:,:,physics.get_mass_slice()]
 		rhoI = atomics.rho(arhoVec)
 		velI = UqI[:, :, physics.get_momentum_slice()]/rhoI
-		''' Inflow handling '''
-		# if np.any(velI < 0.):
-			# print("Incoming flow at outlet")
+
 		''' Compute interior pressure. '''
 		# pI = physics.compute_variable("Pressure", UqI)		
 		TI = atomics.temperature(arhoVec,
@@ -1990,11 +2003,11 @@ class PressureOutlet1D(BCWeakRiemann):
 		pI = atomics.pressure(arhoVec, TI, gas_volfrac, physics)
 		if np.any(pI < 0.):
 			raise errors.NotPhysicalError
-		# Compute mass-weighted quantities
+		# Compute mass-weighted, conserved quantities
 		Gamma = atomics.Gamma(arhoVec, physics)
 		yI = atomics.massfrac(arhoVec)
 
-		''' Short-circuit function for sonic exit based on interior '''
+		''' Handle sonic outflow or inflow based on interior. '''
 		cI = atomics.sound_speed(Gamma, pI, rhoI, gas_volfrac, physics)
 		if np.any(velI >= cI):
 			return UqB
@@ -2004,32 +2017,62 @@ class PressureOutlet1D(BCWeakRiemann):
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
 		solution. '''
+		# Reformat shape of IVP initial conditions in state space
+		T1, p1, u1 = TI.ravel()[0], pI.ravel()[0], np.array([velI.ravel()[0],])
+		# Set target pressure (unchanged if flow is indeed subsonic)
 		p_target = self.p
-		_, u_target, T_target = atomics.velocity_RI_fixed_p_quadrature(
-			p_target, UqB, physics, normals, is_adaptive=True)
+		# Define affine mapping from progress variable t in [0,1] to pressure p in
+		#   [min(p1, p2), max(p1, p2)]
+		t2p = lambda t: p1 + t*(p_target-p1)
+		# Precompute fluid composition constants
+		am2 = physics.Liquid["K"] / physics.Liquid["rho0"]
+		yR_g = yI[...,0].squeeze() * physics.Gas[0]["R"] \
+			+ yI[...,1].squeeze() * physics.Gas[1]["R"]
+		yM = yI[...,2].squeeze()
+		p_intercept = physics.Liquid["p0"] - physics.Liquid["K"]
 
-		def constrained_sound_speed(p_target):
-			T_target = TI * (p_target / pI) ** ((Gamma-1)/Gamma)
-			rho = atomics.mixture_density(yI, p_target, T_target, physics)
-			return atomics.sound_speed(Gamma,
-				p_target, rho,
-				atomics.gas_volfrac(rho*yI, T_target, physics), physics)
-				
-		def mach_residual(p):
-			''' Residual in equation c - u = 0''' 
-			return constrained_sound_speed(p) - \
-				atomics.velocity_RI_fixed_p_quadrature(
-					p, UqB, physics, normals, is_adaptive=True)[1] # Velocity
+		def Y_s(p):
+			''' Efficient implementation of the isentropic admittance function. '''
+			rhom_am2 = p - p_intercept
+			return np.sqrt((
+				yR_g * T1 * (p/p1)**((Gamma-1.0)/Gamma) / (p*p)
+				+ yM * am2 / (rhom_am2*rhom_am2)
+			) / Gamma)
 		
-		''' Recompute sonic pressure for supersonic boundary state. '''
-		if np.any(u_target > constrained_sound_speed(p_target)):
-			# Recompute based on sonic pressure
-			# TODO: Clean up
-			pSonic = brenth(mach_residual, p_target, pI)
-			_, u_target, T_target = atomics.velocity_RI_fixed_p_quadrature(
-				pSonic, UqB, physics, normals, is_adaptive=True)
+		class ChokingEvent():
+			''' Initial value problem termination event, returning u - c. '''
+			def __init__(self):
+				self.terminal = True
 
-		''' Map to conservative variables '''
+			def __call__(self, t, u):
+				# Map progress variable t to pressure p
+				p = t2p(t)
+				# Compute temperature along isentrope
+				T = T1 * (p / p1) **((Gamma-1.0)/Gamma)
+				# Compute mixture density
+				rho = atomics.mixture_density(yI, p, T, physics)
+				# Return u - c
+				return u - atomics.sound_speed(Gamma, p, rho,
+					atomics.gas_volfrac(rho*yI, TI, physics), physics).ravel()[0]
+		
+		# Solve IVP for progress variable on [0,1], checking for choking, and 
+		#   defaulting to one-step if possible
+		soln_obj = scipy.integrate.solve_ivp(
+			lambda t, u: -normals * (p_target-p1) * Y_s(t2p(t)),
+			(0, 1), u1, vectorized=True, first_step=1.0, events=[ChokingEvent()])
+		# Unpack solution dependent on flow choking
+		if len(soln_obj.y_events[0]) == 0:
+			# Extract velocity at target pressure
+			u_target = soln_obj.y.ravel()[-1]
+		else:
+			# Extract velocity at choke
+			u_target = soln_obj.y_events[0][0]
+			# Re-evaluate target pressure as sonic pressure
+			p_target = t2p(soln_obj.t_events[0][0])
+		# Compute temperature along isentrope
+		T_target = T1 * (p_target / p1) **((Gamma-1.0)/Gamma)
+
+		''' Map computed (u_target, p_target, T_target) to conservative variables '''
 		rho_target = atomics.mixture_density(yI, p_target, T_target, physics)
 		UqB[:,:,physics.get_mass_slice()] = rho_target * yI
 		UqB[:,:,physics.get_momentum_slice()] = rho_target * u_target
@@ -2041,7 +2084,7 @@ class PressureOutlet1D(BCWeakRiemann):
 		UqB[:,:,5:] *= rho_target / rhoI
 
 		''' Post-computation validity check '''
-		if np.any(T_target < 0.):
+		if np.any(T_target < 0.) or np.any(p_target < 0.):
 			raise errors.NotPhysicalError
 		
 		return UqB

@@ -15,8 +15,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 0.1,#180,
-	"NumTimeSteps" : 400,#720000, #SSPRK3: 4000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
+	"FinalTime" : 0.2,#180,
+	"NumTimeSteps" : 800,#720000, #SSPRK3: 4000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "SSPRK3",
