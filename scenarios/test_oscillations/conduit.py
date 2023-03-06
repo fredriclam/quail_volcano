@@ -15,8 +15,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 5,#180,
-	"NumTimeSteps" : 20000*3,#720000, #SSPRK3: 4000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
+	"FinalTime" : 180,#180,
+	"NumTimeSteps" : 180*4*4000,# 20000*3 # dt/3 for 2D-coupled (volcanoA),#720000, #SSPRK3: 4000 per second @ dx=2 # 40000* REFINEMENT_FACTOR,
   # TimeStepper options:
   # FE, SSPRK3, RK4, Strang (split for implicit source treatment)
 	"TimeStepper" : "SSPRK3",
@@ -36,12 +36,12 @@ Numerics = {
         # Flag to use artificial viscosity
 		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 0.1, # 0.1~10 # Note: scaling against p in denom
+	"AVParameter" : 0.3, # 0.1~10 # Note: scaling against p in denom
     'L2InitialCondition': False, # False <-> Use interpolation instead of L2 projection of Riemann data
 }
 
 Output = {
-	"Prefix" : "par1D2D_test_conduit",
+	"Prefix" : "par1D_osc",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 400,
 	"WriteInitialSolution" : True,
