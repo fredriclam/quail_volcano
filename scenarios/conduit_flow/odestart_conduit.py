@@ -1,5 +1,4 @@
 import numpy as np
-from physics.multiphasevpT.hydrostatic1D import GlobalDG
 
 # Set timestepper
 TimeStepping = {
@@ -46,8 +45,8 @@ Mesh = {
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
     "NumElemsX" : 2000, 
-    "xmin" : -6000.0,
-    "xmax" : 0.0,
+    "xmin" : -6000.0 - 150.0,
+    "xmax" : 0.0 - 150.0,
 }
 
 Physics = {
@@ -139,14 +138,13 @@ BoundaryConditions = {
       "BCType" : "VelocityInlet1D",
       "u" : InitialCondition["inlet_input_val"],
       "p_chamber" : 100e6,
-      "T_chamber" : 1000,
+      "T_chamber" : InitialCondition["T_chamber"],
       "trace_arho": 1e-7*2700,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",
       "p": 1e5,
-    }
-    # }
+    },
     # "x2" : { 
     #   "BCType" : "MultiphasevpT2D1D",
     #   "bkey" : "vent",
@@ -162,9 +160,11 @@ BoundaryConditions = {
 # should be unique across all linked solvers, and named in the bkey of the
 # corresponding BoundaryCondition (for example, for boundary "x1" here and 
 # boundary "x2" in the linked parameter file).
+
 # LinkedSolvers = [
 #     {
 #         "DeckName": "odestart_vent_region.py",
 #         "BoundaryName": "vent",
 #     },
 # ]
+LinkedSolvers = []

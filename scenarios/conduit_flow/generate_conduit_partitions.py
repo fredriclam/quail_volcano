@@ -1,7 +1,7 @@
 import importlib, io, pprint
 
 # Set primary input file name (without suffix .py)
-input_module_name = "conduit"
+input_module_name = "odestart_conduit"
 
 # Specify whether conduit is coupled to 2D atmosphere.
 # If True, run `generate_atm_partitions.py`` as well to write the atmosphere
@@ -20,15 +20,15 @@ import numpy as np
 
 ''' Specify mesh partition here ''' 
 
-num_domains = 10
+num_domains = 5
 # Specify mesh partition
 manual_meshes = [
   {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 4000//num_domains,
-    "xmin" : -2000.0 + (2000/num_domains)*i - 150.0,
-    "xmax" : -2000.0 + (2000/num_domains)*(i+1) - 150.0,
+    "NumElemsX" : 2000//num_domains,
+    "xmin" : -6000.0 + (6000/num_domains)*i - 150.0,
+    "xmax" : -6000.0 + (6000/num_domains)*(i+1) - 150.0,
   }
   for i in range(num_domains)
 ]
