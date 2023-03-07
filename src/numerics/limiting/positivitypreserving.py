@@ -435,7 +435,9 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				theta = np.abs((rho_bar[var_name])/(
 					rho_bar[var_name] - quant_elem_faces + POS_TOL))
 			else:
-				theta = np.abs((rho_bar[var_name] - POS_TOL)/(rho_bar[var_name] - quant_elem_faces))
+				denom = np.where(rho_bar[var_name] - quant_elem_faces != 0,
+					rho_bar[var_name] - quant_elem_faces, POS_TOL)
+				theta = np.abs((rho_bar[var_name] - POS_TOL)/denom)
 			# theta = np.abs((rho_bar[var_name])/(
 			# 	rho_bar[var_name] - quant_elem_faces + POS_TOL))
 			# Truncate theta1; otherwise, can get noticeably different

@@ -219,20 +219,61 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 		# Strong form residual is (df/dU) dU/dx evaluated at the quadrature points.
 		# Approximating momentum flux helps with condensed-state flow (no exsolution)
 		if physics.NDIMS == 2:
-			pgrad = physics.compute_pressure_gradient(Uq, grad_Uq)
-			pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
-			f = np.linalg.norm(pgrad, axis=2) / (pressure[:, :, 0] + 1e-12)
-			# f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:, :, 0] + 1e-12)
-		elif physics.NDIMS == 1:
+			# use_legacy_AV = False
+			# if use_legacy_AV:
+			# 	# Legacy AV (large AVparam needed)
+			# 	pgrad = physics.compute_pressure_gradient(Uq, grad_Uq)
+			# 	f = np.linalg.norm(pgrad, axis=2) / (pressure[:, :, 0] + 1e-12)
 
-			# TODO: move this with NDIMS == 2 (temporarily in here because NDIMS==2
-			# does not have the updated AV implementation)
+			# Compute derivative of pressure w.r.t. state
+			psgrad = atomics.pressure_sgrad2D(arhoVec, pressure, T,
+				u[...,0:1], u[...,1:2], physics)
+			# Compute hydrostatic-relative pressure gradient in-place
+			pgrad_rel = np.einsum('ijk, ijkl -> ijl', psgrad, grad_Uq)
+			pgrad_rel[...,1:2] -= -9.8 * arhoVec.sum(axis=-1, keepdims=True)
+			f = np.linalg.norm(pgrad_rel, axis=2) / (pressure[:,:,0] + 1e-12)
+			# Compute velocity gradient wrt state (ne, nq, ns, nd)
+			usgrad = np.zeros((*psgrad.shape, 2))
+			usgrad[:,:,physics.get_mass_slice(),:] = -np.expand_dims(u, axis=2)
+			usgrad[:,:,physics.get_state_slice("XMomentum"),0] = 1 # du/(d(rho*u))
+			usgrad[:,:,physics.get_state_slice("YMomentum"),1] = 1 # dv/(d(rho*v))
+			usgrad /= np.expand_dims(rho, axis=2)
+
+			# Direct computation of Fjac * divF, where Fjac has both x, y components
+			# Convective flux part du/dq * q * dq/dx
+			divF = np.einsum("ijm, ijnd, ijnd -> ijm", Uq, usgrad, grad_Uq,
+				optimize=['einsum_path', (1, 2), (0, 1)])
+			# Convective flux part u * dq/dx
+			divF += np.einsum("ebd, ebid -> ebi", u, grad_Uq)
+			# dp/dq part in momentum equation
+			divF[..., physics.get_momentum_slice()] += np.einsum(
+				"ebi, ebid -> ebd", psgrad, grad_Uq)
+			# d(pu)/dq, d(pv)/dq parts in energy equation with dummy axis (index x)
+			divF[..., physics.get_state_slice("Energy")] += np.einsum(
+				"ebi, ebix -> ebx",
+				u[...,0:1]*psgrad + pressure*usgrad[...,0],
+				grad_Uq[...,0:1])
+			divF[..., physics.get_state_slice("Energy")] += np.einsum(
+				"ebi, ebix -> ebx",
+				u[...,1:2]*psgrad + pressure*usgrad[...,1],
+				grad_Uq[...,1:2])
+
+			# Compute source in strong residual [ne, nq, ns]
+			Sq = np.zeros_like(Uq) # [ne, nq, ns]
+			Sq = physics.eval_source_terms(Uq, elem_helpers.x_elems,
+				lambda: NotImplementedError(
+					"Time dependence not implemented in Artificial Viscosity mod in tools.py"),
+				Sq)
+			# Compute strong form residual at each quadrature point (ne, nq, ns)
+			Rh = -divF + Sq
+			f *= np.einsum("ijm, ijm -> ij", psgrad, np.abs(Rh)) / pressure[...,0]
+		elif physics.NDIMS == 1:
 			psgrad = atomics.pressure_sgrad(arhoVec, pressure, T, u, physics)
 			# psgrad = physics.compute_pressure_sgradient(Uq)
 			pgrad = np.einsum('ijk, ijkl -> ijl', psgrad, grad_Uq)
 
 			pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
-			f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:, :, 0] + 1e-12)
+			f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:,:,0] + 1e-12)
 
 			# Compute u gradient wrt state
 			usgrad = np.zeros_like(psgrad)
@@ -244,27 +285,27 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 			if is_computing_jacobian:
 				# Assemble full flux jacobian (ne, nq, ns, ns) with convective flux part q*u
 				Fjac = np.einsum("ijm, ijn -> ijmn", Uq, usgrad) \
-					+ np.einsum("ebx, ij -> ebij", u, np.eye(physics.NUM_STATE_VARS))
+					+ np.einsum("ebd, ij -> ebij", u, np.eye(physics.NUM_STATE_VARS))
 				# Add dp/dq to row for (rho u)
 				Fjac[:,:,physics.get_momentum_slice(),:] += np.expand_dims(psgrad,axis=2)
 				# Add d(pu)/dq to row for e
 				Fjac[:,:,physics.get_state_slice("Energy"),:] += \
 					np.expand_dims(u*psgrad + pressure*usgrad,axis=2)
 				# Compute spatial gradient of flux
-				gradF = np.einsum("ijmn, ijnx -> ijm", Fjac, grad_Uq)
+				divF = np.einsum("ijmn, ijnd -> ijm", Fjac, grad_Uq)
 			else:
-				# Direct computation of Fjac * gradF
+				# Direct computation of Fjac * dq/dx
 				# Convective flux part du/dq * q * dq/dx
-				gradF = np.einsum("ijm, ijn, ijnd -> ijm", Uq, usgrad, grad_Uq,
+				divF = np.einsum("ijm, ijn, ijnd -> ijm", Uq, usgrad, grad_Uq,
 					optimize=['einsum_path', (1, 2), (0, 1)])
 				# Convective flux part u * dq/dx
-				gradF += np.einsum("ebx, ebid -> ebi", u, grad_Uq)
+				divF += np.einsum("ebd, ebid -> ebi", u, grad_Uq)
 				# dp/dq part in momentum equation
-				gradF[..., physics.get_momentum_slice()] += np.einsum(
+				divF[..., physics.get_momentum_slice()] += np.einsum(
 					"ebi, ebid -> ebd", psgrad, grad_Uq)
 				# d(pu)/dq part in energy equation
-				gradF[..., physics.get_state_slice("Energy")] += np.einsum(
-					"ebi, ebid -> ebd", u*psgrad + pressure*usgrad, grad_Uq)
+				divF[..., physics.get_state_slice("Energy")] += np.einsum(
+					"ebi, ebix -> ebx", u*psgrad + pressure*usgrad, grad_Uq)
 
 			# Compute source in strong residual [ne, nq, ns]
 			Sq = np.zeros_like(Uq) # [ne, nq, ns]
@@ -273,7 +314,7 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 					"Time dependence not implemented in Artificial Viscosity mod in tools.py"),
 				Sq)
 			# Compute strong form residual at each quadrature point (ne, nq, ns)
-			Rh = -gradF + Sq
+			Rh = -divF + Sq
 
 			# approx_strongform_res = (
 			# 	pgrad
@@ -282,7 +323,7 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 			# )
 			# Approximate using only momentum term
 			# Rp = approx_strongform_res[...,0] * physics.compute_pressure_sgradient(Uq)[...,3] / pressure
-			f *= np.einsum("ijm, ijm -> ij", psgrad, Rh) / pressure[...,0]
+			f *= np.einsum("ijm, ijm -> ij", psgrad, np.abs(Rh)) / pressure[...,0]
 		
 		# f =  np.linalg.norm(grad_Uq[:, :, 0], axis=2) / (Uq[:, :, 0] + 1e-12) \
 		# 	 + np.linalg.norm(grad_Uq[:, :, 1], axis=2) / (Uq[:, :, 1] + 1e-12) \

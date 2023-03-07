@@ -105,6 +105,44 @@ def pressure_sgrad(arhoVec, p, T, u, physics):
   # Compute pressure gradient
   return 1/det * (v_T * f - e_T * g)
 
+def pressure_sgrad2D(arhoVec, p, T, u, v, physics):
+  ''' Pressure gradient w.r.t conservative state variables, for 2D.
+  Generalize by inserting different values of e_p etc. '''
+  
+  rho_m = (physics.Liquid["rho0"] * (1.0 + 
+        (p - physics.Liquid["p0"]) / physics.Liquid["K"]))
+  rho_mix = rho(arhoVec)
+  # Normalized partials of specific volume
+  v_T = (arhoVec[...,0:1] * physics.Gas[0]["R"]
+    + arhoVec[...,1:2] * physics.Gas[1]["R"])/ p
+  v_p = (arhoVec[...,0:1] * physics.Gas[0]["R"]
+    + arhoVec[...,1:2] * physics.Gas[1]["R"]) * T / (-p*p) \
+    + arhoVec[...,2:3] * (-physics.Liquid["rho0"] / physics.Liquid["K"]
+      / (rho_m*rho_m)) 
+  # Normalized partials of specific energy (per mass)
+  # Using ideal gas expression:
+  e_T = c_v(arhoVec, physics)
+  # Neglecting strain energy:
+  e_p = 0*e_T
+  # Compute determinant for transformation in state space
+  det = v_T * e_p - v_p * e_T
+  # Compute kinetic energy per mass
+  kinetic = (u*u + v*v)/2
+  # Allocate native gradients (assume p has shape (ne,nq,...) )
+  f = np.zeros((*p.shape[0:2], physics.NUM_STATE_VARS))
+  f[...,0:1] = kinetic - physics.Gas[0]["c_v"] * T
+  f[...,1:2] = kinetic - physics.Gas[1]["c_v"] * T
+  f[...,2:3] = kinetic - physics.Liquid["c_m"] * T
+  f[...,3:4] = -u
+  f[...,4:5] = -v
+  f[...,5:6] = 1.0
+  g = np.zeros((*p.shape[0:2], physics.NUM_STATE_VARS))
+  g[...,0:1] = -physics.Gas[0]["R"] * T / p
+  g[...,1:2] = -physics.Gas[1]["R"] * T / p
+  g[...,2:3] = -1.0/rho_m
+  # Compute pressure gradient
+  return 1/det * (v_T * f - e_T * g)
+
 def Psi1(p, gas_volfrac, physics):
   ''' Compute intermediate product for one computation path for sound speed. '''
   return (p + physics.Liquid["K"] - physics.Liquid["p0"]) / ( 
