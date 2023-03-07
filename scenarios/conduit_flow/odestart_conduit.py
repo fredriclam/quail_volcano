@@ -31,7 +31,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_smoothing/r1conduit",
+	"Prefix" : "/scratch/users/kcoppess/ODEsteadyState/conduit",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 800,
