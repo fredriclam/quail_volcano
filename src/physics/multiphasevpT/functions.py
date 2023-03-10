@@ -333,6 +333,7 @@ class SteadyState(FcnBase):
 		self.f = plugin_steady_state.SteadyState(x_global, p_vent, inlet_input_val,
 		  input_type=input_type, # "u", "j", "p" as specified input
 		  override_properties=props)
+		self.bbb = 0
 
 	def get_state(self, physics, x, t):
 		return self.f(x)
@@ -389,7 +390,8 @@ class IsothermalAtmosphere(FcnBase):
 	'''
 
 	def __init__(self,T:float=300., p_atm:float=1e5,
-		h0:float=0.0, gravity:float=9.8):
+		h0:float=-150.0, gravity:float=9.8,
+		massFracWv:float=5e-3, massFracM:float=1e-7):
 		''' Set atmosphere temperature, pressure, and location of pressure.
 		Pressure distribution is computed as hydrostatic profile with p = p_atm
 		at elevation h0.
@@ -398,44 +400,80 @@ class IsothermalAtmosphere(FcnBase):
 		self.p_atm = p_atm
 		self.h0 = h0
 		self.gravity = gravity
+		self.massFracWv = massFracWv
+		self.massFracM = massFracM
 
 	def get_state(self, physics, x, t):
+		''' Computes the pressure in an isothermal atmosphere for an ideal gas
+		mixture with air and water vapour. Trace amounts of magma phase are added
+		and the pressure profile is iteratively corrected. '''
+
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
 		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
-		# Compute scale height
-		hs = physics.Gas[0]["R"]*self.T/self.gravity
-		# Compute pressure
-		p = self.p_atm * np.exp(-(x[:,:,1:2] - self.h0)/hs).squeeze(axis=2)
-		# Pure air density
-		arhoA = p / (physics.Gas[0]["R"]*self.T)
-		# Zero or trace amounts of Wv, M and tracers
-		arhoWv = np.zeros_like(p)
-		arhoM = np.zeros_like(p)
-		arhoWt = np.zeros_like(p)
-		arhoC = np.zeros_like(p)
+		# Compute mole fractions times R_univ
+		nA_R = (1.0 - self.massFracWv) * physics.Gas[0]["R"]
+		nWv_R = self.massFracWv * physics.Gas[1]["R"]
+		# Compute mixture gas constant (gas constant per average molar mass)
+		R = nA_R + nWv_R
+		# Compute mole fraction of gas (=volume fraction of gas part)
+		nA = nA_R / R
+		nWv = nWv_R / R
+		# Compute scale height (constant)
+		hs = R*self.T/self.gravity
+
+		''' Compute hydrostatic pressure as initial value problem (IVP) '''
+		# Compare this to
+		#   plt.plot(np.unique(x[...,1]),
+		#     np.exp(-(np.unique(x[...,1])-x[...,1].min())/hs)*1e5, '-')
+		# Compute (nearly exponential) pressure p as a function of y
+		y = np.array([1.0-self.massFracWv-self.massFracM,
+			self.massFracWv, self.massFracM])
+		eval_pts = np.unique(x[:,:,1:2])
+		soln = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / atomics.mixture_spec_vol(y,p,self.T,physics),
+			[eval_pts.min(), eval_pts.max()],
+			[1e5],
+			t_eval=eval_pts,
+			dense_output=True)
+		# Evaluate p using dense_output of solve_ivp (with shape magic)
+		p = np.reshape(soln.sol(x[...,1].ravel()), x[...,1].shape)
+		rho = atomics.mixture_density(y, p, self.T, physics)
+		phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk", rho, y),
+			self.T, physics)[:,:,0]
+		# Compute partial densities
+		arhoA = (phi * nA) * p / (physics.Gas[0]["R"] * self.T)
+		arhoWv = (phi * nWv) * p / (physics.Gas[1]["R"] * self.T)
+		arhoM = (1.0 - phi) * physics.Liquid["rho0"] \
+			* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"])
+
+		# Compute conservative variables for tracers (typically no source in 2D)
+		arhoWt = arhoWv + 1e-7 * arhoM
+		arhoC = 0.5 * arhoM
+		arhoFm = (1-1e-7) * arhoM
 		# Zero velocity
 		u = np.zeros_like(p)
 		v = np.zeros_like(p)
-
+		# Compute volumetric energy
 		rho = arhoA + arhoWv + arhoM
-
 		e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
 			arhoWv * physics.Gas[1]["c_v"] * self.T + 
 			arhoM * (physics.Liquid["c_m"] * self.T + physics.Liquid["E_m0"])
 			+ 0.5 * rho * u**2.)
-		
+		# Assemble conservative state vector		
 		Uq[:, :, iarhoA] = arhoA
 		Uq[:, :, iarhoWv] = arhoWv
 		Uq[:, :, iarhoM] = arhoM
 		Uq[:, :, irhou] = rho * u
 		Uq[:, :, irhov] = rho * v
 		Uq[:, :, ie] = e
-		# Leave tracer quantities as zero
-		# Uq[:, :, iarhoWt] = arhoWt
-		# Uq[:, :, iarhoC] = arhoC
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoC
+		Uq[:, :, iarhoFm] = arhoFm
 
 		return Uq # [ne, nq, ns]
 
