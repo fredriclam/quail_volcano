@@ -31,7 +31,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "debug_output/r1conduitdx1",
+	"Prefix" : "debug_output/r1conduitdx1_debug",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 800,
@@ -82,13 +82,13 @@ InitialCondition = {
     "input_type": "u",
     "yC": lambda t: 0.4025 * (1.1 - 0.1 * np.cos(2*np.pi*t/4.0)), # yC_init,
     "yWt": lambda t: 0.05055 / (1.0 + 0.05055) \
-      * (1.1 - 0.1 * np.cos(2*np.pi*t/4.0)), # yWt_init,
-    "yA": 1e-10,
-    "yWvInletMin": 1e-10,
-    "yCMin": 1e-10,
+      * (1.0 - 0.4025 * (1.1 - 0.1 * np.cos(2*np.pi*0/4.0))), # yWt_init, !!! t = 0, frozen
+    "yA": 1e-8,
+    "yWvInletMin": 1e-8,
+    "yCMin": 1e-8,
     "crit_volfrac": 0.8,
     "tau_d": 1.0,
-    "tau_f": 1.0,
+    "tau_f": 3.0, # Resolvable in space( tau_f >~ dx/u)? when frag close to bndry
     "conduit_radius": 50,
     "T_chamber": 1000,
     "c_v_magma": 3e3,
@@ -140,7 +140,7 @@ BoundaryConditions = {
       "u" : InitialCondition["inlet_input_val"],
       "p_chamber" : 100e6,
       "T_chamber" : InitialCondition["T_chamber"],
-      "trace_arho": 1e-10*2700,
+      "trace_arho": 1e-8*2700,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",

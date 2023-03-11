@@ -2089,7 +2089,7 @@ class PressureOutlet1D(BCWeakRiemann):
 		if np.any(velI >= cI):
 			return UqB
 		elif np.any(velI < 0):
-			raise ValueError("Inflow")
+			raise ValueError("Inflow. Check fragmentation state (front too close?)")
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
@@ -2315,8 +2315,8 @@ class VelocityInlet1D(BCWeakPrescribed):
 		else:
 			# Inflow
 			arhoVecB = arhoVecI.copy()
-			arhoVecB[...,0] = 1e-6 # Small amount of air to preserve positivity
-			arhoVecB[...,1] = 1e-6 # Small amount of water to preserve positivity
+			arhoVecB[...,0] = self.trace_arho # Small amount of air to preserve positivity
+			arhoVecB[...,1] = self.trace_arho # Small amount of water to preserve positivity
 			# Approximate partial density of magma by density
 			arhoVecB[...,2] = rho0 * (1 + (p_chamber - p0) / K)
 			Gamma = atomics.Gamma(arhoVecB, physics)
@@ -2349,7 +2349,8 @@ class VelocityInlet1D(BCWeakPrescribed):
 		# crystal vol / suspension vol
 		phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * t))
 		chi_water = 0.05055
-		UqB[:,:,5] = rho * chi_water * (1 - phi_crys) / (1 + chi_water)
+		UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
+			* (1.0 - 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * 0.0)))  # frozen
 		UqB[:,:,6] = rho * phi_crys
 	
 		# Fragmented state
