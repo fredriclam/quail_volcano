@@ -3,8 +3,8 @@ import numpy as np
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 5,
-	"NumTimeSteps" : 5*4000,
+	"FinalTime" : 30,
+	"NumTimeSteps" : 30*8000, # 4000 (@ dx = 2.0)
 	"TimeStepper" : "SSPRK3",
 }
 
@@ -31,7 +31,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "steadyState_smoothing/r1conduit",
+	"Prefix" : "debug_output/r1conduitdx1",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
 	"WriteInterval" : 800,
@@ -44,8 +44,8 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 2000, 
-    "xmin" : -6000.0 - 150.0,
+    "NumElemsX" : 3000,
+    "xmin" : -3000 - 150.0, # -6000.0 - 150.0,
     "xmax" : 0.0 - 150.0,
 }
 
@@ -63,8 +63,7 @@ yWt_init = chi_water * (1 - phi_crys) / (1 + chi_water)
 yC_init = phi_crys
 # Compute representation of the 1D mesh. This part is overriden if
 # generate_conduit_partitions is used.
-n_elems_per_part = Mesh["NumElemsX"]
-n_elems_global = 2*n_elems_per_part
+n_elems_global = Mesh["NumElemsX"]
 if Numerics["SolutionOrder"] == 0:
     n_nodes_global = n_elems_global
 elif Numerics["SolutionOrder"] == 1:
@@ -81,11 +80,12 @@ InitialCondition = {
     "p_vent": 1e5,          # Vent pressure
     "inlet_input_val": 1.0, # Inlet velocity; see also BoundaryCondition["x1"]
     "input_type": "u",
-    "yC": yC_init,
-    "yWt": yWt_init,
-    "yA": 1e-7,
-    "yWvInletMin": 1e-7,
-    "yCMin": 1e-7,
+    "yC": lambda t: 0.4025 * (1.1 - 0.1 * np.cos(2*np.pi*t/4.0)), # yC_init,
+    "yWt": lambda t: 0.05055 / (1.0 + 0.05055) \
+      * (1.1 - 0.1 * np.cos(2*np.pi*t/4.0)), # yWt_init,
+    "yA": 1e-10,
+    "yWvInletMin": 1e-10,
+    "yCMin": 1e-10,
     "crit_volfrac": 0.8,
     "tau_d": 1.0,
     "tau_f": 1.0,
@@ -97,6 +97,7 @@ InitialCondition = {
     "p0_magma": 5e6,
     "solubility_k": 5e-6,
     "solubility_n": 0.5,
+    "approx_massfracs": True,
 }
 
 # Add source terms here. Source terms just stack up, and can be named whatever
@@ -139,7 +140,7 @@ BoundaryConditions = {
       "u" : InitialCondition["inlet_input_val"],
       "p_chamber" : 100e6,
       "T_chamber" : InitialCondition["T_chamber"],
-      "trace_arho": 1e-7*2700,
+      "trace_arho": 1e-10*2700,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",

@@ -35,6 +35,7 @@ from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
 				SourceBase, ConvNumFluxBase)
 import physics.multiphasevpT.atomics as atomics
 import compressible_conduit_steady.steady_state as plugin_steady_state
+from compressible_conduit_steady.advection_map import advection_map
 
 from dataclasses import dataclass
 import copy
@@ -303,7 +304,7 @@ class SteadyState(FcnBase):
 		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
-		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5):
+		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5, approx_massfracs=False):
 		'''
 		Interface to compressible_conduit_steady.SteadyState.
 		'''
@@ -330,13 +331,51 @@ class SteadyState(FcnBase):
 				"solubility_k": solubility_k,
 				"solubility_n": solubility_n,
 		}
+		self.approx_massfracs = approx_massfracs
+		if approx_massfracs:
+			# Pop off callable yC, yWt source time functions to match steady_state
+			yC_fn = props.pop("yC")
+			yWt_fn = props.pop("yWt")
+			try:
+				# Reattach initial guess yC, yWt as scalars
+				props["yC"] = yC_fn(0.0)
+				props["yWt"] = yWt_fn(0.0)
+			except TypeError as e:
+				raise TypeError("Flag approx_massfracs was set to True in initial " +
+				"condition. This flag approximates the mass fraction distribution " +
+				"in the initial condition using a periodic forcing yC, yWt. The " +
+				"provided values of yWt, yC must be callable functions f(t), " +
+				"rather than scalar values. ") from e
+			# Set mapping (x; xp, up) -> (yWt(x), yC(x)) for initial condition
+			self.advection_map = lambda x, xp, up: \
+				advection_map(x, xp, up, (yWt_fn, yC_fn))
 		self.f = plugin_steady_state.SteadyState(x_global, p_vent, inlet_input_val,
-		  input_type=input_type, # "u", "j", "p" as specified input
-		  override_properties=props)
-		self.bbb = 0
+			input_type=input_type, # "u", "j", "p" as specified input
+			override_properties=props,
+			use_static_cache=True, # Optimize across processes by sharing global soln
+		)
+		# Save argument values
+		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.p_vent = p_vent
+		self.inlet_input = (inlet_input_val, input_type)
 
 	def get_state(self, physics, x, t):
-		return self.f(x)
+		# Evaluate intial condition with constant yC, yWt input
+		U_init = self.f(x)
+
+		if self.approx_massfracs:
+			# Extract velocity from global x
+			u = physics.compute_variable("XVelocity", self.f(self.x_global))
+			# Construct approximate yWt(x), yC(x) with oscillatory input
+			yWt, yC = self.advection_map(x, self.x_global, u)
+			# Apply correction to water, crystal content
+			rho = U_init[..., physics.get_mass_slice()].sum(axis=-1, keepdims=True)
+			U_init[..., physics.get_state_slice("pDensityWt")] = yWt * rho
+			U_init[..., physics.get_state_slice("pDensityC")]  = yC * rho
+			# Remove lambdas for compatibility with pickle module
+			self.advection_map = None
+
+		return U_init
 
 class UniformExsolutionTest(FcnBase):
 	'''

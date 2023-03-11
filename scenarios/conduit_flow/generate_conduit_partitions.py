@@ -20,15 +20,24 @@ import numpy as np
 
 ''' Specify mesh partition here ''' 
 
-num_domains = 5
-# Specify mesh partition
+num_domains = 8
+# Specify mesh partition (overriding the Mesh in primary_input)
+num_elems_total = 3000
+# Specify extent of domain
+x_global_min = -3150
+x_global_max = -150
+if num_domains * (num_elems_total//num_domains) != num_elems_total:
+  raise ValueError("Domain could not be split evenly into domain. Check that" +
+    "num_elems_total is an integer multiple of num_domains.")
+
+domain_length = x_global_max - x_global_min 
 manual_meshes = [
   {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 2000//num_domains,
-    "xmin" : -6000.0 + (6000/num_domains)*i - 150.0,
-    "xmax" : -6000.0 + (6000/num_domains)*(i+1) - 150.0,
+    "NumElemsX" : num_elems_total//num_domains,
+    "xmin" : x_global_min + (domain_length/num_domains)*i,
+    "xmax" : x_global_min + (domain_length/num_domains)*(i+1),
   }
   for i in range(num_domains)
 ]
@@ -60,6 +69,13 @@ else:
     "p": 1e5,
   }
 
+# Whether to approximate periodically forced mass fraction in space
+approx_massfracs = True
+# Define periodic source-time function as strings
+str_yC_source = "lambda t: 0.4025 * (1.1 - 0.1 * np.cos(2*np.pi*t/4.0))"
+str_yWt_source = "lambda t: 0.05055 / (1.0 + 0.05055) " \
+  + "* (1.1 - 0.1 * np.cos(2*np.pi*t/4.0))"
+
 # Define name of the parameter file
 param_filename_map = lambda i: f'conduit_sub{i}.py'
 # Define name of the atm parameter files
@@ -87,7 +103,7 @@ class Evaluable():
 #   Note that for SolutionOrder > 2, this does not correspond exactly to the
 #   required DG nodes. This may cause numerical perturbation in the initial
 #   condition setup.
-[(mesh["xmin"], mesh["xmax"], mesh["NumElemsX"]) for mesh in manual_meshes]
+#   Format of _subdomain_nodes[i] is (x_min, x_max, num_nodes)
 
 # Get mesh representations as (x_min, x_max, N_nodes) in each subdomain mesh
 if primary_input.Numerics["SolutionOrder"] == 0:
@@ -118,6 +134,10 @@ for subdomain_idx in range(num_domains):
   dict_repr["Mesh"] = manual_meshes[subdomain_idx]
   # Stringify initial condition x_global
   dict_repr["InitialCondition"]["x_global"] = x_global
+  # Insert source time function lambdas
+  if approx_massfracs:
+    dict_repr["InitialCondition"]["yWt"] = Evaluable(str_yWt_source)
+    dict_repr["InitialCondition"]["yC"] = Evaluable(str_yC_source)
 
   # Set boundary conditions
   dict_repr["BoundaryConditions"] = manual_bcs[subdomain_idx]
