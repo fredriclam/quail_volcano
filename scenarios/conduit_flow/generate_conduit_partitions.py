@@ -74,7 +74,7 @@ approx_massfracs = True
 # Define periodic source-time function as strings
 str_yC_source = "lambda t: 0.4025 * (1.1 - 0.1 * np.cos(2*np.pi*t/4.0))"
 str_yWt_source = "lambda t: 0.05055 / (1.0 + 0.05055) " \
-  + "* (1.1 - 0.1 * np.cos(2*np.pi*t/4.0))"
+  + "* (1.0 - 0.4025 * (1.1 - 0.1 * np.cos(2*np.pi*0.0/4.0)))"
 
 # Define name of the parameter file
 param_filename_map = lambda i: f'conduit_sub{i}.py'
