@@ -131,6 +131,155 @@ class FE(StepperBase):
 		return res # [num_elems, nb, ns]
 
 
+class RK3(StepperBase):
+	'''
+	SSP 3rd order Runge-Kutta. CFL-efficient among 3-stage methods for 3rd order
+	accuracy.
+	Optimality is shown in [1] for problems where FE is strongly stable for the
+	semidiscrete problem, and the CFL efficiency (timestep allowance relative to
+	the max FE timestep) is 1.
+	Note the latter may not be useful, since FE may not even be stable combined
+	with DG (see Table 2.2 from [2] for example); DG is not a TVD spatial
+	discretization. The CFL condition can be written
+	  |w| dt / dx <= CFL,
+	where CFL is 1 for first-order spatial with Forward Euler. Forward Euler with
+	higher order methods does not generally have CFL = 1. In [2], the authors
+	recommend CFL ~  1/(2k + 1) in practice.
+	
+	Assumes multidomain synchronization after take_time_step is called.
+
+	For low-storage, see SSPRK3. This methods needs one additional register (U0)
+	caching the solution at step n (stage 0).
+
+	Returns residual of the last stage (dt * L(U2)), where U2 is the last
+	predictor value.
+
+	[1] S. Gottlieb and C.-W. Shu, Total variation diminishing Runge-Kutta
+		schemes, Math. Comp., 67 (1998), pp. 73–85.
+	[2] Cockburn, B. and Shu, C.W., 2001. Runge–Kutta discontinuous Galerkin
+		methods for convection-dominated problems. Journal of scientific computing,
+		16, p.191.
+	'''
+
+	def __init__(self, U):
+		super().__init__(U)
+		self.nstages = 3
+
+	def take_time_step(self, solver):
+		physics = solver.physics
+		mesh = solver.mesh
+		U = solver.state_coeffs
+
+		res = self.res
+
+		# Cache solution at current step
+		U0 = U.copy()
+
+		# Evaluate stage 1 solution U1 in-place at time t
+		res = solver.get_residual(U, res)
+		U += solver_tools.mult_inv_mass_matrix(mesh, solver, self.dt, res)
+		solver.apply_limiter(U)
+		# Sync multidomains with U1 values
+		solver.custom_user_function(solver)
+
+		# Evaluate stage 2 solution U2 in-place at time t + dt
+		solver.time += self.dt
+		res = solver.get_residual(U, res)
+		U += solver_tools.mult_inv_mass_matrix(mesh, solver, self.dt, res)
+		U *= 0.25
+		U += 0.75 * U0
+		solver.apply_limiter(U)
+		# Sync multidomains with U2 value
+		solver.custom_user_function(solver)
+
+		# Evaluate stage final solution U{n+1} in-place, rewinding to time t + dt/2
+		solver.time -= 0.5*self.dt
+		res = solver.get_residual(U, res)
+		U += solver_tools.mult_inv_mass_matrix(mesh, solver, self.dt, res)
+		U *= 2.0/3.0
+		U += (1.0/3.0) * U0
+		solver.apply_limiter(U)
+
+		# Set solver time back to t + dt, and assume sync after this method call
+		solver.time += 0.5*self.dt
+
+		return res # [num_elems, nb, ns]
+
+
+class RK3SR(StepperBase):
+	'''
+	Strong-stability-preserving (SSP) third-order, four-stage Runge-Kutta of
+	Spiteri and Ruuth. CFL-efficient among 4-stage methods for 3rd order
+	accuracy.
+	
+	Assumes multidomain synchronization after take_time_step is called.
+
+	For low-storage, see SSPRK3. This methods needs one additional register (U0)
+	caching the solution at step n (stage 0).
+
+	Returns residual of the last stage (dt * L(U2)), where U2 is the last
+	predictor value.
+
+	[1] S. Gottlieb and C.-W. Shu, Total variation diminishing Runge-Kutta
+		schemes, Math. Comp., 67 (1998), pp. 73–85.
+	[2] Cockburn, B. and Shu, C.W., 2001. Runge–Kutta discontinuous Galerkin
+		methods for convection-dominated problems. Journal of scientific computing,
+		16, p.191.
+	'''
+
+	def __init__(self, U):
+		super().__init__(U)
+		self.nstages = 4
+
+	def take_time_step(self, solver):
+		physics = solver.physics
+		mesh = solver.mesh
+		U = solver.state_coeffs
+
+		res = self.res
+
+		# Cache solution at current step
+		U0 = U.copy()
+
+		# Evaluate stage 1 solution U1 in-place
+		#   (`solver.state_coeffs`, aliased `U`, is only modified after call to
+		#   mult_inv_mass_matrix)
+		res = solver.get_residual(U, res)
+		U += 0.5*solver_tools.mult_inv_mass_matrix(mesh, solver, self.dt, res)
+		solver.apply_limiter(U)
+		# Sync multidomains with U1 values
+		solver.custom_user_function(solver)
+
+		# Evaluate stage 2 solution U2 in-place
+		solver.time += 0.5*self.dt
+		res = solver.get_residual(U, res)
+		U += 0.5*solver_tools.mult_inv_mass_matrix(mesh, solver, self.dt, res)
+		solver.apply_limiter(U)
+		# Sync multidomains with U2 value
+		solver.custom_user_function(solver)
+
+		# Evaluate stage 3 solution U3 in-place
+		solver.time += 0.5*self.dt
+		res = solver.get_residual(U, res)
+		U += 0.5*solver_tools.mult_inv_mass_matrix(mesh, solver, self.dt, res)
+		U *= (1.0/3.0)
+		U += (2.0/3.0) * U0
+		solver.apply_limiter(U)
+		# Sync multidomains with U3 value
+		solver.custom_user_function(solver)
+
+		# Evaluate stage final solution U{n+1} in-place, rewinding to time t + dt/2
+		solver.time -= 0.5*self.dt
+		res = solver.get_residual(U, res)
+		U += 0.5*solver_tools.mult_inv_mass_matrix(mesh, solver, self.dt, res)
+		solver.apply_limiter(U)
+
+		# Set solver time back to t + dt, and assume sync after this method call
+		solver.time += 0.5*self.dt
+
+		return res # [num_elems, nb, ns]
+
+
 class RK4(StepperBase):
 	'''
 	4th-order Runge Kutta (RK4) method inherits attributes from StepperBase.

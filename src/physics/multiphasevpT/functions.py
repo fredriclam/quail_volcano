@@ -2089,7 +2089,8 @@ class PressureOutlet1D(BCWeakRiemann):
 		if np.any(velI >= cI):
 			return UqB
 		elif np.any(velI < 0):
-			raise ValueError("Inflow. Check fragmentation state (front too close?)")
+			raise ValueError("Inflow. Check fragmentation state (front too close?) " +
+			  "and stability with respect to timestepper.")
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
