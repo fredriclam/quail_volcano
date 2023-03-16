@@ -3282,9 +3282,7 @@ class ExsolutionSource(SourceBase):
 			arhoWt = Uq[:, :, slarhoWt]
 			arhoC = Uq[:, :, slarhoC]
 			p = physics.compute_additional_variable("Pressure", Uq, True)
-			
-			# Corrected source term (vapour difference)
-			eq_conc = ExsolutionSource.get_eq_conc(physics, p)
+
 			# Mixture density
 			rho = Uq[:, :, physics.get_mass_slice()].sum(axis=-1, keepdims=True)
 			yWt, yA, yC = arhoWt / rho, arhoA / rho, arhoC / rho
