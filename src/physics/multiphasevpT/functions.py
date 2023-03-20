@@ -79,6 +79,7 @@ class BCType(Enum):
 	EntropyTotalenthalpyInlet1D = auto()
 	EntropyPressureInlet1D = auto()
 	NohInlet = auto()
+	LinearizedIsothermalOutflow2D = auto()
 
 
 class SourceType(Enum):
@@ -429,8 +430,8 @@ class IsothermalAtmosphere(FcnBase):
 	'''
 
 	def __init__(self,T:float=300., p_atm:float=1e5,
-		h0:float=-150.0, gravity:float=9.8,
-		massFracWv:float=5e-3, massFracM:float=1e-7):
+		h0:float=-150.0, hmax:float=6000.0, gravity:float=9.8,
+		massFracWv:float=5e-3, massFracM:float=1e-7, tracer_frac:float=1e-7):
 		''' Set atmosphere temperature, pressure, and location of pressure.
 		Pressure distribution is computed as hydrostatic profile with p = p_atm
 		at elevation h0.
@@ -438,9 +439,15 @@ class IsothermalAtmosphere(FcnBase):
 		self.T = T
 		self.p_atm = p_atm
 		self.h0 = h0
+		self.hmax = hmax
 		self.gravity = gravity
 		self.massFracWv = massFracWv
 		self.massFracM = massFracM
+		# Allocate pressure interpolant (filled when self.get_state is called
+		# because physics object is required)
+		self.pressure_interpolant = None
+		# Set numerical fraction for essentially inert fields
+		self.tracer_frac = tracer_frac
 
 	def get_state(self, physics, x, t):
 		''' Computes the pressure in an isothermal atmosphere for an ideal gas
@@ -460,6 +467,11 @@ class IsothermalAtmosphere(FcnBase):
 		# Compute mole fraction of gas (=volume fraction of gas part)
 		nA = nA_R / R
 		nWv = nWv_R / R
+		# Cache mole fractions and properties
+		self.nA = nA
+		self.nWv = nWv
+		self.Gas = physics.Gas
+		self.Liquid = physics.Liquid
 		# Compute scale height (constant)
 		hs = R*self.T/self.gravity
 
@@ -468,20 +480,23 @@ class IsothermalAtmosphere(FcnBase):
 		#   plt.plot(np.unique(x[...,1]),
 		#     np.exp(-(np.unique(x[...,1])-x[...,1].min())/hs)*1e5, '-')
 		# Compute (nearly exponential) pressure p as a function of y
-		y = np.array([1.0-self.massFracWv-self.massFracM,
+		self.y = np.array([1.0-self.massFracWv-self.massFracM,
 			self.massFracWv, self.massFracM])
 		eval_pts = np.unique(x[:,:,1:2])
+		# Evaluate IVP solution
 		soln = scipy.integrate.solve_ivp(
 			lambda height, p:
-				-self.gravity / atomics.mixture_spec_vol(y,p,self.T,physics),
-			[eval_pts.min(), eval_pts.max()],
+				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
+			[self.h0, self.hmax],
 			[1e5],
 			t_eval=eval_pts,
 			dense_output=True)
+		# Cache the pressure interpolant
+		self.pressure_interpolant = soln.sol
 		# Evaluate p using dense_output of solve_ivp (with shape magic)
-		p = np.reshape(soln.sol(x[...,1].ravel()), x[...,1].shape)
-		rho = atomics.mixture_density(y, p, self.T, physics)
-		phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk", rho, y),
+		p = np.reshape(self.pressure_interpolant(x[...,1].ravel()), x[...,1].shape)
+		rho = atomics.mixture_density(self.y, p, self.T, physics)
+		phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk", rho, self.y),
 			self.T, physics)[:,:,0]
 		# Compute partial densities
 		arhoA = (phi * nA) * p / (physics.Gas[0]["R"] * self.T)
@@ -490,9 +505,9 @@ class IsothermalAtmosphere(FcnBase):
 			* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"])
 
 		# Compute conservative variables for tracers (typically no source in 2D)
-		arhoWt = arhoWv + 1e-7 * arhoM
-		arhoC = 0.5 * arhoM
-		arhoFm = (1-1e-7) * arhoM
+		arhoWt = arhoWv + self.tracer_frac * arhoM
+		arhoC = self.tracer_frac * arhoM
+		arhoFm = (1.0 - self.tracer_frac) * arhoM
 		# Zero velocity
 		u = np.zeros_like(p)
 		v = np.zeros_like(p)
@@ -2026,6 +2041,118 @@ class NonReflective1D(BCWeakPrescribed):
 
 		''' Post-computation validity check '''
 		if np.any(THat < 0.):
+			raise errors.NotPhysicalError
+
+		return UqB
+
+
+class LinearizedIsothermalOutflow2D(BCWeakPrescribed):
+	'''
+	Provides an outflow 
+
+	Attributes:
+	-----------
+	p: float
+		pressure
+	'''
+	def __init__(self):
+		# Instantiate isothermal atmosphere (not bound to initial condition)
+		# self.isothermal_atmosphere = IsothermalAtmosphere()
+		self.initialized = False
+		self.U0 = None
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Computes the boundary state that satisfies the pressure BC strongly. '''
+
+		# Fetch isothermal
+		if not self.initialized:
+			self.initialized = True
+
+			# Fetch isothermal atmosphere IC
+			init_func = physics.IC
+			# Check type of initial condition
+			if type(physics.IC) is not physics.IC_fcn_map.get(
+					FcnType.IsothermalAtmosphere, None):
+				raise ValueError("LinearizedIsothermalOutflow2D used but initial " +
+				  "condition set by IsothermalAtmosphere was not found.")
+
+			# Fill pressure from the initial condition
+			p0 = x[...,1:].copy()
+			p0.ravel()[:] = init_func.pressure_interpolant(x[...,1:].ravel())
+			self.p0 = p0
+			# Unpack temperature
+			T = init_func.T
+			# Compute intermediate states
+			rho = atomics.mixture_density(init_func.y, p0, T, physics)
+			phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk",
+				rho[...,0], init_func.y), T, physics)
+			# Compute partial densities
+			arhoA = (phi * init_func.nA) * p0 / (physics.Gas[0]["R"] * T)
+			arhoWv = (phi * init_func.nWv) * p0 / (physics.Gas[1]["R"] * T)
+			arhoM = (1.0 - phi) * physics.Liquid["rho0"] \
+				* (1.0 + (p0 - physics.Liquid["p0"])/physics.Liquid["K"])
+			# Compute conservative variables for tracers (typically no source in 2D)
+			arhoWt = arhoWv + init_func.tracer_frac * arhoM
+			arhoC = init_func.tracer_frac * arhoM
+			arhoFm = (1.0 - init_func.tracer_frac) * arhoM
+			# Get initial state for linearization
+			self.U0 = np.zeros((*x.shape[:-1], physics.NUM_STATE_VARS))
+			self.U0[...,0:1] = arhoA
+			self.U0[...,1:2] = arhoWv
+			self.U0[...,2:3] = arhoM
+			self.U0[...,5:6] = atomics.c_v(self.U0[...,0:3], physics) * T
+			self.U0[...,6:7] = arhoWt
+			self.U0[...,7:8] = arhoC
+			self.U0[...,8:9] = arhoFm
+
+			self.Z0 = physics.compute_variable("SoundSpeed", self.U0) * rho
+
+		''' Compute mass variables '''
+		arhoVec = UqI[:,:,physics.get_mass_slice()]
+		rhoI = atomics.rho(arhoVec)
+		yVec = UqI[:,:,physics.get_mass_slice()] / rhoI
+
+		''' Compute normal velocity '''
+		n_hat = normals / np.linalg.norm(normals, axis=2, keepdims=True)
+		rhoveln = (UqI[:, :, physics.get_momentum_slice()] * n_hat).sum(
+			axis=2, keepdims=True)
+		veln = rhoveln / rhoI
+
+		''' Compute interior pressure '''
+		TI = atomics.temperature(arhoVec, UqI[:, :, physics.get_momentum_slice()],
+			UqI[:, :, physics.get_state_slice("Energy")], physics)
+		pI = atomics.pressure(
+			arhoVec, TI, atomics.gas_volfrac(arhoVec, TI, physics), physics)
+		Gamma = atomics.Gamma(arhoVec, physics)
+		
+		''' Compute linearized characteristic quantities in units of velocity '''
+		p0 = self.p0
+		char_out = (pI - p0)/self.Z0 + veln
+		char_in = (pI - p0)/self.Z0 - veln
+		velnB = 0.5 * char_out
+		pB = p0 + 0.5 * self.Z0 * char_out
+		# Assess ingoing characteristic quantity due to nonlinearity
+		pass
+
+		''' Evaluate state '''
+		# Compute isentropic temperature change
+		TB = TI * (pB / pI)**((Gamma-1.0)/Gamma)
+		rhoB = atomics.mixture_density(yVec, pB, TB, physics)
+		# Map to kinematic variables
+		UqB = UqI.copy()
+		UqB /= rhoI
+		# Change face-normal velocity component
+		UqB[:, :, physics.get_momentum_slice()] += (velnB - veln) * n_hat
+		# Map to conservative variables
+		UqB *= rhoB
+		# Fill energy explicitly
+		kinetic_energy = 0.5 * np.expand_dims(np.einsum("...i, ...i -> ...",
+			UqB[:, :, physics.get_momentum_slice()],
+			UqB[:, :, physics.get_momentum_slice()]), axis=-1) / rhoB
+		UqB[:, :, physics.get_state_slice("Energy")] = \
+			atomics.c_v(arhoVec, physics) * TB + kinetic_energy
+
+		if np.any((pB < 0.0) | (TB < 0.0)):
 			raise errors.NotPhysicalError
 
 		return UqB

@@ -90,6 +90,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.VelocityInlet1D: mpvpT_fcns.VelocityInlet1D,
 			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
+			BCType.LinearizedIsothermalOutflow2D: mpvpT_fcns.LinearizedIsothermalOutflow2D,
 		})
 
 	def set_physical_params(self, 

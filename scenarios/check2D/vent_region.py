@@ -55,8 +55,9 @@ ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
 	"r1" : {
-		"BCType" : "SlipWall",
+		# "BCType" : "SlipWall",
 		# "BCType" : "MultiphasevpT2D2D",
+		"BCType" : "LinearizedIsothermalOutflow2D",
 		# "bkey": "r1",
 	},
 	"ground" : {
