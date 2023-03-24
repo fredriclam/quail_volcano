@@ -35,6 +35,7 @@ from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
 				SourceBase, ConvNumFluxBase)
 import physics.multiphasevpT.atomics as atomics
 import compressible_conduit_steady.steady_state as plugin_steady_state
+from compressible_conduit_steady.advection_map import advection_map
 
 from dataclasses import dataclass
 import copy
@@ -78,6 +79,7 @@ class BCType(Enum):
 	EntropyTotalenthalpyInlet1D = auto()
 	EntropyPressureInlet1D = auto()
 	NohInlet = auto()
+	LinearizedIsothermalOutflow2D = auto()
 
 
 class SourceType(Enum):
@@ -303,7 +305,7 @@ class SteadyState(FcnBase):
 		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
-		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5):
+		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5, approx_massfracs=False):
 		'''
 		Interface to compressible_conduit_steady.SteadyState.
 		'''
@@ -330,12 +332,51 @@ class SteadyState(FcnBase):
 				"solubility_k": solubility_k,
 				"solubility_n": solubility_n,
 		}
+		self.approx_massfracs = approx_massfracs
+		if approx_massfracs:
+			# Pop off callable yC, yWt source time functions to match steady_state
+			yC_fn = props.pop("yC")
+			yWt_fn = props.pop("yWt")
+			try:
+				# Reattach initial guess yC, yWt as scalars
+				props["yC"] = yC_fn(0.0)
+				props["yWt"] = yWt_fn(0.0)
+			except TypeError as e:
+				raise TypeError("Flag approx_massfracs was set to True in initial " +
+				"condition. This flag approximates the mass fraction distribution " +
+				"in the initial condition using a periodic forcing yC, yWt. The " +
+				"provided values of yWt, yC must be callable functions f(t), " +
+				"rather than scalar values. ") from e
+			# Set mapping (x; xp, up) -> (yWt(x), yC(x)) for initial condition
+			self.advection_map = lambda x, xp, up: \
+				advection_map(x, xp, up, (yWt_fn, yC_fn))
 		self.f = plugin_steady_state.SteadyState(x_global, p_vent, inlet_input_val,
-		  input_type=input_type, # "u", "j", "p" as specified input
-		  override_properties=props)
+			input_type=input_type, # "u", "j", "p" as specified input
+			override_properties=props,
+			use_static_cache=True, # Optimize across processes by sharing global soln
+		)
+		# Save argument values
+		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.p_vent = p_vent
+		self.inlet_input = (inlet_input_val, input_type)
 
 	def get_state(self, physics, x, t):
-		return self.f(x)
+		# Evaluate intial condition with constant yC, yWt input
+		U_init = self.f(x)
+
+		if self.approx_massfracs:
+			# Extract velocity from global x
+			u = physics.compute_variable("XVelocity", self.f(self.x_global))
+			# Construct approximate yWt(x), yC(x) with oscillatory input
+			yWt, yC = self.advection_map(x, self.x_global, u)
+			# Apply correction to water, crystal content
+			rho = U_init[..., physics.get_mass_slice()].sum(axis=-1, keepdims=True)
+			U_init[..., physics.get_state_slice("pDensityWt")] = yWt * rho
+			U_init[..., physics.get_state_slice("pDensityC")]  = yC * rho
+			# Remove lambdas for compatibility with pickle module
+			self.advection_map = None
+
+		return U_init
 
 class UniformExsolutionTest(FcnBase):
 	'''
@@ -389,7 +430,8 @@ class IsothermalAtmosphere(FcnBase):
 	'''
 
 	def __init__(self,T:float=300., p_atm:float=1e5,
-		h0:float=0.0, gravity:float=9.8):
+		h0:float=-150.0, hmax:float=6000.0, gravity:float=9.8,
+		massFracWv:float=5e-3, massFracM:float=1e-7, tracer_frac:float=1e-7):
 		''' Set atmosphere temperature, pressure, and location of pressure.
 		Pressure distribution is computed as hydrostatic profile with p = p_atm
 		at elevation h0.
@@ -397,45 +439,95 @@ class IsothermalAtmosphere(FcnBase):
 		self.T = T
 		self.p_atm = p_atm
 		self.h0 = h0
+		self.hmax = hmax
 		self.gravity = gravity
+		self.massFracWv = massFracWv
+		self.massFracM = massFracM
+		# Allocate pressure interpolant (filled when self.get_state is called
+		# because physics object is required)
+		self.pressure_interpolant = None
+		# Set numerical fraction for essentially inert fields
+		self.tracer_frac = tracer_frac
 
 	def get_state(self, physics, x, t):
+		''' Computes the pressure in an isothermal atmosphere for an ideal gas
+		mixture with air and water vapour. Trace amounts of magma phase are added
+		and the pressure profile is iteratively corrected. '''
+
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
 		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
 			physics.get_state_indices()
 
-		# Compute scale height
-		hs = physics.Gas[0]["R"]*self.T/self.gravity
-		# Compute pressure
-		p = self.p_atm * np.exp(-(x[:,:,1:2] - self.h0)/hs).squeeze(axis=2)
-		# Pure air density
-		arhoA = p / (physics.Gas[0]["R"]*self.T)
-		# Zero or trace amounts of Wv, M and tracers
-		arhoWv = np.zeros_like(p)
-		arhoM = np.zeros_like(p)
-		arhoWt = np.zeros_like(p)
-		arhoC = np.zeros_like(p)
+		# Compute mole fractions times R_univ
+		nA_R = (1.0 - self.massFracWv) * physics.Gas[0]["R"]
+		nWv_R = self.massFracWv * physics.Gas[1]["R"]
+		# Compute mixture gas constant (gas constant per average molar mass)
+		R = nA_R + nWv_R
+		# Compute mole fraction of gas (=volume fraction of gas part)
+		nA = nA_R / R
+		nWv = nWv_R / R
+		# Cache mole fractions and properties
+		self.nA = nA
+		self.nWv = nWv
+		self.Gas = physics.Gas
+		self.Liquid = physics.Liquid
+		# Compute scale height (constant)
+		hs = R*self.T/self.gravity
+
+		''' Compute hydrostatic pressure as initial value problem (IVP) '''
+		# Compare this to
+		#   plt.plot(np.unique(x[...,1]),
+		#     np.exp(-(np.unique(x[...,1])-x[...,1].min())/hs)*1e5, '-')
+		# Compute (nearly exponential) pressure p as a function of y
+		self.y = np.array([1.0-self.massFracWv-self.massFracM,
+			self.massFracWv, self.massFracM])
+		eval_pts = np.unique(x[:,:,1:2])
+		# Evaluate IVP solution
+		soln = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
+			[self.h0, self.hmax],
+			[1e5],
+			t_eval=eval_pts,
+			dense_output=True)
+		# Cache the pressure interpolant
+		self.pressure_interpolant = soln.sol
+		# Evaluate p using dense_output of solve_ivp (with shape magic)
+		p = np.reshape(self.pressure_interpolant(x[...,1].ravel()), x[...,1].shape)
+		rho = atomics.mixture_density(self.y, p, self.T, physics)
+		phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk", rho, self.y),
+			self.T, physics)[:,:,0]
+		# Compute partial densities
+		arhoA = (phi * nA) * p / (physics.Gas[0]["R"] * self.T)
+		arhoWv = (phi * nWv) * p / (physics.Gas[1]["R"] * self.T)
+		arhoM = (1.0 - phi) * physics.Liquid["rho0"] \
+			* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"])
+
+		# Compute conservative variables for tracers (typically no source in 2D)
+		arhoWt = arhoWv + self.tracer_frac * arhoM
+		arhoC = self.tracer_frac * arhoM
+		arhoFm = (1.0 - self.tracer_frac) * arhoM
 		# Zero velocity
 		u = np.zeros_like(p)
 		v = np.zeros_like(p)
-
+		# Compute volumetric energy
 		rho = arhoA + arhoWv + arhoM
-
 		e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
 			arhoWv * physics.Gas[1]["c_v"] * self.T + 
 			arhoM * (physics.Liquid["c_m"] * self.T + physics.Liquid["E_m0"])
 			+ 0.5 * rho * u**2.)
-		
+		# Assemble conservative state vector		
 		Uq[:, :, iarhoA] = arhoA
 		Uq[:, :, iarhoWv] = arhoWv
 		Uq[:, :, iarhoM] = arhoM
 		Uq[:, :, irhou] = rho * u
 		Uq[:, :, irhov] = rho * v
 		Uq[:, :, ie] = e
-		# Leave tracer quantities as zero
-		# Uq[:, :, iarhoWt] = arhoWt
-		# Uq[:, :, iarhoC] = arhoC
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoC
+		Uq[:, :, iarhoFm] = arhoFm
 
 		return Uq # [ne, nq, ns]
 
@@ -1954,6 +2046,118 @@ class NonReflective1D(BCWeakPrescribed):
 		return UqB
 
 
+class LinearizedIsothermalOutflow2D(BCWeakPrescribed):
+	'''
+	Provides an outflow 
+
+	Attributes:
+	-----------
+	p: float
+		pressure
+	'''
+	def __init__(self):
+		# Instantiate isothermal atmosphere (not bound to initial condition)
+		# self.isothermal_atmosphere = IsothermalAtmosphere()
+		self.initialized = False
+		self.U0 = None
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Computes the boundary state that satisfies the pressure BC strongly. '''
+
+		# Fetch isothermal
+		if not self.initialized:
+			self.initialized = True
+
+			# Fetch isothermal atmosphere IC
+			init_func = physics.IC
+			# Check type of initial condition
+			if type(physics.IC) is not physics.IC_fcn_map.get(
+					FcnType.IsothermalAtmosphere, None):
+				raise ValueError("LinearizedIsothermalOutflow2D used but initial " +
+				  "condition set by IsothermalAtmosphere was not found.")
+
+			# Fill pressure from the initial condition
+			p0 = x[...,1:].copy()
+			p0.ravel()[:] = init_func.pressure_interpolant(x[...,1:].ravel())
+			self.p0 = p0
+			# Unpack temperature
+			T = init_func.T
+			# Compute intermediate states
+			rho = atomics.mixture_density(init_func.y, p0, T, physics)
+			phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk",
+				rho[...,0], init_func.y), T, physics)
+			# Compute partial densities
+			arhoA = (phi * init_func.nA) * p0 / (physics.Gas[0]["R"] * T)
+			arhoWv = (phi * init_func.nWv) * p0 / (physics.Gas[1]["R"] * T)
+			arhoM = (1.0 - phi) * physics.Liquid["rho0"] \
+				* (1.0 + (p0 - physics.Liquid["p0"])/physics.Liquid["K"])
+			# Compute conservative variables for tracers (typically no source in 2D)
+			arhoWt = arhoWv + init_func.tracer_frac * arhoM
+			arhoC = init_func.tracer_frac * arhoM
+			arhoFm = (1.0 - init_func.tracer_frac) * arhoM
+			# Get initial state for linearization
+			self.U0 = np.zeros((*x.shape[:-1], physics.NUM_STATE_VARS))
+			self.U0[...,0:1] = arhoA
+			self.U0[...,1:2] = arhoWv
+			self.U0[...,2:3] = arhoM
+			self.U0[...,5:6] = atomics.c_v(self.U0[...,0:3], physics) * T
+			self.U0[...,6:7] = arhoWt
+			self.U0[...,7:8] = arhoC
+			self.U0[...,8:9] = arhoFm
+
+			self.Z0 = physics.compute_variable("SoundSpeed", self.U0) * rho
+
+		''' Compute mass variables '''
+		arhoVec = UqI[:,:,physics.get_mass_slice()]
+		rhoI = atomics.rho(arhoVec)
+		yVec = UqI[:,:,physics.get_mass_slice()] / rhoI
+
+		''' Compute normal velocity '''
+		n_hat = normals / np.linalg.norm(normals, axis=2, keepdims=True)
+		rhoveln = (UqI[:, :, physics.get_momentum_slice()] * n_hat).sum(
+			axis=2, keepdims=True)
+		veln = rhoveln / rhoI
+
+		''' Compute interior pressure '''
+		TI = atomics.temperature(arhoVec, UqI[:, :, physics.get_momentum_slice()],
+			UqI[:, :, physics.get_state_slice("Energy")], physics)
+		pI = atomics.pressure(
+			arhoVec, TI, atomics.gas_volfrac(arhoVec, TI, physics), physics)
+		Gamma = atomics.Gamma(arhoVec, physics)
+		
+		''' Compute linearized characteristic quantities in units of velocity '''
+		p0 = self.p0
+		char_out = (pI - p0)/self.Z0 + veln
+		char_in = (pI - p0)/self.Z0 - veln
+		velnB = 0.5 * char_out
+		pB = p0 + 0.5 * self.Z0 * char_out
+		# Assess ingoing characteristic quantity due to nonlinearity
+		pass
+
+		''' Evaluate state '''
+		# Compute isentropic temperature change
+		TB = TI * (pB / pI)**((Gamma-1.0)/Gamma)
+		rhoB = atomics.mixture_density(yVec, pB, TB, physics)
+		# Map to kinematic variables
+		UqB = UqI.copy()
+		UqB /= rhoI
+		# Change face-normal velocity component
+		UqB[:, :, physics.get_momentum_slice()] += (velnB - veln) * n_hat
+		# Map to conservative variables
+		UqB *= rhoB
+		# Fill energy explicitly
+		kinetic_energy = 0.5 * np.expand_dims(np.einsum("...i, ...i -> ...",
+			UqB[:, :, physics.get_momentum_slice()],
+			UqB[:, :, physics.get_momentum_slice()]), axis=-1) / rhoB
+		UqB[:, :, physics.get_state_slice("Energy")] = \
+			atomics.c_v(arhoVec, physics) * TB + kinetic_energy
+
+		if np.any((pB < 0.0) | (TB < 0.0)):
+			raise errors.NotPhysicalError
+
+		return UqB
+
+
 class PressureOutlet1D(BCWeakRiemann):
 	'''
 	This class corresponds to an outflow boundary condition with static
@@ -2012,7 +2216,8 @@ class PressureOutlet1D(BCWeakRiemann):
 		if np.any(velI >= cI):
 			return UqB
 		elif np.any(velI < 0):
-			raise ValueError("Inflow")
+			raise ValueError("Inflow. Check fragmentation state (front too close?) " +
+			  "and stability with respect to timestepper.")
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
@@ -2238,8 +2443,8 @@ class VelocityInlet1D(BCWeakPrescribed):
 		else:
 			# Inflow
 			arhoVecB = arhoVecI.copy()
-			arhoVecB[...,0] = 1e-6 # Small amount of air to preserve positivity
-			arhoVecB[...,1] = 1e-6 # Small amount of water to preserve positivity
+			arhoVecB[...,0] = self.trace_arho # Small amount of air to preserve positivity
+			arhoVecB[...,1] = self.trace_arho # Small amount of water to preserve positivity
 			# Approximate partial density of magma by density
 			arhoVecB[...,2] = rho0 * (1 + (p_chamber - p0) / K)
 			Gamma = atomics.Gamma(arhoVecB, physics)
@@ -2272,7 +2477,8 @@ class VelocityInlet1D(BCWeakPrescribed):
 		# crystal vol / suspension vol
 		phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * t))
 		chi_water = 0.05055
-		UqB[:,:,5] = rho * chi_water * (1 - phi_crys) / (1 + chi_water)
+		UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
+			* (1.0 - 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * 0.0)))  # frozen
 		UqB[:,:,6] = rho * phi_crys
 	
 		# Fragmented state
@@ -3203,9 +3409,7 @@ class ExsolutionSource(SourceBase):
 			arhoWt = Uq[:, :, slarhoWt]
 			arhoC = Uq[:, :, slarhoC]
 			p = physics.compute_additional_variable("Pressure", Uq, True)
-			
-			# Corrected source term (vapour difference)
-			eq_conc = ExsolutionSource.get_eq_conc(physics, p)
+
 			# Mixture density
 			rho = Uq[:, :, physics.get_mass_slice()].sum(axis=-1, keepdims=True)
 			yWt, yA, yC = arhoWt / rho, arhoA / rho, arhoC / rho
