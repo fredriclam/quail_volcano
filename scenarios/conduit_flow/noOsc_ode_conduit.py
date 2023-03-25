@@ -101,28 +101,29 @@ else:
     raise ValueError("Oops, is there solution order > 2?")
 x_global = np.linspace(Mesh["xmin"], Mesh["xmax"], n_nodes_global)
 
+sol_k = 4e-6
+
 InitialCondition = {
     "Function": "SteadyState",
     "x_global": x_global,
     "p_vent": 1e5,          # Vent pressure
-    "inlet_input_val": 1.0, # Inlet velocity; see also BoundaryCondition["x1"]
+    "inlet_input_val": 3.0, # Inlet velocity; see also BoundaryCondition["x1"]
     "input_type": "u",
-    "yC": lambda t: 0.4025 * (1.1 - 0.1 * np.sin(2*np.pi*t/4.0)), # yC_init,
-    "yWt": lambda t: 0.05055 / (1.0 + 0.05055) \
-      * (1.0 - 0.4025 * (1.1 - 0.1 * np.sin(2*np.pi*0/4.0))), # yWt_init, !!! t = 0, frozen
-    "yA": 1e-8,
-    "yWvInletMin": 1e-8,
-    "yCMin": 1e-8,
-    "crit_volfrac": 0.8,
+    "yC": lambda t: yC_init,
+    "yWt": lambda t: yWt_init, 
+    "yA": 1e-7,
+    "yWvInletMin": 1e-5,
+    "yCMin": 1e-5,
+    "crit_volfrac": 0.7,
     "tau_d": 1.0,
-    "tau_f": 3.0, # Resolvable in space( tau_f >~ dx/u)? when frag close to bndry
+    "tau_f": 1.0, # Resolvable in space( tau_f >~ dx/u)? when frag close to bndry
     "conduit_radius": 50,
     "T_chamber": 1000,
     "c_v_magma": 3e3,
-    "rho0_magma": 2.7e3,
+    "rho0_magma": 2.6e3,
     "K_magma": 10e9,
-    "p0_magma": 5e6,
-    "solubility_k": 5e-6,
+    "p0_magma": (chi_water / sol_k)**2,
+    "solubility_k": sol_k,
     "solubility_n": 0.5,
     "approx_massfracs": True,
 }
@@ -165,9 +166,10 @@ BoundaryConditions = {
     "x1" : {
       "BCType" : "VelocityInlet1D",
       "u" : InitialCondition["inlet_input_val"],
-      "p_chamber" : 100e6,
+      "p_chamber" : 180.4e6,
       "T_chamber" : InitialCondition["T_chamber"],
-      "trace_arho": 1e-8*2700,
+      "trace_arho": 1e-8*2600,
+      "freq": 1e-8,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",
