@@ -305,7 +305,8 @@ class SteadyState(FcnBase):
 		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
-		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5, approx_massfracs=False):
+		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5, approx_massfracs=False,
+		neglect_edfm=True):
 		'''
 		Interface to compressible_conduit_steady.SteadyState.
 		'''
@@ -331,6 +332,7 @@ class SteadyState(FcnBase):
 				"p0_magma": p0_magma,
 				"solubility_k": solubility_k,
 				"solubility_n": solubility_n,
+				"neglect_edfm": neglect_edfm,
 		}
 		self.approx_massfracs = approx_massfracs
 		if approx_massfracs:
@@ -2906,9 +2908,10 @@ class FrictionVolFracVariableMu(SourceBase):
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
 		# log10_vis[(1 - phiM) > self.crit_volfrac] = 0 # turning off friction above fragmentation
+		log10_vis = np.where(log10_vis > 300, 300, log10_vis)
 		meltVisc = 10**log10_vis
-		limit = np.max(abs(meltVisc))
-		meltVisc[(1 - phiM) > self.crit_volfrac] = limit
+		# limit = np.max(abs(meltVisc))
+		# meltVisc[(1 - phiM) > self.crit_volfrac] = limit
 		
 		### calculating relative viscosity due to crystals
 		### Costa 2005b
