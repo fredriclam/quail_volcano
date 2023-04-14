@@ -3,10 +3,10 @@ import numpy as np
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 360,
-	# "NumTimeSteps" : 30*8000, # 4000 (@ dx = 2.0)
+	"FinalTime" : 1200,
 	"TimeStepper" : "RK3SR",
-	"NumTimeSteps" : 360*7000, # 4000 (@ dx = 2.0)
+	"NumTimeSteps" : 1200*13500, # 4000 (@ dx = 2.0)
+	#"NumTimeSteps" : 360*7000, # (@ dx = 1.0)
   # If CFL-limited: LS-SSPRK3-P2 as implemented:
   # For sound speed <= 1925 m/s
   #     CFL ~ (1925+u) * (2k+1) / dx is generous for RK3 (cf. 2k+1 --> 1/.209)
@@ -63,7 +63,7 @@ Output = {
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
-	"WriteInterval" : 800,
+	"WriteInterval" : 540,
 	"WriteInitialSolution" : True,
   # Automatically queues up post_process.py after this file (see Quail examples)
 	"AutoPostProcess": False,
@@ -73,7 +73,7 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 1000,
+    "NumElemsX" : 2000,
     "xmin" : -1000 - 150.0, # -6000.0 - 150.0,
     "xmax" : 0.0 - 150.0,
 }
@@ -166,7 +166,7 @@ BoundaryConditions = {
       "p_chamber" : InitialCondition["inlet_input_val"],
       "T_chamber" : InitialCondition["T_chamber"],
       "trace_arho": 1e-8*2600,
-      "freq": 1e-8,
+      "freq": 0.5,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",
