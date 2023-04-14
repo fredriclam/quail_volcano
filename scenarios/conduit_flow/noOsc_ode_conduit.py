@@ -58,7 +58,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "/scratch/users/kcoppess/ODEsteadyState/conduit",
+	"Prefix" : "ODEsteadyState/conduit",
+	#"Prefix" : "/scratch/users/kcoppess/ODEsteadyState/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
@@ -72,15 +73,15 @@ Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
     # Use even number if using initial condition with discontinuous pressure
-    "NumElemsX" : 3000,
-    "xmin" : -3000 - 150.0, # -6000.0 - 150.0,
+    "NumElemsX" : 1000,
+    "xmin" : -1000 - 150.0, # -6000.0 - 150.0,
     "xmax" : 0.0 - 150.0,
 }
 
 ''' Initial condition stuff '''
 # Mass fractions at t = 0
 phi_crys = 0.4 * (1.0 - 0.1 * np.sin(0.0))
-chi_water = 0.05
+chi_water = 0.03
 yWt_init = chi_water * (1 - phi_crys) / (1 + chi_water)
 yC_init = phi_crys
 # Compute representation of the 1D mesh. This part is overriden if
@@ -96,13 +97,13 @@ else:
     raise ValueError("Oops, is there solution order > 2?")
 x_global = np.linspace(Mesh["xmin"], Mesh["xmax"], n_nodes_global)
 
-sol_k = 4e-6
+sol_k = 5e-6
 
 InitialCondition = {
     "Function": "SteadyState",
     "x_global": x_global,
     "p_vent": 1e5,          # Vent pressure
-    "inlet_input_val": 100e6, # Inlet velocity; see also BoundaryCondition["x1"]
+    "inlet_input_val": 40e6, # Inlet velocity; see also BoundaryCondition["x1"]
     "input_type": "p",
     "yC": lambda t: yC_init,
     "yWt": lambda t: yWt_init, 
@@ -113,7 +114,7 @@ InitialCondition = {
     "tau_d": 1.0,
     "tau_f": 1.0, # Resolvable in space( tau_f >~ dx/u)? when frag close to bndry
     "conduit_radius": 50,
-    "T_chamber": 1000,
+    "T_chamber": 1050,
     "c_v_magma": 3e3,
     "rho0_magma": 2.6e3,
     "K_magma": 10e9,
@@ -161,8 +162,8 @@ BoundaryConditions = {
     # The leftmost boundary
     "x1" : {
       "BCType" : "VelocityInlet1D",
-      "u" : 0.4650989343250929, #InitialCondition["inlet_input_val"],
-      "p_chamber" : 100e6,
+      "u" : 0.5929773685879958, #InitialCondition["inlet_input_val"],
+      "p_chamber" : InitialCondition["inlet_input_val"],
       "T_chamber" : InitialCondition["T_chamber"],
       "trace_arho": 1e-8*2600,
       "freq": 1e-8,
@@ -187,7 +188,7 @@ Physics = {
     "E_m0": 0, "c_m": 3e3},
   "Solubility": {"k": sol_k, "n": 0.5},
   "Viscosity": {"mu0": 3e5},
-  "tau_d": 0.5,
+  "tau_d": 1.0,
 }
 
 # The solvers/domains that are linked to this one through a coupling BC.
