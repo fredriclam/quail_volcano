@@ -58,8 +58,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "ODEsteadyState/conduit",
-	#"Prefix" : "/scratch/users/kcoppess/ODEsteadyState/conduit",
+	#"Prefix" : "ODEsteadyState/conduit",
+	"Prefix" : "/scratch/users/kcoppess/ODEsteadyState/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
