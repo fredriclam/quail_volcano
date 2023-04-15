@@ -20,11 +20,11 @@ import numpy as np
 
 ''' Specify mesh partition here ''' 
 
-num_domains = 8
+num_domains = 10
 # Specify mesh partition (overriding the Mesh in primary_input)
 num_elems_total = 2000
 # Specify extent of domain
-x_global_min = -2150
+x_global_min = -1150
 x_global_max = -150
 if num_domains * (num_elems_total//num_domains) != num_elems_total:
   raise ValueError("Domain could not be split evenly into domain. Check that" +

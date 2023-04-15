@@ -7,18 +7,29 @@ Numerics = {'AVParameter': 0.3,
  'ArtificialViscosity': True,
  'ElementQuadrature': 'GaussLegendre',
  'FaceQuadrature': 'GaussLegendre',
- 'L2InitialCondition': False,
+ 'L2InitialCondition': True,
  'SolutionBasis': 'LagrangeSeg',
  'SolutionOrder': 2,
  'Solver': 'DG'}
 
 Mesh = {'ElementShape': 'Segment',
  'File': None,
- 'NumElemsX': 400,
- 'xmax': -4950.0,
- 'xmin': -6150.0}
+ 'NumElemsX': 200,
+ 'xmax': -1050.0,
+ 'xmin': -1150.0}
 
-Physics = {'ConvFluxNumerical': 'LaxFriedrichs', 'Type': 'MultiphasevpT'}
+Physics = {'ConvFluxNumerical': 'LaxFriedrichs',
+ 'Gas1': {'R': 287.0, 'gamma': 1.4},
+ 'Gas2': {'R': 461.3762486126526, 'c_p': 2288.0},
+ 'Liquid': {'E_m0': 0,
+            'K': 10000000000.0,
+            'c_m': 3000.0,
+            'p0': 35999999.99999999,
+            'rho0': 2600.0},
+ 'Solubility': {'k': 5e-06, 'n': 0.5},
+ 'Type': 'MultiphasevpT',
+ 'Viscosity': {'mu0': 300000.0},
+ 'tau_d': 1.0}
 
 SourceTerms = {'source1': {'Function': 'GravitySource',
              'gravity': 9.8,
@@ -30,50 +41,53 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'source_treatment': 'Explicit',
              'tau_d': 1.0},
  'source4': {'Function': 'FragmentationTimescaleSource',
-             'crit_volfrac': 0.8,
+             'crit_volfrac': 0.7,
              'source_treatment': 'Explicit',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
  'Prefix': '/scratch/users/kcoppess/ODEsteadyState/conduit_sub0',
  'WriteInitialSolution': True,
- 'WriteInterval': 800}
+ 'WriteInterval': 540}
 
 InitialCondition = {'Function': 'SteadyState',
  'K_magma': 10000000000.0,
- 'T_chamber': 1000,
+ 'T_chamber': 1050,
+ 'approx_massfracs': True,
  'c_v_magma': 3000.0,
  'conduit_radius': 50,
- 'crit_volfrac': 0.8,
- 'inlet_input_val': 1.0,
- 'input_type': 'u',
- 'p0_magma': 5000000.0,
+ 'crit_volfrac': 0.7,
+ 'inlet_input_val': 40000000.0,
+ 'input_type': 'p',
+ 'neglect_edfm': True,
+ 'p0_magma': 35999999.99999999,
  'p_vent': 100000.0,
- 'rho0_magma': 2700.0,
+ 'rho0_magma': 2600.0,
  'solubility_k': 5e-06,
  'solubility_n': 0.5,
  'tau_d': 1.0,
  'tau_f': 1.0,
- 'x_global': np.unique(np.hstack([np.linspace(-6.150e+03, -4.950e+03, 801), np.linspace(-4.950e+03, -3.750e+03, 801), np.linspace(-3.750e+03, -2.550e+03, 801), np.linspace(-2.550e+03, -1.350e+03, 801), np.linspace(-1.350e+03, -1.500e+02, 801)])),
+ 'x_global': np.unique(np.hstack([np.linspace(-1.150e+03, -1.050e+03, 401), np.linspace(-1.050e+03, -9.500e+02, 401), np.linspace(-9.500e+02, -8.500e+02, 401), np.linspace(-8.500e+02, -7.500e+02, 401), np.linspace(-7.500e+02, -6.500e+02, 401), np.linspace(-6.500e+02, -5.500e+02, 401), np.linspace(-5.500e+02, -4.500e+02, 401), np.linspace(-4.500e+02, -3.500e+02, 401), np.linspace(-3.500e+02, -2.500e+02, 401), np.linspace(-2.500e+02, -1.500e+02, 401)])),
  'yA': 1e-07,
- 'yC': 0.4025,
- 'yCMin': 1e-07,
- 'yWt': 0.028750297463233536,
- 'yWvInletMin': 1e-07}
+ 'yC': lambda t: 0.4,
+ 'yCMin': 1e-05,
+ 'yWt': lambda t: 0.03 * (1.0 - 0.4) / (1.0 + 0.03),
+ 'yWvInletMin': 1e-05}
 
 ExactSolution = {'Function': 'RiemannProblem'}
 
 BoundaryConditions = {'x1': {'BCType': 'VelocityInlet1D',
-        'T_chamber': 1000,
-        'p_chamber': 100000000.0,
-        'trace_arho': 0.00027,
-        'u': 1.0},
+        'T_chamber': 1050,
+        'freq': 0.5,
+        'p_chamber': 40000000.0,
+        'trace_arho': 2.6000000000000002e-05,
+        'u': 0.5929773685879958},
  'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_0_1'}}
 
 LinkedSolvers = [{'BoundaryName': 'comm1D_0_1', 'DeckName': 'conduit_sub1.py'}]
 
-TimeStepping = {'FinalTime': 5,
+TimeStepping = {'FinalTime': 1200,
  'InitialTime': 0.0,
- 'NumTimeSteps': 20000,
- 'TimeStepper': 'SSPRK3'}
+ 'NumTimeSteps': 16200000,
+ 'TimeStepper': 'RK3SR'}
 
