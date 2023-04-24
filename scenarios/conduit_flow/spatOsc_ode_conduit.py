@@ -5,7 +5,7 @@ TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 1200,
 	"TimeStepper" : "RK3SR",
-	"NumTimeSteps" : 1200*14000, # 4000 (@ dx = 2.0)
+	"NumTimeSteps" : 1200*13500, # 4000 (@ dx = 2.0)
 	#"NumTimeSteps" : 360*7000, # (@ dx = 1.0)
   # If CFL-limited: LS-SSPRK3-P2 as implemented:
   # For sound speed <= 1925 m/s
@@ -80,7 +80,7 @@ Mesh = {
 
 ''' Initial condition stuff '''
 # Mass fractions at t = 0
-phi_crys = 0.4 * (1.0 - 0.1 * np.sin(0.0))
+phi_crys = 0.4
 chi_water = 0.03
 yWt_init = chi_water * (1 - phi_crys) / (1 + chi_water)
 yC_init = phi_crys
@@ -98,6 +98,7 @@ else:
 x_global = np.linspace(Mesh["xmin"], Mesh["xmax"], n_nodes_global)
 
 sol_k = 5e-6
+frequency = 0.5
 
 InitialCondition = {
     "Function": "SteadyState",
@@ -105,7 +106,7 @@ InitialCondition = {
     "p_vent": 1e5,          # Vent pressure
     "inlet_input_val": 40e6, # Inlet velocity; see also BoundaryCondition["x1"]
     "input_type": "p",
-    "yC": lambda t: yC_init,
+    "yC": lambda t: yC_init * (1.1 - 0.1 * np.cos(2*np.pi*frequency*t)),
     "yWt": lambda t: yWt_init, 
     "yA": 1e-7,
     "yWvInletMin": 1e-5,
@@ -166,7 +167,7 @@ BoundaryConditions = {
       "p_chamber" : InitialCondition["inlet_input_val"],
       "T_chamber" : InitialCondition["T_chamber"],
       "trace_arho": 1e-8*2600,
-      "freq": 0.5,
+      "freq": frequency,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",

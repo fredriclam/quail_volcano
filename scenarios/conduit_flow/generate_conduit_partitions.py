@@ -79,7 +79,7 @@ str_yWt_source = "lambda t: 0.03 * (1.0 - 0.4) / (1.0 + 0.03)"
 #  + "* (1.0 - 0.4025 * (1.1 - 0.1 * np.sin(2*np.pi*0.0/4.0)))"
 
 # Define name of the parameter file
-param_filename_map = lambda i: f'conduit_sub{i}.py'
+param_filename_map = lambda i: f'conduit10_sub{i}.py'
 # Define name of the atm parameter files
 atm_param_filename_map = lambda i: f'atm_sub{i}.py'
 
