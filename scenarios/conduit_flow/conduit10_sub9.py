@@ -46,9 +46,9 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/ODEsteadyState/conduit_sub9',
+ 'Prefix': '/scratch/users/kcoppess/ODEsteadyState/conduit10_sub9',
  'WriteInitialSolution': True,
- 'WriteInterval': 540}
+ 'WriteInterval': 560}
 
 InitialCondition = {'Function': 'SteadyState',
  'K_magma': 10000000000.0,

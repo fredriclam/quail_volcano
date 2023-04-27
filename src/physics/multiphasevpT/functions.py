@@ -2477,10 +2477,10 @@ class VelocityInlet1D(BCWeakPrescribed):
 		# Update adiabatically compressed/expanded tracer partial densities
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
 		# crystal vol / suspension vol
-		phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * t))
-		chi_water = 0.05055
+		phi_crys = 0.4 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * t))
+		chi_water = 0.03
 		UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
-			* (1.0 - 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * 0.0)))  # frozen
+			* (1.0 - 0.4 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * 0.0)))  # frozen
 		UqB[:,:,6] = rho * phi_crys
 	
 		# Fragmented state

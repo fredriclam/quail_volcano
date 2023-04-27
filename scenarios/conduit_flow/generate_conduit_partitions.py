@@ -1,7 +1,7 @@
 import importlib, io, pprint
 
 # Set primary input file name (without suffix .py)
-input_module_name = "odestart_conduit"
+input_module_name = "noOsc_ode_conduit"
 
 # Specify whether conduit is coupled to 2D atmosphere.
 # If True, run `generate_atm_partitions.py`` as well to write the atmosphere
@@ -20,11 +20,11 @@ import numpy as np
 
 ''' Specify mesh partition here ''' 
 
-num_domains = 8
+num_domains = 10
 # Specify mesh partition (overriding the Mesh in primary_input)
-num_elems_total = 3000
+num_elems_total = 2000
 # Specify extent of domain
-x_global_min = -3150
+x_global_min = -1150
 x_global_max = -150
 if num_domains * (num_elems_total//num_domains) != num_elems_total:
   raise ValueError("Domain could not be split evenly into domain. Check that" +
@@ -72,12 +72,14 @@ else:
 # Whether to approximate periodically forced mass fraction in space
 approx_massfracs = True
 # Define periodic source-time function as strings
-str_yC_source = "lambda t: 0.4025 * (1.1 - 0.1 * np.sin(2*np.pi*t/4.0))"
-str_yWt_source = "lambda t: 0.05055 / (1.0 + 0.05055) " \
-  + "* (1.0 - 0.4025 * (1.1 - 0.1 * np.sin(2*np.pi*0.0/4.0)))"
+str_yC_source = "lambda t: 0.4"
+str_yWt_source = "lambda t: 0.03 * (1.0 - 0.4) / (1.0 + 0.03)"
+#str_yC_source = "lambda t: 0.4025 * (1.1 - 0.1 * np.sin(2*np.pi*t/4.0))"
+#str_yWt_source = "lambda t: 0.05055 / (1.0 + 0.05055) " \
+#  + "* (1.0 - 0.4025 * (1.1 - 0.1 * np.sin(2*np.pi*0.0/4.0)))"
 
 # Define name of the parameter file
-param_filename_map = lambda i: f'conduit_sub{i}.py'
+param_filename_map = lambda i: f'conduit10_sub{i}.py'
 # Define name of the atm parameter files
 atm_param_filename_map = lambda i: f'atm_sub{i}.py'
 

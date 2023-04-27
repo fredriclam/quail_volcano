@@ -14,9 +14,9 @@ Numerics = {'AVParameter': 0.3,
 
 Mesh = {'ElementShape': 'Segment',
  'File': None,
- 'NumElemsX': 200,
- 'xmax': -150.0,
- 'xmin': -250.0}
+ 'NumElemsX': 400,
+ 'xmax': -750.0,
+ 'xmin': -950.0}
 
 Physics = {'ConvFluxNumerical': 'LaxFriedrichs',
  'Gas1': {'R': 287.0, 'gamma': 1.4},
@@ -46,7 +46,7 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/ODEsteadyState/conduit_sub9',
+ 'Prefix': '/scratch/users/kcoppess/ODEsteadyState/conduit_sub1',
  'WriteInitialSolution': True,
  'WriteInterval': 540}
 
@@ -67,7 +67,7 @@ InitialCondition = {'Function': 'SteadyState',
  'solubility_n': 0.5,
  'tau_d': 1.0,
  'tau_f': 1.0,
- 'x_global': np.unique(np.hstack([np.linspace(-1.150e+03, -1.050e+03, 401), np.linspace(-1.050e+03, -9.500e+02, 401), np.linspace(-9.500e+02, -8.500e+02, 401), np.linspace(-8.500e+02, -7.500e+02, 401), np.linspace(-7.500e+02, -6.500e+02, 401), np.linspace(-6.500e+02, -5.500e+02, 401), np.linspace(-5.500e+02, -4.500e+02, 401), np.linspace(-4.500e+02, -3.500e+02, 401), np.linspace(-3.500e+02, -2.500e+02, 401), np.linspace(-2.500e+02, -1.500e+02, 401)])),
+ 'x_global': np.unique(np.hstack([np.linspace(-1.150e+03, -9.500e+02, 801), np.linspace(-9.500e+02, -7.500e+02, 801), np.linspace(-7.500e+02, -5.500e+02, 801), np.linspace(-5.500e+02, -3.500e+02, 801), np.linspace(-3.500e+02, -1.500e+02, 801)])),
  'yA': 1e-07,
  'yC': lambda t: 0.4,
  'yCMin': 1e-05,
@@ -76,8 +76,8 @@ InitialCondition = {'Function': 'SteadyState',
 
 ExactSolution = {'Function': 'RiemannProblem'}
 
-BoundaryConditions = {'x1': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_8_9'},
- 'x2': {'BCType': 'PressureOutlet1D', 'p': 100000.0}}
+BoundaryConditions = {'x1': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_0_1'},
+ 'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_1_2'}}
 
-LinkedSolvers = []
+LinkedSolvers = [{'BoundaryName': 'comm1D_1_2', 'DeckName': 'conduit5_sub2.py'}]
 

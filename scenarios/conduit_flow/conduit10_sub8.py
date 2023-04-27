@@ -15,8 +15,8 @@ Numerics = {'AVParameter': 0.3,
 Mesh = {'ElementShape': 'Segment',
  'File': None,
  'NumElemsX': 200,
- 'xmax': -150.0,
- 'xmin': -250.0}
+ 'xmax': -250.0,
+ 'xmin': -350.0}
 
 Physics = {'ConvFluxNumerical': 'LaxFriedrichs',
  'Gas1': {'R': 287.0, 'gamma': 1.4},
@@ -46,9 +46,9 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/ODEsteadyState/conduit_sub9',
+ 'Prefix': '/scratch/users/kcoppess/ODEsteadyState/conduit10_sub8',
  'WriteInitialSolution': True,
- 'WriteInterval': 540}
+ 'WriteInterval': 560}
 
 InitialCondition = {'Function': 'SteadyState',
  'K_magma': 10000000000.0,
@@ -76,8 +76,8 @@ InitialCondition = {'Function': 'SteadyState',
 
 ExactSolution = {'Function': 'RiemannProblem'}
 
-BoundaryConditions = {'x1': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_8_9'},
- 'x2': {'BCType': 'PressureOutlet1D', 'p': 100000.0}}
+BoundaryConditions = {'x1': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_7_8'},
+ 'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_8_9'}}
 
-LinkedSolvers = []
+LinkedSolvers = [{'BoundaryName': 'comm1D_8_9', 'DeckName': 'conduit10_sub9.py'}]
 
