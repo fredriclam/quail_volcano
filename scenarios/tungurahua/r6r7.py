@@ -19,7 +19,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "tung3_atm7",
+	"Prefix" : "tung5_atm7",
 	"WriteInterval" : 2000,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

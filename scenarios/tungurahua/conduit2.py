@@ -23,7 +23,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "tung3_conduit2",
+	"Prefix" : "tung5_conduit2",
 	"WriteInterval" : 2000,#4*200,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -55,10 +55,12 @@ SourceTerms = {
     "source2": {
         "Function": "FrictionVolFracConstMu",
         "source_treatment" : "Explicit",
+        "crit_volfrac": 0.6,
     },
     "source3": {
         "Function": "ExsolutionSource",
         "source_treatment" : "Explicit",
+        "tau_d": 0.1,
     },
 }
 
