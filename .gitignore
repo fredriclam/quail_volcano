@@ -69,3 +69,25 @@ test_case_[0-9]*.py
 scenarios/conduit_flow/exploration/
 scenarios/conduit_flow/steadyState_3m_sherlock_r3/
 scenarios/conduit_flow_segmented/sherlock_error/
+
+
+# Specific files to ignore
+.vscode/*.json
+scenarios/euler/
+scenarios/gravity_settling/
+scenarios/inspector.ipynb
+*.lnk
+scenarios/mixture_shocktube/post_process_legacy.py
+scenarios/test_oscillations/atm_sub*.py
+scenarios/test_oscillations/*.txt
+scenarios/test_oscillations/conduit_sub*.py
+scenarios/test_oscillations/oscillationtest_conduit1_BCIC_4s_par_params/
+scenarios/test_oscillations/r*r*.py
+scenarios/test_oscillations/result.json
+scenarios/test_oscillations/result_flamegraph.html
+scenarios/test_oscillations/timing_5subs/
+scenarios/test_oscillations/viztracer*
+scenarios/tungurahua/analysis2.ipynb
+scenarios/tungurahua/run1/
+scenarios/tungurahua/run1_final_output.txt
+scenarios/tungurahua/trash_from_copy/
