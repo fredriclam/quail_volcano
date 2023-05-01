@@ -17,7 +17,7 @@
       //
       // "args": ["vent_region.py"],
       // "args": ["odestart_conduit.py"],
-      "args": ["noOsc_ode_conduit.py"],
+      "args": ["vent_region.py"],
       // 
       // "args": ["noh_problem2.py"], // Noh problem in axisymmetry
       // "args": ["conduit_p.py"], // BC tester
@@ -34,7 +34,8 @@
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\test_oscillations\\",
       // 
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\check2D\\",
-      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit_flow\\",
+      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit_flow\\", // Last was here
+      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\submarine\\", // Last was here
       "subProcess": true,
     }
   ]

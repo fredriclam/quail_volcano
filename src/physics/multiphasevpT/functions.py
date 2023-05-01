@@ -3677,11 +3677,17 @@ class LaxFriedrichs2D(ConvNumFluxBase):
 		# Jump
 		dUq = UqR - UqL
 
-		# Max wave speeds at each point
-		wL = np.empty(u2L.shape + (1,))
-		wR = np.empty(u2R.shape + (1,))
-		wL[:, :, 0] = np.sqrt(u2L + v2L) + aL
-		wR[:, :, 0] = np.sqrt(u2R + v2R) + aR
+		# Compute max wave speeds at each point
+		if len(u2L.shape) != len(FqL.shape):
+			# Legacy shape matching (multiphasevpT)
+			wL = np.empty(u2L.shape + (1,))
+			wR = np.empty(u2R.shape + (1,))
+			wL[:, :, 0] = np.sqrt(u2L + v2L) + aL
+			wR[:, :, 0] = np.sqrt(u2R + v2R) + aR
+		else:
+			# Same number of axes during construction (multiphaseWLMA)
+			wL = np.sqrt(u2L + v2L) + aL
+			wR = np.sqrt(u2R + v2R) + aR
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)

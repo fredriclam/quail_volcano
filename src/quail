@@ -43,6 +43,7 @@ import physics.navierstokes.navierstokes as navierstokes
 import physics.scalar.scalar as scalar
 import physics.chemistry.chemistry as chemistry
 import physics.multiphasevpT.multiphasevpT as multiphasevpT
+import physics.multiphaseWLMA.multiphaseWLMA as MultiphaseWLMA
 
 import physics.navierstokes.tools as ns_tools
 
@@ -110,6 +111,8 @@ def set_physics(mesh, physics_type):
 		physics_class = multiphasevpT.MultiphasevpT1D
 	elif PhysicsType[physics_type] == PhysicsType.MultiphasevpT and ndims == 2:
 		physics_class = multiphasevpT.MultiphasevpT2D
+	elif PhysicsType[physics_type] == PhysicsType.MultiphaseWLMA and ndims == 2:
+		physics_class = MultiphaseWLMA.MultiphaseWLMA2D
 	else:
 			raise NotImplementedError
 

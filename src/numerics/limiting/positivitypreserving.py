@@ -363,7 +363,8 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
     This class contains information about the positivity preserving limiter
     '''
 
-	COMPATIBLE_PHYSICS_TYPES = general.PhysicsType.MultiphasevpT
+	COMPATIBLE_PHYSICS_TYPES = [general.PhysicsType.MultiphasevpT,
+			     general.PhysicsType.MultiphaseWLMA]
 
 	def __init__(self, physics_type):
 		'''
