@@ -6,11 +6,7 @@ Numerics = {
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
 	"ArtificialViscosity" : False,
-		# Flag to use artificial viscosity
-		# If true, artificial visocity will be added
 	# "AVParameter" : 150,#5e3
-		# Parameter in the artificial viscosity term. A larger value will
-		# increase the amount of AV added, giving a smoother solution.
 	'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
@@ -19,14 +15,14 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "tung5_atm2",
-	"WriteInterval" : 2000,
+	"Prefix" : "submarine_proto_hydro1_atm2",
+	"WriteInterval" : 25,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
 
 Physics = {
-    "Type" : "MultiphasevpT",
+    "Type" : "MultiphaseWLMA",
     "ConvFluxNumerical" : "LaxFriedrichs",
 }
 
@@ -51,12 +47,12 @@ SourceTerms = {
 # }
 
 InitialCondition = {
-	"Function" : "LinearAtmosphere",
+	"Function" : "IsothermalAtmosphere",
 }
 
 ExactSolution = InitialCondition.copy()
 
-extend_atm = True
+extend_atm = False
 
 BoundaryConditions = {
 	"ground2" : {
@@ -83,6 +79,6 @@ LinkedSolvers = [
 
 if not extend_atm:
 	BoundaryConditions["r2"] = {
-		"BCType" : "LinearizedImpedance2D",
+		"BCType" : "SlipWall",
 	}
 	LinkedSolvers = []

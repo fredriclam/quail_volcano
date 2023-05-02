@@ -2,9 +2,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 5, # 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 5*2500, # 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-     # 100000 for generalB1, 400~K
+	"FinalTime" : 5,
+	"NumTimeSteps" : 5*2500,
 	"TimeStepper" : "FE",
 }
 
@@ -27,7 +26,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "submarine_proto_atm1",
+	"Prefix" : "submarine_proto_hydro1_atm1",
 	"WriteInterval" : 25,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -66,7 +65,8 @@ ExactSolution = InitialCondition.copy()
 
 BoundaryConditions = {
 	"r1" : {
-		"BCType" : "SlipWall",
+		"BCType" : "MultiphasevpT2D2D",
+		"bkey": "r1",
 	},
 	"ground" : {
 		"BCType" : "SlipWall",
@@ -78,7 +78,7 @@ BoundaryConditions = {
 		"BCType" : "SlipWall",
 	},
 	"x2" : {
-		"BCType" : "SlipWall",
+		"BCType" : "LinearizedImpedance2D",
 	},
 	"symmetry" : {
 		"BCType" : "SlipWall",
@@ -86,13 +86,13 @@ BoundaryConditions = {
 }
 
 LinkedSolvers = []
-# LinkedSolvers = [
+LinkedSolvers = [
 # 	{
 # 		"DeckName": "conduit.py",
 # 		"BoundaryName": "vent",
 # 	},
-# 	{
-# 		"DeckName": "r1r2.py",
-# 		"BoundaryName": "r1",
-# 	},
-# ]
+	{
+		"DeckName": "r1r2.py",
+		"BoundaryName": "r1",
+	},
+]

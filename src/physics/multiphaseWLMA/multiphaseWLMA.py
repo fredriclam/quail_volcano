@@ -51,17 +51,19 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		physics.base.base.PhysicsBase.set_maps(self)
 
 		self.BC_map.update({
+			# Base-type functions
 			physics.base.functions.BCType.StateAll:
 			  physics.base.functions.StateAll,
 			physics.base.functions.BCType.Extrapolate:
 			  physics.base.functions.Extrapolate,
+			# Inherited vpT functions
 			physics.multiphasevpT.functions.BCType.SlipWall:
 			  physics.multiphasevpT.functions.SlipWall,
+			physics.multiphasevpT.functions.BCType.MultiphasevpT2D2D:
+				physics.multiphasevpT.functions.MultiphasevpT2D2D,
+			# Overriden WLMA functions
 			physics.multiphaseWLMA.functions.BCType.LinearizedImpedance2D:
 			  physics.multiphaseWLMA.functions.LinearizedImpedance2D,
-			physics.multiphaseWLMA.functions.BCType.LinearizedImpedance2D:
-				physics.multiphaseWLMA.functions.LinearizedImpedance2D,
-			# BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			# BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			# BCType.MultiphasevpT2D1DCylindrical: mpvpT_fcns.MultiphasevpT2D1DCylindrical,
