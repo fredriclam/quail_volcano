@@ -59,7 +59,7 @@ Numerics = {
 
 Output = {
 	#"Prefix" : "ODEsteadyState/conduit",
-	"Prefix" : "/scratch/users/kcoppess/ODEsteadyStateTD10_lf/conduit",
+	"Prefix" : "/scratch/users/kcoppess/ODEsteadyStateTD10_lfneutral/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
@@ -161,7 +161,7 @@ ExactSolution = {
 BoundaryConditions = {
     # The leftmost boundary
     "x1" : {
-      "BCType" : "VelocityInlet1D",
+      "BCType" : "VelocityInlet1D_neutralSinusoid",
       "u" : 0.8831114392108765, #InitialCondition["inlet_input_val"],
       "p_chamber" : InitialCondition["inlet_input_val"],
       "T_chamber" : InitialCondition["T_chamber"],
