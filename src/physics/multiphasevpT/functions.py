@@ -2667,19 +2667,18 @@ class VelocityInlet1D_neutralSinusoid(BCWeakPrescribed):
 		# Update adiabatically compressed/expanded tracer partial densities
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
 		# crystal vol / suspension vol
+		ta = 5
 		tb = 1 / (2 * self.freq)
-		if t < tb:
+		if t < ta:
+			phi_crys = self.cVFav
+		elif t < tb:
 			phi_crys = self.cVFav * (0.95 + 0.05 * np.cos(2 * np.pi * self.freq * t))
-			chi_water = 0.03
-			UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
-				* (1.0 - self.cVFav)  # frozen
-			UqB[:,:,6] = rho * phi_crys
 		else:
 			phi_crys = self.cVFav * (1 - 0.1 * np.cos(2 * np.pi * self.freq * (t - tb)))
-			chi_water = 0.03
-			UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
-				* (1.0 - self.cVFav)  # frozen
-			UqB[:,:,6] = rho * phi_crys
+		chi_water = 0.03
+		UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
+			* (1.0 - self.cVFav)  # frozen
+		UqB[:,:,6] = rho * phi_crys
 	
 		# Fragmented state
 		UqB[:,:,7] = 0.0
