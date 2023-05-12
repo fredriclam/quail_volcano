@@ -75,6 +75,7 @@ class BCType(Enum):
 	MassFluxInlet1D = auto()
 	VelocityInlet1D = auto()
 	VelocityInlet1D_neutralSinusoid = auto()
+	VelocityInlet1D_gaussianPulse = auto()
 	LinearizedImpedance2D = auto()
 	# Not implemented (could use lumped magma chamber model for example)
 	EntropyTotalenthalpyInlet1D = auto()
@@ -2785,8 +2786,7 @@ class VelocityInlet1D_gaussianPulse(BCWeakPrescribed):
 		self.u, self.p_chamber, self.T_chamber, self.trace_arho = \
 			u, p_chamber, T_chamber, trace_arho
 		# Angular frequency of variation
-		self.freq = freq
-		self.cVFav = cVFav # average crystal volume fraction
+		self.sig, self.cVFav, self.cVFamp, self.tpulse = sig, cVFav, cVFamp, tpulse
 		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max = \
 			yWt, yC, use_linearized, newton_tol, newton_iter_max
 
