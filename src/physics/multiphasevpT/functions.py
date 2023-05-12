@@ -2672,7 +2672,7 @@ class VelocityInlet1D_neutralSinusoid(BCWeakPrescribed):
 		if t < ta:
 			phi_crys = self.cVFav
 		elif t < tb:
-			phi_crys = self.cVFav * (0.95 + 0.05 * np.cos(2 * np.pi * self.freq * (t - ta))
+			phi_crys = self.cVFav * (0.95 + 0.05 * np.cos(2 * np.pi * self.freq * (t - ta)))
 		else:
 			phi_crys = self.cVFav * (1 - 0.1 * np.cos(2 * np.pi * self.freq * (t - tb)))
 		chi_water = 0.03
