@@ -2668,11 +2668,11 @@ class VelocityInlet1D_neutralSinusoid(BCWeakPrescribed):
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
 		# crystal vol / suspension vol
 		ta = 5
-		tb = 1 / (2 * self.freq)
+		tb = 5 + (1 / (2 * self.freq))
 		if t < ta:
 			phi_crys = self.cVFav
 		elif t < tb:
-			phi_crys = self.cVFav * (0.95 + 0.05 * np.cos(2 * np.pi * self.freq * t))
+			phi_crys = self.cVFav * (0.95 + 0.05 * np.cos(2 * np.pi * self.freq * (t - ta))
 		else:
 			phi_crys = self.cVFav * (1 - 0.1 * np.cos(2 * np.pi * self.freq * (t - tb)))
 		chi_water = 0.03
