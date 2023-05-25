@@ -22,6 +22,7 @@
 # ------------------------------------------------------------------------ #
 from enum import Enum
 from logging import warning
+import multiprocessing as mp
 import numpy as np
 
 import errors
@@ -77,7 +78,8 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 																	"E_m0": 0, "c_m": 3e3},
 													Solubility={"k": 5e-6, "n": 0.5},
 													Viscosity={"mu0": 3e5},
-													tau_d = 0.5):
+													tau_d = 0.5,
+													num_parallel_workers=0):
 		super().set_physical_params(Gas1=Gas1, Gas2=Gas2, Liquid=Liquid,
 			      Solubility=Solubility, Viscosity=Viscosity, tau_d=tau_d)
 		# Initialize WLMA object
@@ -93,7 +95,14 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		self.Solubility = Solubility
 		self.Viscosity = Viscosity
 		self.tau_d = tau_d
-
+		# No pool at initialization time (avoid need to pickle on process.start)
+		self.num_parallel_workers = num_parallel_workers
+		self.pool = None
+		if self.num_parallel_workers <= 1:
+			self.pool_ready = True
+		else:
+			self.pool_ready = False
+		
 	class AdditionalVariables(Enum):
 		Pressure = "p"
 		Temperature = "T"
@@ -130,9 +139,15 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		water content, which is used in dissolution/exsolution, is also checked.
 		'''
 		if flag_non_physical:
-			if np.any(arhoA < 0.) or np.any(arhoWv < 0.) or np.any(arhoM < 0.) \
-				 or np.any(arhoWt < 0.): # or np.any(arhoC < 0.):
+			if np.any(arhoA < 0.) or np.any(arhoWv < 0.) or np.any(arhoM < 0.):
+				# or (np.any(arhoWt < 0.)): # or np.any(arhoC < 0.):
 				raise errors.NotPhysicalError
+			
+		''' Spin-up local pool '''
+		if not self.pool_ready:
+			# TODO: reduce jank
+			self.pool = mp.Pool(self.num_parallel_workers)
+			self.pool_ready = True
 
 		''' Nested functions for common quantities 
 		Common routines that may be called for computing several outputs.
@@ -142,13 +157,17 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		''' Compute '''
 		vname = self.AdditionalVariables[var_name].name
 
+		# Define call to equation of state middleware
+		EOS_call = lambda: self.wlma(Uq[:,:,self.get_mass_slice()],
+			                           mom,
+																 e,
+			                           self.pool)
+
 		if vname is self.AdditionalVariables["Pressure"].name:
-			rhow, p, T, sound_speed, volfracW = \
-				self.wlma(Uq[:,:,self.get_mass_slice()], mom, e)
+			rhow, p, T, sound_speed, volfracW = EOS_call()
 			varq = p
 		elif vname is self.AdditionalVariables["Temperature"].name:
-			rhow, p, T, sound_speed, volfracW = \
-				self.wlma(Uq[:,:,self.get_mass_slice()], mom, e)
+			rhow, p, T, sound_speed, volfracW = EOS_call()
 			varq = T
 		# elif vname is self.AdditionalVariables["Entropy"].name:
 			# varq = R*(gamma/(gamma-1.)*np.log(getT()) - np.log(getP()))
@@ -157,23 +176,19 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		elif vname is self.AdditionalVariables["InternalEnergy"].name:
 			varq = e - 0.5*np.sum(mom*mom, axis=2, keepdims=True)/(arhoA+arhoWv+arhoM)
 		elif vname is self.AdditionalVariables["Enthalpy"].name:
-			rhow, p, T, sound_speed, volfracW = \
-				self.wlma(Uq[:,:,self.get_mass_slice()], mom, e)
+			rhow, p, T, sound_speed, volfracW = EOS_call()
 			varq = e \
 				- 0.5*np.sum(mom*mom, axis=2, keepdims=True)/(arhoA+arhoWv+arhoM) \
 				+ p / (arhoA+arhoWv+arhoM)
 		elif vname is self.AdditionalVariables["TotalEnthalpy"].name:
-			rhow, p, T, sound_speed, volfracW = \
-				self.wlma(Uq[:,:,self.get_mass_slice()], mom, e)
+			rhow, p, T, sound_speed, volfracW = EOS_call()
 			varq = (e + p)/(arhoA+arhoWv+arhoM)
 		elif vname is self.AdditionalVariables["SoundSpeed"].name:
-			rhow, p, T, sound_speed, volfracW = \
-				self.wlma(Uq[:,:,self.get_mass_slice()], mom, e)
+			rhow, p, T, sound_speed, volfracW = EOS_call()
 			varq = sound_speed
 		elif vname is self.AdditionalVariables["MaxWaveSpeed"].name:
 			# |u| + c
-			rhow, p, T, sound_speed, volfracW = \
-				self.wlma(Uq[:,:,self.get_mass_slice()], mom, e)
+			rhow, p, T, sound_speed, volfracW = EOS_call()
 			varq = np.linalg.norm(mom, axis=2, keepdims=True)/(arhoA+arhoWv+arhoM) \
 				 + sound_speed
 		elif vname is self.AdditionalVariables["Velocity"].name:
@@ -193,8 +208,7 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 			varq = phi
 			varq[np.where(phi > 0)] = phi[np.where(phi > 0)] * (ppA / (ppA + ppWv))
 		elif vname is self.AdditionalVariables["volFracWv"].name:
-			rhow, p, T, sound_speed, volfracW = \
-				self.wlma(Uq[:,:,self.get_mass_slice()], mom, e)
+			rhow, p, T, sound_speed, volfracW = EOS_call()
 			varq = volfracW
 			# phi = get_porosity()
 			# # Compute gas partial pressures except where total gas mass is zero
@@ -262,32 +276,35 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		--------
 			array: gradient of pressure with respected to state [ne, nq, ns]
 		'''
-		# TODO:
-		raise NotImplementedError(f"pressure-sgradient not supported.")
-		# Extract quantities that determine pressure
-		slarhoA = self.get_state_slice("pDensityA")
-		slarhoWv = self.get_state_slice("pDensityWv")
-		slarhoM = self.get_state_slice("pDensityM")
-		slmom = self.get_momentum_slice()
-		sle = self.get_state_slice("Energy")
-		arhoA = Uq[:, :, slarhoA]
-		arhoWv = Uq[:, :, slarhoWv]
-		arhoM = Uq[:, :, slarhoM]
-		mom = Uq[:, :, slmom]
-		e = Uq[:, :, sle]
+		# Preprocess input quantities
+		arhovec = Uq[:,:,self.get_mass_slice()]
+		momentum = Uq[:,:,self.get_momentum_slice()]
+		rho_mix = arhovec.sum(axis=-1, keepdims=True)
+		ya = Uq[:, :, self.get_state_slice("pDensityA")] / rho_mix
+		yw = Uq[:, :, self.get_state_slice("pDensityWv")] / rho_mix
+		vol_energy = Uq[:, :, self.get_state_slice("Energy")]
+		# Extract velocity
+		if self.NDIMS == 1:
+			u = Uq[:, :, self.get_state_slice("XMomentum")]
+			v = np.zeros_like(u)
+		elif self.NDIMS == 2:
+			u = Uq[:, :, self.get_state_slice("XMomentum")]
+			v = Uq[:, :, self.get_state_slice("YMomentum")]
+		else:
+			raise ValueError("NDIMS >= 3 not supported.")
+		
+		''' Spin-up local pool '''
+		if not self.pool_ready:
+			# TODO: reduce jank
+			self.pool = mp.Pool(self.num_parallel_workers)
+			self.pool_ready = True
 
-		# Retrieve auxiliary quantities
-		beta = self.compute_additional_variable("beta", Uq, True)
-		bu2 = beta*np.sum(mom**2, axis=2, keepdims=True)/np.power(
-			arhoA + arhoWv + arhoM,2.)
-		dpdU = np.zeros_like(Uq)
-		dpdU[:, :, slarhoA] = bu2 + self.compute_additional_variable("pi1", Uq, True)
-		dpdU[:, :, slarhoWv] = bu2 + self.compute_additional_variable("pi2", Uq, True)
-		dpdU[:, :, slarhoM] = bu2 + self.compute_additional_variable("pi3", Uq, True)
-		dpdU[:, :, slmom] = -2.*beta*mom/(arhoA + arhoWv + arhoM)
-		dpdU[:, :, sle] = 2.*beta
-
-		return dpdU
+		# Compute (rhow, p, T)
+		rhow, p, T, sound_speed, volfracW = \
+			self.wlma(arhovec, momentum, vol_energy, self.pool)
+		# Delegate state gradient computation
+		return self.wlma.pressure_sgradient(vol_energy, rho_mix,
+			yw, ya, rhow, p, T, u, v)
 	
 	def compute_phi_sgradient(self, Uq):
 		'''
@@ -363,6 +380,8 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 		d = {
 			physics.multiphaseWLMA.functions.FcnType.IsothermalAtmosphere:
 			  physics.multiphaseWLMA.functions.IsothermalAtmosphere,
+			physics.multiphaseWLMA.functions.FcnType.DebrisFlow:
+			  physics.multiphaseWLMA.functions.DebrisFlow,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -437,18 +456,25 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 		# Extract momentum in vector form ([n, nq, ndims])
 		mom    = Uq[:, :, self.get_momentum_slice()]
 
+		''' Spin-up local pool '''
+		if not self.pool_ready:
+			# TODO: reduce jank
+			self.pool = mp.Pool(self.num_parallel_workers)
+			self.pool_ready = True
+
 		# Call mixture backend
 		rhow, p, T, sound_speed, volfracW = \
 			self.wlma(
 				Uq[:,:,self.get_mass_slice()],
 				mom,
-				Uq[:, :, self.get_state_slice("Energy")])
+				Uq[:, :, self.get_state_slice("Energy")],
+				self.pool)
 		# Compute mixture (total) density
 		rho = arhoA + arhoWv + arhoM
 		u = rhou / rho
 		v = rhov / rho
-		u2 = u**2.0
-		v2 = v**2.0
+		u2 = u*u
+		v2 = v*v
 		rhouv = rhou * v
 		# Vector
 		vel = mom / rho

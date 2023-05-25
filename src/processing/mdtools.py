@@ -86,7 +86,8 @@ def plot_mean1D(x, q, clims, xscale=1.0, xshift=0.0):
 	plt.axis("equal")
 
 def generate_anim(atm_names, conduit_names, outfilename, num_frames,
-  plot_qty, filter=lambda x, x0:x, initial=1, stride=1, is_high_detail=False):
+  plot_qty, filter=lambda x, x0:x, initial=1, stride=1, clims=None,
+  is_high_detail=False):
   # This line needs to be here, with path to your ffmpeg path
   # plt.rcParams['animation.ffmpeg_path'] = "C:\\Users\\Fredric\\Documents\\ffmpeg\\ffmpeg-n4.4-latest-win64-gpl-4.4\\bin"
   if is_high_detail:
@@ -156,9 +157,10 @@ def generate_anim(atm_names, conduit_names, outfilename, num_frames,
       all_t[i] = solver.time
 
   ''' Compute global clim '''
-  min_val = np.min([np.min([np.min(vals_dom) for vals_dom in vals_t]) for vals_t in all_values])
-  max_val = np.max([np.max([np.max(vals_dom) for vals_dom in vals_t]) for vals_t in all_values])
-  clims = (min_val, max_val,)
+  if clims is None:
+    min_val = np.min([np.min([np.min(vals_dom) for vals_dom in vals_t]) for vals_t in all_values])
+    max_val = np.max([np.max([np.max(vals_dom) for vals_dom in vals_t]) for vals_t in all_values])
+    clims = (min_val, max_val,)
 
   ''' Generate plot '''
   for i in range(num_frames):

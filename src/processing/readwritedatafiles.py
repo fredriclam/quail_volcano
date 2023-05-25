@@ -37,6 +37,12 @@ def write_data_file(solver, iwrite):
 	# Remove piped objects
 	bdnet = solver.physics.bdry_data_net
 	solver.physics.bdry_data_net = None
+	local_pool = None
+	try:
+		local_pool = solver.physics.pool
+		solver.physics.pool = None
+	except AttributeError:
+		pass
 
 	# Get file name
 	prefix = solver.params["Prefix"]
@@ -51,6 +57,8 @@ def write_data_file(solver, iwrite):
 	
 	# Replace removed objects
 	solver.physics.bdry_data_net = bdnet
+	if local_pool is not None:
+		solver.physics.pool = local_pool
 
 
 def read_data_file(fname):

@@ -3689,6 +3689,11 @@ class LaxFriedrichs2D(ConvNumFluxBase):
 			wL = np.sqrt(u2L + v2L) + aL
 			wR = np.sqrt(u2R + v2R) + aR
 
+		# Conservative sound speed estimate
+		# if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
+		# 	w_global = np.maximum(np.sqrt(u2L + v2L),np.sqrt(u2R + v2R)) + 1550
+		# 	return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR, w_global)*dUq)
+
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)
 

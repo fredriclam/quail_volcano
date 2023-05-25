@@ -44,6 +44,7 @@ class FcnType(Enum):
 	functions are specific to the available Euler equation sets.
 	'''
 	IsothermalAtmosphere = auto()
+	DebrisFlow = auto()
 
 
 class BCType(Enum):
@@ -94,6 +95,173 @@ correspond to the FcnType enum members above.
 '''
 
 class IsothermalAtmosphere(FcnBase):
+	'''
+	Isothermal air atmosphere as an initial condition.
+	'''
+
+	def __init__(self,T:float=300., p_h0:float=15e6, #1e3*1300*9.8,
+		h0:float=-800.0, hmax:float=2500.0, gravity:float=9.8,
+		massFracWv:float=1.0-1e-7, massFracM:float=1e-7, tracer_frac:float=1e-7):
+		''' Set atmosphere temperature, pressure, and location of pressure.
+		Pressure distribution is computed as hydrostatic profile with p = p_h0
+		at elevation h0.
+		'''
+		self.T = T
+		self.p_h0 = p_h0
+		self.h0 = h0
+		self.hmax = hmax
+		self.gravity = gravity
+		self.massFracWv = massFracWv
+		self.massFracM = massFracM
+		# Allocate pressure interpolant (filled when self.get_state is called
+		# because physics object is required)
+		self.pressure_interpolant = None
+		# Set numerical fraction for essentially inert fields
+		self.tracer_frac = tracer_frac
+
+	def get_state(self, physics, x, t):
+		''' Computes the pressure in an isothermal atmosphere for an ideal gas
+		mixture with air and water vapour. Trace amounts of magma phase are added
+		and the pressure profile is iteratively corrected. '''
+
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
+
+		# Compute mole fractions times R_univ
+		nA_R = (1.0 - self.massFracWv) * physics.Gas[0]["R"]
+		nWv_R = self.massFracWv * physics.Gas[1]["R"]
+		# Compute mixture gas constant (gas constant per average molar mass)
+		R = nA_R + nWv_R
+		# Compute mole fraction of gas (=volume fraction of gas part)
+		nA = nA_R / R
+		nWv = nWv_R / R
+		# Cache mole fractions and properties
+		self.nA = nA
+		self.nWv = nWv
+		self.Gas = physics.Gas
+		self.Liquid = physics.Liquid
+		# Compute scale height (constant)
+		hs = R*self.T/self.gravity
+
+		''' Compute hydrostatic pressure as initial value problem (IVP) '''
+		# Compare this to
+		#   plt.plot(np.unique(x[...,1]),
+		#     np.exp(-(np.unique(x[...,1])-x[...,1].min())/hs)*1e5, '-')
+
+		# Determine mass fractions for seawater composition
+		# TODO: rework passing in composition
+		self.y_underwater = np.array([self.tracer_frac,
+			1.0-2.0*self.tracer_frac, self.tracer_frac])
+		self.y_overwater = np.array([1.0-self.tracer_frac-1e-7, # TODO: update water trace content
+			1e-7, self.tracer_frac])
+		# Renormalize out air (dependent)
+		if self.y_underwater[0] < 0:
+			self.y_underwater[0] = 0
+			self.y_underwater /= self.y_underwater.sum()
+		# Define evaluation points from input mesh y-coordinate
+		eval_pts = np.unique(x[:,:,1:2])
+
+		def diffuse_y(p:float):
+			'''Diffuse boundary over [p_surface, 2*p_surface] (length scale of
+			  diffuse_factor * p_surface / (rho * g) ~ diffuse_factor * (10 m)
+			  for liquid water)'''
+			# y = self.y_underwater if p > p_surface else self.y_overwater
+			diffuse_factor = .02
+			theta = np.clip( (p - p_surface) / (diffuse_factor * p_surface), 0, 1.0)
+			y = theta * self.y_underwater + (1 - theta) * self.y_overwater
+			return y
+
+		p_surface = 1e5
+		def mixture_spec_vol(height:float, p:float, T:float):
+			# Specific volume as function of p, T
+			# Select composition
+			# T = 700 if height > 200 else T
+			y = diffuse_y(p)
+
+			# Volume and composition of water layer
+			return y[0] * physics.Gas[0]["R"] * T / p \
+				+ y[1] / mixtureWLMA.float_mix_functions.rho_l_pt(p, T) \
+				+ y[2] / (physics.Liquid["rho0"] 
+					* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"]))
+
+		# Evaluate IVP solution
+		soln = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / mixture_spec_vol(height, p, self.T),
+			[self.h0, self.hmax],
+			[self.p_h0],
+			t_eval=eval_pts,
+			dense_output=True)
+		# Cache the pressure interpolant
+		self.pressure_interpolant = soln.sol
+		# Use equivalent height for simulating uplift
+		uplift = lambda r: 300.0 * np.exp(-((r-0)/200.0)**2)
+		y_equiv = x[...,1] - uplift(x[...,0])
+		# Evaluate p using dense_output of solve_ivp (with shape magic)
+		p = np.reshape(self.pressure_interpolant(y_equiv.ravel()), y_equiv.shape)
+		# Compute resultant density
+		rho = np.reshape(
+			1.0 / np.array([mixture_spec_vol(_z, _p, self.T)
+				for (_z, _p) in zip(y_equiv.ravel(), p.ravel())]),
+			p.shape)
+		
+		# # Compute partial densities for underwater part
+		# arhoA  = self.y_underwater[0] * rho
+		# arhoWv = self.y_underwater[1] * rho
+		# arhoM  = self.y_underwater[2] * rho
+		# # Compute partial densities for overwater part
+		# arhoA[p <= p_surface]  = self.y_overwater[0] * rho[p <= p_surface]
+		# arhoWv[p <= p_surface] = self.y_overwater[1] * rho[p <= p_surface]
+		# arhoM[p <= p_surface]  = self.y_overwater[2] * rho[p <= p_surface]
+		# Compute diffuse mass variables
+		arhoA = rho * np.reshape(np.array([diffuse_y(_p)[0] for _p in p.ravel()]), p.shape)
+		arhoWv = rho * np.reshape(np.array([diffuse_y(_p)[1] for _p in p.ravel()]), p.shape)
+		arhoM = rho * np.reshape(np.array([diffuse_y(_p)[2] for _p in p.ravel()]), p.shape)
+
+		# Compute conservative variables for tracers (typically no source in 2D)
+		arhoWt = arhoWv + self.tracer_frac * arhoM
+		arhoC  = self.tracer_frac * arhoM
+		arhoFm = (1.0 - self.tracer_frac) * arhoM
+		# Zero velocity
+		u = np.zeros_like(p)
+		v = np.zeros_like(p)
+		# Compute specific energy
+		e_m = np.reshape(np.array([mixtureWLMA.float_mix_functions.magma_mech_energy(_p,
+			physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
+			for _p in p.ravel()]), p.shape)
+		# Variable temperature mod
+		# T = np.zeros_like(p)
+		# T[:] = np.where(x[...,1] > 200, 700, self.T)
+		# e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+		# 	mixtureWLMA.float_mix_functions.rho_l_pt(_p, _T), _T)
+		# 	for (_p, _T) in zip(p.ravel(), T.ravel())]), p.shape)
+		e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+			mixtureWLMA.float_mix_functions.rho_l_pt(_p, self.T), self.T)
+			for _p in p.ravel()]), p.shape)
+		rho = arhoA + arhoWv + arhoM
+		# Compute volumetric energy
+		# TODO: move implementation to middleware
+		e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
+				arhoWv * e_w + 
+				arhoM * (physics.Liquid["c_m"] * self.T + e_m)
+				+ 0.5 * rho * (u*u+v*v)) # TODO: vpT analog needs correction for uv kinetc
+		# Assemble conservative state vector		
+		Uq[:, :, iarhoA]  = arhoA
+		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoM]  = arhoM
+		Uq[:, :, irhou]   = rho * u
+		Uq[:, :, irhov]   = rho * v
+		Uq[:, :, ie]      = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC]  = arhoC
+		Uq[:, :, iarhoFm] = arhoFm
+
+		return Uq # [ne, nq, ns]
+
+class DebrisFlow(FcnBase):
 	'''
 	Isothermal air atmosphere as an initial condition.
 	'''
@@ -152,8 +320,8 @@ class IsothermalAtmosphere(FcnBase):
 		# Determine mass fractions for seawater composition
 		self.y_underwater = np.array([1.0-self.massFracWv-self.massFracM,
 			self.massFracWv, self.massFracM])
-		self.y_overwater = np.array([1.0-2*self.tracer_frac,
-			self.tracer_frac, self.tracer_frac])
+		self.y_debris = np.array([self.tracer_frac,
+			self.tracer_frac, 1.0 - 2.0*self.tracer_frac])
 		# Renormalize out air (dependent)
 		if self.y_underwater[0] < 0:
 			self.y_underwater[0] = 0
@@ -166,7 +334,7 @@ class IsothermalAtmosphere(FcnBase):
 			# Specific volume as function of p, T
 			# Select composition
 			# T = 700 if height > 200 else T
-			y = self.y_underwater if p > p_surface else self.y_overwater
+			y = self.y_underwater
 			# Volume and composition of water layer
 			return y[0] * physics.Gas[0]["R"] * T / p \
 				+ y[1] / mixtureWLMA.float_mix_functions.rho_l_pt(p, T) \
@@ -194,11 +362,13 @@ class IsothermalAtmosphere(FcnBase):
 		arhoA  = self.y_underwater[0] * rho
 		arhoWv = self.y_underwater[1] * rho
 		arhoM  = self.y_underwater[2] * rho
-		# Compute partial densities for overwater part
-		arhoA[p <= p_surface]  = self.y_overwater[0] * rho[p <= p_surface]
-		arhoWv[p <= p_surface] = self.y_overwater[1] * rho[p <= p_surface]
-		arhoM[p <= p_surface]  = self.y_overwater[2] * rho[p <= p_surface]
-
+		# Replace section
+		column_indices = (np.abs(x[...,0]) < 200.0) & (x[...,1] < 200.0)
+		arhoM[column_indices] = 0.99999 * (physics.Liquid["rho0"] 
+			* (1.0 + (p[column_indices] - physics.Liquid["p0"])/physics.Liquid["K"]))
+		arhoA[column_indices] = self.tracer_frac
+		arhoWv[column_indices] = 0.00001 * 1000
+		
 		# Compute conservative variables for tracers (typically no source in 2D)
 		arhoWt = arhoWv + self.tracer_frac * arhoM
 		arhoC  = self.tracer_frac * arhoM
@@ -211,20 +381,21 @@ class IsothermalAtmosphere(FcnBase):
 			physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
 			for _p in p.ravel()]), p.shape)
 		# Variable temperature mod
-		# T = np.zeros_like(p)
+		T = self.T * np.ones_like(p)
 		# T[:] = np.where(x[...,1] > 200, 700, self.T)
-		# e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
-		# 	mixtureWLMA.float_mix_functions.rho_l_pt(_p, _T), _T)
-		# 	for (_p, _T) in zip(p.ravel(), T.ravel())]), p.shape)
+		T[column_indices] = 300
 		e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
-			mixtureWLMA.float_mix_functions.rho_l_pt(_p, self.T), self.T)
-			for _p in p.ravel()]), p.shape)
+			mixtureWLMA.float_mix_functions.rho_l_pt(_p, _T), _T)
+			for (_p, _T) in zip(p.ravel(), T.ravel())]), p.shape)
+		# e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+		# 	mixtureWLMA.float_mix_functions.rho_l_pt(_p, self.T), self.T)
+		# 	for _p in p.ravel()]), p.shape)
 		rho = arhoA + arhoWv + arhoM
 		# Compute volumetric energy
 		# TODO: move implementation to middleware
-		e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
+		e = (arhoA * physics.Gas[0]["c_v"] * T + 
 				arhoWv * e_w + 
-				arhoM * (physics.Liquid["c_m"] * self.T + e_m)
+				arhoM * (physics.Liquid["c_m"] * T + e_m)
 				+ 0.5 * rho * (u*u+v*v)) # TODO: vpT analog needs correction for uv kinetc
 		# Assemble conservative state vector		
 		Uq[:, :, iarhoA]  = arhoA
@@ -240,6 +411,7 @@ class IsothermalAtmosphere(FcnBase):
 
 		return Uq # [ne, nq, ns]
 
+
 '''
 -------------------
 Boundary conditions
@@ -252,7 +424,7 @@ above.
 '''
 
 # TODO: this thing
-class LinearizedImpedance2D(BCWeakPrescribed):
+class LinearizedImpedance2D(BCWeakRiemann):
 	'''
 	Impedance boundary condition linearized about the initial pressure
 	Attributes:
@@ -278,17 +450,50 @@ class LinearizedImpedance2D(BCWeakPrescribed):
 		
 		K, rho0, p0 = \
 			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
-		rhow_design = 45.695633185787855 						 # 20 MPa, 1000 K
-		rhom_design = rho0 * (1.0 + (20e6 - p0) / K) # 20 MPa
+		
+		# import scipy.optimize
+		p_tune = 30e6
+		T = 1000
+		# rhow_tuned = scipy.optimize.fsolve(
+		# 	lambda rhow: mixtureWLMA.float_phi_functions.p(rhow ,T) - p_tune,
+		# 	60)
+		rhow_design = 70.4202492860682 # 30 MPa, 1000 K
+		
+		# rhow_design = 45.695633185787855 						 # 20 MPa, 1000 K
+		rhoa_design = p_tune / (physics.Gas[0]["R"] * T)
+		rhom_design = rho0 * (1.0 + (p_tune - p0) / K) # 20 MPa
+		ya_design = 1e-7
 		yw_design = 0.05
-		ym_design = 1.0 - yw_design
-		rho_design = 1.0/(yw_design / rhow_design + ym_design / rhom_design)
+		ym_design = 0.0 # 1.0 - (ya_design + yw_design)
+		v_design = (ya_design / rhoa_design 
+	      + yw_design / rhow_design 
+				+ ym_design / rhom_design)
+		rho_design = 1.0 / v_design
 		# Specific energy
-		T = 1000.0
-		e_design = yw_design * mixtureWLMA.float_phi_functions.u(rhow_design, T) \
-			+ ym_design * physics.Liquid["c_m"] * T
-		v = 2000.0
+		e_design = ya_design * physics.Gas[0]["c_v"] * T \
+		  + yw_design * mixtureWLMA.float_phi_functions.u(rhow_design, T) \
+			+ ym_design * (physics.Liquid["c_m"] * T
+		    + mixtureWLMA.float_mix_functions.magma_mech_energy(p_tune,
+							  physics.Liquid["K"],
+								physics.Liquid["p0"],
+								physics.Liquid["rho0"]))
+		c = mixtureWLMA.float_mix_functions.mix_sound_speed(rhow_design, p_tune, T,
+      {
+        "vol_energy": rho_design * e_design,
+        "rho_mix": rho_design,
+        "yw": yw_design,
+        "ya": ya_design,
+        "K": physics.Liquid["K"],
+        "p_m0": physics.Liquid["p0"],
+        "rho_m0": physics.Liquid["rho0"],
+        "c_v_m0": physics.Liquid["c_m"],
+        "R_a": physics.Gas[0]["R"],
+        "gamma_a": physics.Gas[0]["gamma"],
+      })
+		# Set vertical velocity equal to entrance sound speed
+		v = c
 		# Get UqB
+		UqB[:,:,0:1] = ya_design * rho_design
 		UqB[:,:,1:2] = yw_design * rho_design
 		UqB[:,:,2:3] = ym_design * rho_design
 		UqB[:,:,3:4] = 0.0

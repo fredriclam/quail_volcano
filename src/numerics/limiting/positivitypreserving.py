@@ -33,7 +33,7 @@ import numerics.limiting.base as base
 
 import pickle
 
-POS_TOL = 1.e-10
+POS_TOL = 1e-8 # 1.e-10
 
 
 def trunc(a, decimals=8):
@@ -408,57 +408,176 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				self.elem_vols)
 		ne = self.elem_vols.shape[0]
 		# Density and pressure from averaged state
-		rho_bar = {self.var_name1: physics.compute_variable(self.var_name1, U_bar),
+		if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
+			rho_bar = {self.var_name1: physics.compute_variable(self.var_name1, U_bar),
 		           self.var_name2: physics.compute_variable(self.var_name2, U_bar),
 							 self.var_name3: physics.compute_variable(self.var_name3, U_bar),
-							 self.var_nameT1: physics.compute_variable(self.var_nameT1, U_bar),
-							 self.var_nameT2: physics.compute_variable(self.var_nameT2, U_bar),
 							 }
+		else:
+			rho_bar = {self.var_name1: physics.compute_variable(self.var_name1, U_bar),
+								self.var_name2: physics.compute_variable(self.var_name2, U_bar),
+								self.var_name3: physics.compute_variable(self.var_name3, U_bar),
+								self.var_nameT1: physics.compute_variable(self.var_nameT1, U_bar),
+								self.var_nameT2: physics.compute_variable(self.var_nameT2, U_bar),
+								}
 		p_bar = physics.compute_variable(self.var_name4, U_bar)
 
 		if np.any([np.any(rho < 0.) for rho in rho_bar.values()]) \
 			 or np.any(p_bar < 0.):
 			raise errors.NotPhysicalError
+		# TODO: reduce to mixtDensity
+		mix_rho_bar = physics.compute_variable("pDensityA", U_bar) \
+		  + physics.compute_variable("pDensityWv", U_bar) \
+		  + physics.compute_variable("pDensityM", U_bar)
+		# Assume constant mass fractions
+		y = np.concatenate((physics.compute_variable("pDensityA", U_bar) / mix_rho_bar,
+			physics.compute_variable("pDensityWv", U_bar) / mix_rho_bar,
+			physics.compute_variable("pDensityM", U_bar) / mix_rho_bar), axis=-1)
 
 		# Ignore divide-by-zero
 		np.seterr(divide='ignore')
 
 		# logger_idx = -1
 		''' Limit partial-density variables '''
-		for var_name in [self.var_name1, self.var_name2, self.var_name3,
-			self.var_nameT1, self.var_nameT2]:
-			# logger_idx += 1
-			# Compute density
-			quant_elem_faces = physics.compute_variable(var_name, U_elem_faces)
+		# Legacy componentwise limiting
+		if False:
+			for var_name in [self.var_name1, self.var_name2, self.var_name3,
+				self.var_nameT1, self.var_nameT2]:
+				# logger_idx += 1
+				# Compute density
+				quant_elem_faces = physics.compute_variable(var_name, U_elem_faces)
+				# Evaluate theta parameter
+				if False: #self.var_name3 == var_name:
+					# Liquid phase: separate theta evaluation
+					theta = np.abs((rho_bar[var_name])/(
+						rho_bar[var_name] - quant_elem_faces + POS_TOL))
+				else:
+					denom = np.where(rho_bar[var_name] - quant_elem_faces != 0,
+						rho_bar[var_name] - quant_elem_faces, POS_TOL)
+					theta = np.abs((rho_bar[var_name] - POS_TOL)/denom)
+				# theta = np.abs((rho_bar[var_name])/(
+				# 	rho_bar[var_name] - quant_elem_faces + POS_TOL))
+				# Truncate theta1; otherwise, can get noticeably different
+				# results across machines, possibly due to poor conditioning in its
+				# calculation
+				theta1 = trunc(np.minimum(1., np.min(theta, axis=1)))
+				# self.theta_store[logger_idx].append(theta1)
+
+				# Get component's partial density index
+				irho = physics.get_state_index(var_name)
+				# Get IDs of elements that need limiting
+				elem_IDs = np.where(theta1 < 1.)[0]
+				# Modify density coefficients
+				if basis.MODAL_OR_NODAL == general.ModalOrNodal.Nodal:
+					Uc[elem_IDs, :, irho] = theta1[elem_IDs]*Uc[elem_IDs, :, irho] \
+							+ (1. - theta1[elem_IDs])*rho_bar[var_name][elem_IDs, 0]
+				elif basis.MODAL_OR_NODAL == general.ModalOrNodal.Modal:
+					Uc[elem_IDs, :, irho] *= theta1[elem_IDs]
+					Uc[elem_IDs, 0, irho] += (1. - theta1[elem_IDs, 0])*rho_bar[var_name][
+							elem_IDs, 0, 0]
+				else:
+					raise NotImplementedError
+
+				if np.any(theta1 < 1.):
+					# Intermediate limited solution
+					U_elem_faces = helpers.evaluate_state(Uc,
+							self.basis_val_elem_faces,
+							skip_interp=basis.skip_interp)
+		# Mixture density limiting
+		else:
+			# Compute mixture density on face
+			quant_elem_faces = physics.compute_variable("pDensityA", U_elem_faces) \
+				+ physics.compute_variable("pDensityWv", U_elem_faces) \
+				+ physics.compute_variable("pDensityM", U_elem_faces)
+
+			''' Theta modified here following Zhang, Xia, Shu (J. Sci. Comp. 2012 ),
+			where m = POS_TOL and M = +inf. '''
 			# Evaluate theta parameter
-			if self.var_name3 == var_name:
+			if False: #self.var_name3 == var_name:
 				# Liquid phase: separate theta evaluation
 				theta = np.abs((rho_bar[var_name])/(
 					rho_bar[var_name] - quant_elem_faces + POS_TOL))
 			else:
-				denom = np.where(rho_bar[var_name] - quant_elem_faces != 0,
-					rho_bar[var_name] - quant_elem_faces, POS_TOL)
-				theta = np.abs((rho_bar[var_name] - POS_TOL)/denom)
+				# Standard with denominator zero-correction
+				# denom = np.where(mix_rho_bar - quant_elem_faces != 0,
+				# 	mix_rho_bar - quant_elem_faces, POS_TOL)
+				# theta = np.abs((mix_rho_bar - POS_TOL)/denom)
+
+				assert(solver.order <= 1)
+				# Compute minimum within element (works for order == 1)
+				# elt_min = Uc[...,0:3].sum(axis=-1, keepdims=True).min(axis=1, keepdims=True)
+				# denom = np.where(mix_rho_bar - elt_min != 0,
+				# 	mix_rho_bar - elt_min, POS_TOL)
+				# theta = np.abs((mix_rho_bar - POS_TOL)/denom)
+
+				thetas = [None, None, None]
+				for i, _name in enumerate(["pDensityA", "pDensityWv", "pDensityM"]):
+					elt_min = Uc[...,i:i+1].min(axis=1, keepdims=True)
+					elt_mean = physics.compute_variable(_name, U_bar)
+					denom = np.where(elt_mean - elt_min != 0, elt_mean - elt_min, POS_TOL)
+					thetas[i] = np.abs((elt_mean - POS_TOL)/denom)
+
 			# theta = np.abs((rho_bar[var_name])/(
 			# 	rho_bar[var_name] - quant_elem_faces + POS_TOL))
 			# Truncate theta1; otherwise, can get noticeably different
 			# results across machines, possibly due to poor conditioning in its
 			# calculation
-			theta1 = trunc(np.minimum(1., np.min(theta, axis=1)))
+			theta1 = trunc(np.minimum(1., np.min(np.minimum(*thetas), axis=1, keepdims=True)))
+			# theta_test = (mix_rho_bar[...] - POS_TOL)/(mix_rho_bar[...] - Uc.sum(axis=-1, keepdims=True).min(axis=1, keepdims=True))
+
 			# self.theta_store[logger_idx].append(theta1)
 
-			# Get component's partial density index
-			irho = physics.get_state_index(var_name)
 			# Get IDs of elements that need limiting
 			elem_IDs = np.where(theta1 < 1.)[0]
 			# Modify density coefficients
 			if basis.MODAL_OR_NODAL == general.ModalOrNodal.Nodal:
-				Uc[elem_IDs, :, irho] = theta1[elem_IDs]*Uc[elem_IDs, :, irho] \
-						+ (1. - theta1[elem_IDs])*rho_bar[var_name][elem_IDs, 0]
+				Uc[elem_IDs, :, 0:3] = theta1[elem_IDs] * Uc[elem_IDs, :, 0:3] \
+					+ (1.0 - theta1[elem_IDs]) * mix_rho_bar[elem_IDs,...] * y[elem_IDs,...]
 			elif basis.MODAL_OR_NODAL == general.ModalOrNodal.Modal:
+				raise NotImplementedError("Mod for modal in vpT not implemented.")
+				irho = physics.get_state_index(var_name)
 				Uc[elem_IDs, :, irho] *= theta1[elem_IDs]
 				Uc[elem_IDs, 0, irho] += (1. - theta1[elem_IDs, 0])*rho_bar[var_name][
 						elem_IDs, 0, 0]
+			else:
+				raise NotImplementedError
+
+			if np.any(theta1 < 1.):
+				# Intermediate limited solution
+				U_elem_faces = helpers.evaluate_state(Uc,
+						self.basis_val_elem_faces,
+						skip_interp=basis.skip_interp)
+
+		''' Limit energy (for ideal gas, p is proportional to vol. internal energy) '''
+		if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
+			e_bar = U_bar[..., 5:6]
+			if np.any(e_bar < 0.):
+				raise errors.NotPhysicalError
+
+			# Compute minimum within element (works for order == 1 using nodal vals)
+			assert(solver.order <= 1)
+			elt_min = Uc[..., 5:6].min(axis=1, keepdims=True)
+			denom = np.where(e_bar - elt_min != 0, e_bar - elt_min, POS_TOL)
+			theta = np.abs((e_bar - POS_TOL)/denom)
+
+			# theta = np.abs((rho_bar[var_name])/(
+			# 	rho_bar[var_name] - quant_elem_faces + POS_TOL))
+			# Truncate theta1; otherwise, can get noticeably different
+			# results across machines, possibly due to poor conditioning in its
+			# calculation
+			theta1 = trunc(np.minimum(1., np.min(theta, axis=1, keepdims=True)))
+			# theta_test = (mix_rho_bar[...] - POS_TOL)/(mix_rho_bar[...] - Uc.sum(axis=-1, keepdims=True).min(axis=1, keepdims=True))
+
+			# self.theta_store[logger_idx].append(theta1)
+
+			# Get IDs of elements that need limiting
+			elem_IDs = np.where(theta1 < 1.)[0]
+			# Modify density coefficients
+			if basis.MODAL_OR_NODAL == general.ModalOrNodal.Nodal:
+				Uc[elem_IDs, :, 5:6] = theta1[elem_IDs] * Uc[elem_IDs, :, 5:6] \
+					+ (1.0 - theta1[elem_IDs]) * e_bar[elem_IDs,...]
+			elif basis.MODAL_OR_NODAL == general.ModalOrNodal.Modal:
+				raise NotImplementedError("Mod for modal in vpT not implemented.")
 			else:
 				raise NotImplementedError
 
@@ -499,7 +618,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		''' Limit pressure '''
 		# Compute pressure at quadrature points
 		p_elem_faces = physics.compute_variable(self.var_name4, U_elem_faces)
-		theta[:] = 1.
+		theta = np.ones_like(mix_rho_bar)
 		# Indices where pressure is negative
 		negative_p_indices = np.where(p_elem_faces < 0.)
 		elem_IDs = negative_p_indices[0]
@@ -528,5 +647,19 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			raise NotImplementedError
 
 		np.seterr(divide='warn')
+
+		# HACK: # Ad hoc clip and renormalize
+		if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
+			_rho_mix = Uc[...,0:3].sum(axis=-1 , keepdims=True)
+			_y = Uc[...,0:3] / _rho_mix
+			_y = np.clip(_y, POS_TOL, 1) / _y.sum(axis=-1, keepdims=True)
+			Uc[...,0:3] = _y * _rho_mix
+
+		# Postcheck
+		if np.any(Uc[...,0:3] < 0.):
+			raise errors.NotPhysicalError("An essential mass variable is negative")
+		if np.any(Uc[...,5:6] < 0.):
+			# Energy
+			raise errors.NotPhysicalError("Total energy is negative")
 
 		return Uc # [ne, nq, ns]

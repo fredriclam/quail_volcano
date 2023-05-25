@@ -1,22 +1,24 @@
 import numpy as np
 
 Numerics = {
-	"SolutionOrder" : 0,
+	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
-	"ArtificialViscosity" : False,
-	# "AVParameter" : 150,#5e3
-	'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
+	"ArtificialViscosity" : True,
+	"AVParameter" : 0.3,#.30,#0.3,#5e3
+	# "AVParameter" : 500,#5e3
+	# 'L2InitialCondition': True, # Use interpolation instead of L2 projection of Riemann data
+	'L2InitialCondition': False,
 }
 
 Mesh = {
-	"File" : "../meshes/tungurahuaA2.msh",
+	"File" : "../meshes/submarinetestA2.msh",
 }
 
 Output = {
-	"Prefix" : "submarine_proto_hydro1_atm2",
-	"WriteInterval" : 25,
+	"Prefix" : "submarine_proto_WLMA11_atm2",
+	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -24,6 +26,7 @@ Output = {
 Physics = {
     "Type" : "MultiphaseWLMA",
     "ConvFluxNumerical" : "LaxFriedrichs",
+    "num_parallel_workers": 7,
 }
 
 SourceTerms = {
@@ -35,10 +38,10 @@ SourceTerms = {
 	# 		"Function": "ExsolutionSource",
 	# 		"source_treatment" : "Implicit",
 	# },
-	"source4": {
-		"Function" : "CylindricalGeometricSource",
-		# "source_treatment" : "Explicit",
-	}
+	# "source4": {
+	# 	"Function" : "CylindricalGeometricSource",
+	# 	# "source_treatment" : "Explicit",
+	# }
 }
 
 # Restart = {
