@@ -59,7 +59,7 @@ Numerics = {
 
 Output = {
 	#"Prefix" : "ODEsteadyState/conduit",
-	"Prefix" : "/scratch/users/kcoppess/gaussian_pulse_injection/conduit",
+	"Prefix" : "/scratch/users/kcoppess/gaussian_pulse_injection_amp20/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
@@ -168,7 +168,7 @@ BoundaryConditions = {
       "trace_arho": 1e-8*2600,
       "sig": 4,
       "cVFav": 0.4,
-      "cVFamp": 0.1,
+      "cVFamp": 0.2,
       "tpulse": 20,
     },
     "x2": {

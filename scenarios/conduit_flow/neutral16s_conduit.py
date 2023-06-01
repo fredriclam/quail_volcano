@@ -59,7 +59,7 @@ Numerics = {
 
 Output = {
 	#"Prefix" : "ODEsteadyState/conduit",
-	"Prefix" : "/scratch/users/kcoppess/ODEsteadyStateTD10_neutral4s/conduit",
+	"Prefix" : "/scratch/users/kcoppess/neutral16s/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
@@ -80,7 +80,7 @@ Mesh = {
 
 ''' Initial condition stuff '''
 # Mass fractions at t = 0
-phi_crys = 0.4 * (1.0 - 0.1 * np.sin(0.0))
+phi_crys = 0.4
 chi_water = 0.03
 yWt_init = chi_water * (1 - phi_crys) / (1 + chi_water)
 yC_init = phi_crys
@@ -166,7 +166,7 @@ BoundaryConditions = {
       "p_chamber" : InitialCondition["inlet_input_val"],
       "T_chamber" : InitialCondition["T_chamber"],
       "trace_arho": 1e-8*2600,
-      "freq": 0.25,
+      "freq": 0.0625,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",
