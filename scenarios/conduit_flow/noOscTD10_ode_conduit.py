@@ -59,7 +59,7 @@ Numerics = {
 
 Output = {
 	#"Prefix" : "ODEsteadyState/conduit",
-	"Prefix" : "/scratch/users/kcoppess/ODEsteadyStateTD10_neutral4s/conduit",
+	"Prefix" : "/scratch/users/kcoppess/neutral16s_amp10percent/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
@@ -166,7 +166,7 @@ BoundaryConditions = {
       "p_chamber" : InitialCondition["inlet_input_val"],
       "T_chamber" : InitialCondition["T_chamber"],
       "trace_arho": 1e-8*2600,
-      "freq": 0.25,
+      "freq": 0.0625,
     },
     "x2": {
       "BCType" : "PressureOutlet1D",
