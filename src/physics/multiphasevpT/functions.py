@@ -94,6 +94,7 @@ class SourceType(Enum):
 	GravitySource = auto()
 	ExsolutionSource = auto()
 	FragmentationTimescaleSource = auto()
+	FragmentationTimescaleSourceSmoothed = auto()
 	WaterInflowSource = auto()
 	CylindricalGeometricSource = auto()
 
@@ -301,7 +302,7 @@ class RightTravelingGaussian(FcnBase):
 
 class SteadyState(FcnBase):
 	''' 1D steady state. Calls submodule compressible-conduit-steady
-	  (https://github.com/fredriclam/compressible-conduit-steady).
+		(https://github.com/fredriclam/compressible-conduit-steady).
 	'''
 	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,
 		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
@@ -2078,7 +2079,7 @@ class LinearizedIsothermalOutflow2D(BCWeakPrescribed):
 			if type(physics.IC) is not physics.IC_fcn_map.get(
 					FcnType.IsothermalAtmosphere, None):
 				raise ValueError("LinearizedIsothermalOutflow2D used but initial " +
-				  "condition set by IsothermalAtmosphere was not found.")
+					"condition set by IsothermalAtmosphere was not found.")
 
 			# Fill pressure from the initial condition
 			p0 = x[...,1:].copy()
@@ -2173,9 +2174,9 @@ class PressureOutlet1D(BCWeakRiemann):
 	related by the sound speed; pressure and velocity are related by the acoustic
 	impedance. To capture choked flow efficiently, the approach here is to compute
 	velocity in the following initial value problem (IVP) in state space:
-	  du/dp = 1/(rho*c),
+		du/dp = 1/(rho*c),
 		u(p = p0) = u0
-  where rho*c is a function of pressure at constant entropy. The boundary state
+	where rho*c is a function of pressure at constant entropy. The boundary state
 	is computed as a function of self.p and u(p = self.p) when the flow is
 	subsonic. Otherwise, sonic pressure is found, and the boundary state is
 	computed as a function of p_sonic and u(p = p_sonic).
@@ -2221,7 +2222,7 @@ class PressureOutlet1D(BCWeakRiemann):
 			return UqB
 		elif np.any(velI < 0):
 			raise ValueError("Inflow. Check fragmentation state (front too close?) " +
-			  "and stability with respect to timestepper.")
+				"and stability with respect to timestepper.")
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
@@ -2381,7 +2382,7 @@ class LinearizedImpedance2D(BCWeakPrescribed):
 			+ 0.5 * rho_target * np.sum(velvec_target*velvec_target, axis=2, keepdims=True)
 		''' Update adiabatically compressed/expanded tracer partial densities '''
 		UqB[:,:,[physics.get_state_index("pDensityWt"),
-		         physics.get_state_index("pDensityC")]] *= rho_target / rhoI
+						 physics.get_state_index("pDensityC")]] *= rho_target / rhoI
 
 		''' Post-computation validity check '''
 		if np.any(THat < 0.):
@@ -3866,7 +3867,7 @@ class ExsolutionSource(SourceBase):
 			raise NotImplementedError(f"compute_exsolution_source_sgradient called for" +
 																f"NDIMS=={self.NDIMS}, which is not 1.")
 		raise NotImplementedError(f"Gradient does not account for cystal content. If" +
-		  " this is fine, remove the raise in compute_exsolution_source_sgradient. This" +
+			" this is fine, remove the raise in compute_exsolution_source_sgradient. This" +
 			" gradient is used typically for implicit source timestepping.")
 		
 		# Extract variables
@@ -3900,46 +3901,104 @@ class ExsolutionSource(SourceBase):
 		return dSdU
 
 
-class FragmentationTimescaleSource(SourceBase):
-  '''
-  Fragmentation source term.
-  Converts unfragmented magma to fragmented magma over a timescale when
-  the fragmentation criterion is met.
-  Dynamic parameters (tau_f) are attributes of this class.
-  '''
-  def __init__(self, tau_f:float=1.0, crit_volfrac:float=0.8, **kwargs):
-    super().__init__(kwargs)
-    self.tau_f, self.crit_volfrac = tau_f, crit_volfrac
+class FragmentationTimescaleSourceSmoothed(SourceBase):
+	'''
+	Fragmentation source term.
+	Converts unfragmented magma to fragmented magma over a timescale when
+	the fragmentation criterion is met.
+	Dynamic parameters (tau_f) are attributes of this class.
+	'''
+	def __init__(self, tau_f:float=1.0, crit_volfrac:float=0.8,
+							 fragsmooth_scale:float=0.010, **kwargs):
+		super().__init__(kwargs)
+		self.tau_f, self.crit_volfrac, self.fragsmooth_scale = \
+			 tau_f, crit_volfrac, fragsmooth_scale
 
-  def get_is_fragmenting(self, physics, arhoVec, T):
-      ''' Check volume fraction condition. '''
-      return (atomics.gas_volfrac(arhoVec, T, physics) > self.crit_volfrac
+	def smoother(self, x, scale):
+		''' Returns one-sided smoothing u(x) of a step, such that
+			1. u(x < -scale) = 0
+			2. u(x >= 0) = 1.
+			3. u smoothly interpolates from 0 to 1 in between.
+		'''
+		# Shift, scale, and clip to [-1, 0] to prevent exp overflow
+		_x = np.clip(x / scale + 1, 0, 1)
+		f0 = np.exp(-1/np.where(_x == 0, 1, _x))
+		f1 = np.exp(-1/np.where(_x == 1, 1, 1-_x))
+		# Return piecewise evaluation
+		return np.where(_x >= 1, 1,
+						np.where(_x <= 0, 0, 
+							f0 / (f0 + f1)))
+
+	def get_source(self, physics, Uq, x, t):
+		S = np.zeros_like(Uq)
+		if physics.NDIMS == 1:
+			# Extract variables
+			slarhoM = physics.get_state_slice("pDensityM")
+			slarhoFm = physics.get_state_slice("pDensityFm")
+
+			mom = Uq[:, :, physics.get_momentum_slice()]
+			arho = Uq[:, :, physics.get_mass_slice()]
+			e = Uq[:, :, physics.get_state_slice("Energy")]
+			arhoM = Uq[:, :, slarhoM]
+			arhoFm = Uq[:, :, slarhoFm]
+
+			T = atomics.temperature(arho, mom, e, physics)
+			phi = atomics.gas_volfrac(arho, T, physics)
+
+			# Compute smoothing argument and smoothed 0-1
+			smoothed_0_1 = self.smoother(phi - self.crit_volfrac,
+				self.fragsmooth_scale)
+			# Compute reaction rate of current state
+			reaction_rate = (1.0/self.tau_f) * \
+				smoothed_0_1 * (arhoM - arhoFm) # Proportional to non-fragmented mass
+			# Apply reaction rate to only fragmented magma (arhom = fragmented + unfragmented)
+			S[:, :, slarhoFm]  = reaction_rate
+		else:
+			raise Exception("Unexpected physics num dimension "
+				+ "in FragmentationTimescaleSourceSmoothed.")
+		return S # [ne, nq, ns]
+
+
+class FragmentationTimescaleSource(SourceBase):
+	'''
+	Fragmentation source term.
+	Converts unfragmented magma to fragmented magma over a timescale when
+	the fragmentation criterion is met.
+	Dynamic parameters (tau_f) are attributes of this class.
+	'''
+	def __init__(self, tau_f:float=1.0, crit_volfrac:float=0.8, **kwargs):
+		super().__init__(kwargs)
+		self.tau_f, self.crit_volfrac = tau_f, crit_volfrac
+
+	def get_is_fragmenting(self, physics, arhoVec, T):
+			''' Check volume fraction condition. '''
+			return (atomics.gas_volfrac(arhoVec, T, physics) > self.crit_volfrac
 				).astype(float)
 
-  def get_source(self, physics, Uq, x, t):
-    S = np.zeros_like(Uq)
-    if physics.NDIMS == 1:
-      # Extract variables
-      slarhoM = physics.get_state_slice("pDensityM")
-      slarhoFm = physics.get_state_slice("pDensityFm")
+	def get_source(self, physics, Uq, x, t):
+		S = np.zeros_like(Uq)
+		if physics.NDIMS == 1:
+			# Extract variables
+			slarhoM = physics.get_state_slice("pDensityM")
+			slarhoFm = physics.get_state_slice("pDensityFm")
 
-      mom = Uq[:, :, physics.get_momentum_slice()]
-      arho = Uq[:, :, physics.get_mass_slice()]
-      e = Uq[:, :, physics.get_state_slice("Energy")]
-      arhoM = Uq[:, :, slarhoM]
-      arhoFm = Uq[:, :, slarhoFm]
+			mom = Uq[:, :, physics.get_momentum_slice()]
+			arho = Uq[:, :, physics.get_mass_slice()]
+			e = Uq[:, :, physics.get_state_slice("Energy")]
+			arhoM = Uq[:, :, slarhoM]
+			arhoFm = Uq[:, :, slarhoFm]
 
-      T = atomics.temperature(arho, mom, e, physics)
-      
-      # Compute reaction rate of current state
-      reaction_rate = (1.0/self.tau_f) * \
-        self.get_is_fragmenting(physics, arho, T) * (
-        arhoM - arhoFm) # Proportional to non-fragmented mass
-      # Apply reaction rate to only fragmented magma (arhom = fragmented + unfragmented)
-      S[:, :, slarhoFm]  = reaction_rate
-    else:
-      raise Exception("Unexpected physics num dimension in FragmentationTimescaleSource.")
-    return S # [ne, nq, ns]
+			T = atomics.temperature(arho, mom, e, physics)
+			
+			# Compute reaction rate of current state
+			reaction_rate = (1.0/self.tau_f) * \
+				self.get_is_fragmenting(physics, arho, T) * (
+				arhoM - arhoFm) # Proportional to non-fragmented mass
+			# Apply reaction rate to only fragmented magma (arhom = fragmented + unfragmented)
+			S[:, :, slarhoFm]  = reaction_rate
+		else:
+			raise Exception("Unexpected physics num dimension in FragmentationTimescaleSource.")
+		return S # [ne, nq, ns]
 
 
 class WaterInflowSource(SourceBase):

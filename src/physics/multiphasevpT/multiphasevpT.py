@@ -479,6 +479,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
 			SourceType.FragmentationTimescaleSource: mpvpT_fcns.FragmentationTimescaleSource,
+			SourceType.FragmentationTimescaleSourceSmoothed: mpvpT_fcns.FragmentationTimescaleSourceSmoothed,
 			SourceType.WaterInflowSource: mpvpT_fcns.WaterInflowSource,
 		})
 
