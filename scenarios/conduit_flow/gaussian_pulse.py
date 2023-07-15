@@ -59,7 +59,7 @@ Numerics = {
 
 Output = {
 	#"Prefix" : "ODEsteadyState/conduit",
-	"Prefix" : "/scratch/users/kcoppess/gaussian_pulse_injection_flipped/conduit",
+	"Prefix" : "/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
@@ -121,6 +121,7 @@ InitialCondition = {
     "p0_magma": (chi_water / sol_k)**2,
     "solubility_k": sol_k,
     "solubility_n": 0.5,
+    "fragsmooth_scale": 0.01,
     "approx_massfracs": True,
     "neglect_edfm": True,
 }
@@ -146,7 +147,7 @@ SourceTerms = {
       "tau_d": InitialCondition["tau_d"],
   },
   "source4": {
-      "Function": "FragmentationTimescaleSource",
+      "Function": "FragmentationTimescaleSourceSmoothed",
       "source_treatment" : "Explicit",
       "tau_f": InitialCondition["tau_f"],
       "crit_volfrac": InitialCondition["crit_volfrac"],
@@ -168,7 +169,7 @@ BoundaryConditions = {
       "trace_arho": 1e-8*2600,
       "sig": 4,
       "cVFav": 0.4,
-      "cVFamp": -0.1,
+      "cVFamp": 0.1,
       "tpulse": 20,
     },
     "x2": {
