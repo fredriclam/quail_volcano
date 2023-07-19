@@ -42,6 +42,7 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'tau_d': 10.0},
  'source4': {'Function': 'FragmentationTimescaleSourceSmoothed',
              'crit_volfrac': 0.7,
+             'fragsmooth_scale': 0.01,
              'source_treatment': 'Explicit',
              'tau_f': 1.0}}
 

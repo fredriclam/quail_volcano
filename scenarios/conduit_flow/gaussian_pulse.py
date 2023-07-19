@@ -151,6 +151,7 @@ SourceTerms = {
       "source_treatment" : "Explicit",
       "tau_f": InitialCondition["tau_f"],
       "crit_volfrac": InitialCondition["crit_volfrac"],
+      "fragsmooth_scale": InitialCondition["fragsmooth_scale"],
   },
 }
 
