@@ -2417,16 +2417,33 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	The problem linearized on both sides of the contact wave has solution
 	  p = (YL * pL + YR * pR) / (YL + YR) + (uL - uR) / (YL + YR)
 	and the assumption of continuous particle velocity drops the latter term.
+
+	Usage:
+	  cVFav sets the averages crystal volume fraction.
+	  For a constant state boundary, set is_gaussian=False, cos_freq=0.0.
+	  For a sinusoidal boundary, set is_gaussian=False, cos_freq > 0. The
+		  amplitude is controlled by cVFamp, with average cVFav.
+		For a gaussian boundary, set is_gaussian=True. cos_freq is ignored.
+		  The gaussian is controlled by gaussian_tpulse, gaussian_sig, and
+		  cVFamp, with background value cVFav.
+	Water content is specified as a concentration per dry magma mass (chi_water).
 	'''
-	def __init__(self, p_chamber:float=100e6,
-			T_chamber:float=1e3, trace_arho:float=1e-6, freq:float=0.25,
-			yWt:float=0.04, yC:float=0.1,):
-		# Ingest args
+	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=1e-6,
+			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
+			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0):
+		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
-		# Angular frequency of variation
-		self.freq = freq
-		self.yWt, self.yC = yWt, yC
+		# Water concentration
+		self.chi_water = chi_water
+		# Crystal volume fraction average and perturbation amplitude
+		self.cVFav, self.cVFamp = cVFav, cVFamp
+		# Gaussian pulse if true (else sinusoidal)
+		self.is_gaussian:bool = is_gaussian
+		# Frequency for sinusodial (used if not is_gaussian)
+		self.cos_freq = cos_freq
+		# Gaussian properties (used if is_gaussian)
+		self.gaussian_tpulse, self.gaussian_sig = gaussian_tpulse, gaussian_sig
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
@@ -2511,20 +2528,23 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 
 		# crystal vol / suspension vol
 		ta = 5
-		tb = 5 + (1 / (2 * self.freq))
-		if t < ta:
-			phi_crys = self.cVFav
-		elif t < tb:
-			phi_crys = self.cVFav * (0.875 + 0.125 * np.cos(2 * np.pi * self.freq * (t - ta)))
+		tb = 5 + (1 / (2 * self.cos_freq)) if self.cos_freq != 0 else +np.inf
+		if self.is_gaussian:
+			phi_crys = self.cVFav + self.cVFamp \
+				* np.exp(-((t - self.gaussian_tpulse)/ self.gaussian_sig) **2 / 2)
 		else:
-			phi_crys = self.cVFav * (1 - 0.25 * np.cos(2 * np.pi * self.freq * (t - tb)))
-		chi_water = 0.03
+			if t < ta:
+				phi_crys = self.cVFav
+			elif t < tb:
+				phi_crys = self.cVFav * (1 + self.cVFamp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
+			else:
+				phi_crys = self.cVFav * (1 - self.cVFamp * np.cos(2 * np.pi * self.cos_freq * (t - tb)))
+		chi_water = self.chi_water
 		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
 		UqB[:,:,6] = rho * phi_crys
-	
 		# Fragmented state
 		UqB[:,:,7] = 0.0
-
+	
 		return UqB
 
 class VelocityInlet1D(BCWeakPrescribed):
