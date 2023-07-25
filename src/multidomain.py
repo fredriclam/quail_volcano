@@ -15,7 +15,7 @@ import queue
 import time
 
 
-_global_timeout_seconds = 60.0#615.0
+_global_timeout_seconds = 615.0
 
 # TODO: typing of input args
 # TODO: parallel setup of domains
