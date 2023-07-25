@@ -310,7 +310,7 @@ class SteadyState(FcnBase):
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
 		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5, approx_massfracs=False,
-		neglect_edfm=True):
+		neglect_edfm=True, fragsmooth_scale=0.010):
 		'''
 		Interface to compressible_conduit_steady.SteadyState.
 		'''
@@ -337,6 +337,7 @@ class SteadyState(FcnBase):
 				"solubility_k": solubility_k,
 				"solubility_n": solubility_n,
 				"neglect_edfm": neglect_edfm,
+				"fragsmooth_scale": fragsmooth_scale,
 		}
 		self.approx_massfracs = approx_massfracs
 		if approx_massfracs:
