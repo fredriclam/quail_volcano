@@ -2,9 +2,6 @@
 
 import numpy as np
 
-Restart = {'File': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10/conduit_sub0_20419.pkl',
- 'StartFromFileTime': True}
-
 Numerics = {'AVParameter': 0.3,
  'ApplyLimiters': 'PositivityPreservingMultiphasevpT',
  'ArtificialViscosity': True,
@@ -50,7 +47,7 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10_r2/conduit_sub0',
+ 'Prefix': '/scratch/users/kcoppess/pressureBC/sin8s/conduit_sub0',
  'WriteInitialSolution': True,
  'WriteInterval': 540}
 
@@ -81,21 +78,21 @@ InitialCondition = {'Function': 'SteadyState',
 
 ExactSolution = {'Function': 'RiemannProblem'}
 
-BoundaryConditions = {'x1': {'BCType': 'VelocityInlet1D_gaussianPulse',
+BoundaryConditions = {'x1': {'BCType': 'PressureStableLinearizedInlet1D',
         'T_chamber': 1050,
         'cVFamp': 0.1,
         'cVFav': 0.4,
+        'chi_water': 0.03,
+        'cos_freq': 0.125,
+        'is_gaussian': False,
         'p_chamber': 40000000.0,
-        'sig': 4,
-        'tpulse': 20,
-        'trace_arho': 2.6000000000000002e-05,
-        'u': 0.8831114392108765},
+        'trace_arho': 2.6000000000000002e-05},
  'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_0_1'}}
 
-LinkedSolvers = [{'BoundaryName': 'comm1D_0_1',
-  'DeckName': 'restart_gaussianPulse_NEWSMOOTH10_conduit_sub1.py'}]
+LinkedSolvers = [{'BoundaryName': 'comm1D_0_1', 'DeckName': 'sin8s_conduit_sub1.py'}]
 
-TimeStepping = {'FinalTime': 1776.76,
- 'InitialTime': 816.76,
- 'NumTimeSteps': 12960000,
+TimeStepping = {'FinalTime': 1200,
+ 'InitialTime': 0.0,
+ 'NumTimeSteps': 16200000,
  'TimeStepper': 'RK3SR'}
+

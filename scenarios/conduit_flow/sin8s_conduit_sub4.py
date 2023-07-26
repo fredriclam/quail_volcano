@@ -2,9 +2,6 @@
 
 import numpy as np
 
-Restart = {'File': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10/conduit_sub0_20419.pkl',
- 'StartFromFileTime': True}
-
 Numerics = {'AVParameter': 0.3,
  'ApplyLimiters': 'PositivityPreservingMultiphasevpT',
  'ArtificialViscosity': True,
@@ -18,8 +15,8 @@ Numerics = {'AVParameter': 0.3,
 Mesh = {'ElementShape': 'Segment',
  'File': None,
  'NumElemsX': 200,
- 'xmax': -1050.0,
- 'xmin': -1150.0}
+ 'xmax': -650.0,
+ 'xmin': -750.0}
 
 Physics = {'ConvFluxNumerical': 'LaxFriedrichs',
  'Gas1': {'R': 287.0, 'gamma': 1.4},
@@ -50,7 +47,7 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10_r2/conduit_sub0',
+ 'Prefix': '/scratch/users/kcoppess/pressureBC/sin8s/conduit_sub4',
  'WriteInitialSolution': True,
  'WriteInterval': 540}
 
@@ -81,21 +78,8 @@ InitialCondition = {'Function': 'SteadyState',
 
 ExactSolution = {'Function': 'RiemannProblem'}
 
-BoundaryConditions = {'x1': {'BCType': 'VelocityInlet1D_gaussianPulse',
-        'T_chamber': 1050,
-        'cVFamp': 0.1,
-        'cVFav': 0.4,
-        'p_chamber': 40000000.0,
-        'sig': 4,
-        'tpulse': 20,
-        'trace_arho': 2.6000000000000002e-05,
-        'u': 0.8831114392108765},
- 'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_0_1'}}
+BoundaryConditions = {'x1': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_3_4'},
+ 'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_4_5'}}
 
-LinkedSolvers = [{'BoundaryName': 'comm1D_0_1',
-  'DeckName': 'restart_gaussianPulse_NEWSMOOTH10_conduit_sub1.py'}]
+LinkedSolvers = [{'BoundaryName': 'comm1D_4_5', 'DeckName': 'sin8s_conduit_sub5.py'}]
 
-TimeStepping = {'FinalTime': 1776.76,
- 'InitialTime': 816.76,
- 'NumTimeSteps': 12960000,
- 'TimeStepper': 'RK3SR'}

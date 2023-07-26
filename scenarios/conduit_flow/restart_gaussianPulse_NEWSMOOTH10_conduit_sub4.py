@@ -2,7 +2,7 @@
 
 import numpy as np
 
-Restart = {'File': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10/conduit_sub4_20420.pkl',
+Restart = {'File': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10/conduit_sub4_20419.pkl',
  'StartFromFileTime': True}
 Numerics = {'AVParameter': 0.3,
  'ApplyLimiters': 'PositivityPreservingMultiphasevpT',
