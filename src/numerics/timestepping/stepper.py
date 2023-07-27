@@ -278,7 +278,7 @@ class RK3SR(StepperBase):
 		# Sync multidomains with U2 value
 		solver.custom_user_function(solver)
 
-		U_debug = U.copy()
+		# U_debug = U.copy()
 
 		# Evaluate stage 3 solution U3 in-place
 		solver.time += 0.5*self.dt

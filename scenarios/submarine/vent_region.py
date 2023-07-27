@@ -17,7 +17,7 @@ Numerics = {
 	"ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 1, #.3,#0.3,#500,#5e3
+	"AVParameter" : 0.3, #1 #.3,#0.3,#500,#5e3
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 	# For free surface in P0, L2 projection is needed
@@ -30,7 +30,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "lavalake1_atm1",
+	"Prefix" : "deep_submarine_atm1",
 	# "Prefix" : "submarine_proto_WLMA12_atm1",
 	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
@@ -125,7 +125,7 @@ else:
 	ExactSolution = InitialCondition.copy()
 
 
-LinkedSolvers = []
+# LinkedSolvers = []
 LinkedSolvers = [
 # 	{
 # 		"DeckName": "conduit.py",

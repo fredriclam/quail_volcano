@@ -6,7 +6,7 @@ Numerics = {
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
 	"ArtificialViscosity" : True,
-	"AVParameter" : 1,#.30,#0.3,#5e3
+	"AVParameter" : 0.3, #1,#.30,#0.3,#5e3
 	# "AVParameter" : 500,#5e3
 	# 'L2InitialCondition': True, # Use interpolation instead of L2 projection of Riemann data
 	'L2InitialCondition': False,
@@ -17,8 +17,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "lavalake1_atm2",
-	# "Prefix" : "submarine_proto_WLMA12_atm2",
+	# "Prefix" : "lavalake1_atm2",
+	"Prefix" : "deep_submarine_atm2",
 	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -74,12 +74,13 @@ BoundaryConditions = {
 		"bkey": "r1",
 	},
 }
-LinkedSolvers = [
-	{
-		"DeckName": "r2r3.py",
-		"BoundaryName": "r2",
-	},
-]
+
+# LinkedSolvers = [
+# 	{
+# 		"DeckName": "r2r3.py",
+# 		"BoundaryName": "r2",
+# 	},
+# ]
 
 if not extend_atm:
 	BoundaryConditions["r2"] = {

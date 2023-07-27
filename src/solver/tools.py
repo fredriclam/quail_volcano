@@ -389,18 +389,19 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 			Rh = -divF + Sq
 			f *= np.einsum("ijm, ijm -> ij", psgrad, np.abs(Rh)) / pressure[...,0]
 
-			# TODO: review this
 			# Ad hoc scaling for water composition change
-			# Mass fraction gradient with respect to space
-			ywgrad = np.zeros(grad_Uq.shape[0:3])
-			ywgrad[...,0:3] = -Uq[..., 1:2] / rho # - y_w
-			ywgrad[...,1:2] += 1.0
-			ywgrad[...,0:3] /= rho
-			ygrad = np.einsum('ijk, ijkl -> ijl', ywgrad, grad_Uq)
-			# Define relative AV strength for mass fraction
-			YW_AV_STRENGTH = 0#1
-			f += YW_AV_STRENGTH * np.linalg.norm(ygrad, axis=2) \
-				 * np.einsum("ijm, ijm -> ij", psgrad, np.abs(Rh))
+			YW_AV_STRENGTH = 0
+			if YW_AV_STRENGTH != 0:
+				# Mass fraction gradient with respect to space
+				ywgrad = np.zeros(grad_Uq.shape[0:3])
+				ywgrad[...,0:3] = -Uq[..., 1:2] / rho # - y_w
+				ywgrad[...,1:2] += 1.0
+				ywgrad[...,0:3] /= rho
+				ygrad = np.einsum('ijk, ijkl -> ijl', ywgrad, grad_Uq)
+				# Define relative AV strength for mass fraction term (turned off if 0)
+				
+				f += YW_AV_STRENGTH * np.linalg.norm(ygrad, axis=2) \
+					* np.einsum("ijm, ijm -> ij", psgrad, np.abs(Rh))
 
 			plottable_x = elem_helpers.x_elems[...,1].ravel()
 			# Relative pressure gradient divided by pressure
