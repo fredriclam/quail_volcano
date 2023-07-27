@@ -236,6 +236,26 @@ class RK3SR(StepperBase):
 		mesh = solver.mesh
 		U = solver.state_coeffs
 
+		def show_debug_plots():
+			import matplotlib.pyplot as plt
+			plt.figure(1)
+			for i in range(9):
+				plt.subplot(3,3,i+1)
+				plt.plot(np.broadcast_to(solver.elem_helpers.x_elems[:,0:1,0:1], res[...,0:1].shape).ravel(), res[...,i:i+1].ravel(), '.')
+			plt.figure(2)
+			for i in range(9):
+				plt.subplot(3,3,i+1)
+				plt.plot(np.broadcast_to(solver.elem_helpers.x_elems[:,0:1,0:1], res[...,0:1].shape).ravel(), U[...,i:i+1].ravel(), '.')
+			plt.figure(3)
+			for i in range(9):
+				plt.subplot(3,3,i+1)
+				plt.plot(np.broadcast_to(solver.elem_helpers.x_elems[:,1:2,1:2], res[...,0:1].shape).ravel(), U[...,i:i+1].ravel(), '.')
+			plt.figure(4)
+			# Highlight abs energy
+			plt.scatter(np.broadcast_to(solver.elem_helpers.x_elems[:,0:1,0:1], res[...,0:1].shape).ravel(),
+            np.broadcast_to(solver.elem_helpers.x_elems[:,1:2,1:2], res[...,0:1].shape).ravel(),
+             c=np.abs(U[...,5:5+1]).ravel())
+
 		res = self.res
 
 		# Cache solution at current step
@@ -258,6 +278,8 @@ class RK3SR(StepperBase):
 		# Sync multidomains with U2 value
 		solver.custom_user_function(solver)
 
+		U_debug = U.copy()
+
 		# Evaluate stage 3 solution U3 in-place
 		solver.time += 0.5*self.dt
 		res = solver.get_residual(U, res)
@@ -267,6 +289,9 @@ class RK3SR(StepperBase):
 		solver.apply_limiter(U)
 		# Sync multidomains with U3 value
 		solver.custom_user_function(solver)
+
+
+		# Debug
 
 		# Evaluate stage final solution U{n+1} in-place, rewinding to time t + dt/2
 		solver.time -= 0.5*self.dt

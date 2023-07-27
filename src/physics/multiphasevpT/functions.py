@@ -74,6 +74,8 @@ class BCType(Enum):
 	PressureOutlet2D = auto()
 	MassFluxInlet1D = auto()
 	VelocityInlet1D = auto()
+	VelocityInlet1D_neutralSinusoid = auto()
+	VelocityInlet1D_gaussianPulse = auto()
 	LinearizedImpedance2D = auto()
 	# Not implemented (could use lumped magma chamber model for example)
 	EntropyTotalenthalpyInlet1D = auto()
@@ -2575,6 +2577,14 @@ class VelocityInlet1D(BCWeakPrescribed):
 		return UqB
 
 
+class VelocityInlet1D_gaussianPulse(VelocityInlet1D):
+	''' Dummy class for version matching. '''
+	pass
+
+class VelocityInlet1D_neutralSinusoid(VelocityInlet1D):
+	''' Dummy class for version matching. '''
+	pass
+
 class MassFluxInlet1D(BCWeakPrescribed):
 	'''
 	This class corresponds to an outflow boundary condition with static
@@ -3690,9 +3700,9 @@ class LaxFriedrichs2D(ConvNumFluxBase):
 			wR = np.sqrt(u2R + v2R) + aR
 
 		# Conservative sound speed estimate
-		# if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
-		# 	w_global = np.maximum(np.sqrt(u2L + v2L),np.sqrt(u2R + v2R)) + 1550
-		# 	return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR, w_global)*dUq)
+		if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
+			w_global = np.maximum(np.sqrt(u2L + v2L),np.sqrt(u2R + v2R)) + 1800
+			return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR, w_global)*dUq)
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)

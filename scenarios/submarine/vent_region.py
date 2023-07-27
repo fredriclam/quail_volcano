@@ -1,9 +1,11 @@
 import numpy as np
 
+# 11: detailed, dt = 1/1400, AV = 1.0 in vent, 5.0 in r1r2
+
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 10,
-	"NumTimeSteps" : 10*600, # 2500 per second is ok # min mesh edge length: 6.2; about 600 is min
+	"NumTimeSteps" : 10*700, # 2500 per second is ok # min mesh edge length: 6.2; about 600 is min
 	"TimeStepper" : "RK3SR",
 }
 
@@ -15,7 +17,7 @@ Numerics = {
 	"ArtificialViscosity" : True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 0.3, #.3,#0.3,#500,#5e3
+	"AVParameter" : 1, #.3,#0.3,#500,#5e3
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 	# For free surface in P0, L2 projection is needed
@@ -28,7 +30,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "submarine_proto_WLMA11_atm1",
+	"Prefix" : "lavalake1_atm1",
+	# "Prefix" : "submarine_proto_WLMA12_atm1",
 	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

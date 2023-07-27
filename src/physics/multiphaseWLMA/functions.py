@@ -99,7 +99,8 @@ class IsothermalAtmosphere(FcnBase):
 	Isothermal air atmosphere as an initial condition.
 	'''
 
-	def __init__(self,T:float=300., p_h0:float=15e6, #1e3*1300*9.8,
+	# Use 15e6 p_h0 for water (WLMA~11)
+	def __init__(self,T:float=300., p_h0=35e6, # # p_h0:float=15e6, #1e3*1300*9.8,
 		h0:float=-800.0, hmax:float=2500.0, gravity:float=9.8,
 		massFracWv:float=1.0-1e-7, massFracM:float=1e-7, tracer_frac:float=1e-7):
 		''' Set atmosphere temperature, pressure, and location of pressure.
@@ -152,10 +153,15 @@ class IsothermalAtmosphere(FcnBase):
 
 		# Determine mass fractions for seawater composition
 		# TODO: rework passing in composition
+		# self.y_underwater = np.array([self.tracer_frac,
+		# 	1.0-2.0*self.tracer_frac, self.tracer_frac])
+		# self.y_overwater = np.array([1.0-self.tracer_frac-1e-7, # TODO: update water trace content
+		# 	1e-7, self.tracer_frac])
+		# Lava lake setting
 		self.y_underwater = np.array([self.tracer_frac,
-			1.0-2.0*self.tracer_frac, self.tracer_frac])
-		self.y_overwater = np.array([1.0-self.tracer_frac-1e-7, # TODO: update water trace content
-			1e-7, self.tracer_frac])
+			0.0, 1.0-self.tracer_frac])
+		self.y_overwater = np.array([1.0-self.tracer_frac,
+			0.0, self.tracer_frac])
 		# Renormalize out air (dependent)
 		if self.y_underwater[0] < 0:
 			self.y_underwater[0] = 0
@@ -253,6 +259,180 @@ class IsothermalAtmosphere(FcnBase):
 		Uq[:, :, iarhoM]  = arhoM
 		Uq[:, :, irhou]   = rho * u
 		Uq[:, :, irhov]   = rho * v
+		Uq[:, :, ie]      = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC]  = arhoC
+		Uq[:, :, iarhoFm] = arhoFm
+
+		return Uq # [ne, nq, ns]
+
+class IsothermalAtmosphere1D(FcnBase):
+	'''
+	1D slice of isothermal air atmosphere as an initial condition.
+	'''
+
+	# Use 15e6 p_h0 for water (WLMA~11)
+	def __init__(self,T:float=300., p_h0=35e6, pchamber=100e6, # # p_h0:float=15e6, #1e3*1300*9.8,
+		hchamber = -1000, hjump=-350,
+		h0:float=-800.0, hmax:float=2500.0, gravity:float=9.8,
+		massFracWv:float=1.0-1e-7, massFracM:float=1e-7, tracer_frac:float=1e-7):
+		''' Set atmosphere temperature, pressure, and location of pressure.
+		Pressure distribution is computed as hydrostatic profile with p = p_h0
+		at elevation h0.
+		'''
+		self.T = T
+		self.p_h0 = p_h0
+		self.h0 = h0
+		self.hmax = hmax
+		self.hchamber = hchamber
+		self.hjump = hjump
+		self.gravity = gravity
+		self.massFracWv = massFracWv
+		self.massFracM = massFracM
+		# Allocate pressure interpolant (filled when self.get_state is called
+		# because physics object is required)
+		self.pressure_interpolant = None
+		# Set numerical fraction for essentially inert fields
+		self.tracer_frac = tracer_frac
+
+	def get_state(self, physics, x, t):
+		''' Computes the pressure in an isothermal atmosphere for an ideal gas
+		mixture with air and water vapour. Trace amounts of magma phase are added
+		and the pressure profile is iteratively corrected. '''
+
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
+
+		# Compute mole fractions times R_univ
+		nA_R = (1.0 - self.massFracWv) * physics.Gas[0]["R"]
+		nWv_R = self.massFracWv * physics.Gas[1]["R"]
+		# Compute mixture gas constant (gas constant per average molar mass)
+		R = nA_R + nWv_R
+		# Compute mole fraction of gas (=volume fraction of gas part)
+		nA = nA_R / R
+		nWv = nWv_R / R
+		# Cache mole fractions and properties
+		self.nA = nA
+		self.nWv = nWv
+		self.Gas = physics.Gas
+		self.Liquid = physics.Liquid
+		# Compute scale height (constant)
+		hs = R*self.T/self.gravity
+
+		''' Compute hydrostatic pressure as initial value problem (IVP)
+		with two-part composition: y_low and y_high. '''
+
+		self.y_low = np.array([self.tracer_frac,
+													 self.waterFrac * (1.0 - self.tracer_frac),
+													 (1.0 - self.waterFrac) * (1.0 - self.tracer_frac)])
+		self.y_high = np.array([self.tracer_frac,
+													  1.0 - 2 * self.tracer_frac,
+														self.tracer_frac])
+		# Define evaluation points for ode solver
+		eval_pts = np.unique(x[:,:,0:1])
+
+		# def diffuse_y(p:float):
+		# 	'''Diffuse boundary over [p_surface, 2*p_surface] (length scale of
+		# 	  diffuse_factor * p_surface / (rho * g) ~ diffuse_factor * (10 m)
+		# 	  for liquid water)'''
+		# 	# y = self.y_underwater if p > p_surface else self.y_overwater
+		# 	diffuse_factor = .02
+		# 	theta = np.clip( (p - p_surface) / (diffuse_factor * p_surface), 0, 1.0)
+		# 	y = theta * self.y_underwater + (1 - theta) * self.y_overwater
+		# 	return y
+
+		def mixture_spec_vol(height:float, p:float, T:float, y:np.array) -> float:
+			# Specific volume as function of p, T
+			return y[0] * physics.Gas[0]["R"] * T / p \
+				+ y[1] / mixtureWLMA.float_mix_functions.rho_l_pt(p, T) \
+				+ y[2] / (physics.Liquid["rho0"] 
+					* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"]))
+
+		# Evaluate pressure at self.hmax from upper IVP
+		p_hmax = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / mixture_spec_vol(height, p, self.T, self.y_high),
+			[self.h0, self.hmax],
+			[self.p_h0],
+			t_eval=[self.hmax],
+			dense_output=False).y.ravel()[0]
+		# Evaluate upper IVP solution, above jump position
+		soln_high = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / mixture_spec_vol(height, p, self.T, self.y_high),
+			[self.hmax, self.hjump],
+			[p_hmax],
+			t_eval=eval_pts[eval_pts >= self.hjump],
+			dense_output=True)
+		# Evaluate lower IVP solution, below jump position
+		soln_low = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / mixture_spec_vol(height, p, self.T, self.y_low),
+			[self.hchamber, self.hjump],
+			[self.pchamber],
+			t_eval=eval_pts[eval_pts <= self.hjump],
+			dense_output=True)
+		# Construct pressure interpolant
+		pressure_interpolant = lambda x: np.piecewise(x,
+						[x <= self.hjump, x > self.hjump],
+						[soln_low.sol, soln_high.sol])
+		density_interpolant = lambda x: np.piecewise(x,
+						[x <= self.hjump, x > self.hjump],
+						[mixture_spec_vol.sol, soln_high.sol])
+		
+		# Evaluate p using dense_output of solve_ivp (with shape magic)
+		p = np.reshape(pressure_interpolant(x.ravel()), x.shape)
+		# Compute resultant density
+		rho = np.reshape(
+			1.0 / np.array([
+				mixture_spec_vol(_z, _p, self.T, self.y_low) if _z <= self.hjump
+				else mixture_spec_vol(_z, _p, self.T, self.y_high)
+				for (_z, _p) in zip(x.ravel(), p.ravel())]),
+			p.shape)
+		
+		# Compute mass variables
+		arhoA = rho * np.reshape(np.array([self.y_low[0] if _z <= self.hjump
+						else self.y_high[0] for _z in x.ravel()]), p.shape)
+		arhoWv = rho * np.reshape(np.array([self.y_low[1] if _z <= self.hjump
+						else self.y_high[1] for _z in x.ravel()]), p.shape)
+		arhoM = rho * np.reshape(np.array([self.y_low[2] if _z <= self.hjump
+						else self.y_high[2] for _z in x.ravel()]), p.shape)
+
+		# Compute conservative variables for tracers (typically no source in 2D)
+		sol = self.physics.Solubility["k"] * p ** self.physics.Solubility["n"]
+		arhoWt = arhoWv + sol / (1.0 + sol) * arhoM
+		arhoC  = self.tracer_frac * arhoM
+		arhoFm = (1.0 - self.tracer_frac) * arhoM
+		# Zero velocity
+		u = np.zeros_like(p)
+		# Compute specific energy
+		e_m = np.reshape(np.array([mixtureWLMA.float_mix_functions.magma_mech_energy(_p,
+			physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
+			for _p in p.ravel()]), p.shape)
+		# Variable temperature mod
+		# T = np.zeros_like(p)
+		# T[:] = np.where(x[...,1] > 200, 700, self.T)
+		# e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+		# 	mixtureWLMA.float_mix_functions.rho_l_pt(_p, _T), _T)
+		# 	for (_p, _T) in zip(p.ravel(), T.ravel())]), p.shape)
+		e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+			mixtureWLMA.float_mix_functions.rho_l_pt(_p, self.T), self.T)
+			for _p in p.ravel()]), p.shape)
+		rho = arhoA + arhoWv + arhoM
+		# Compute volumetric energy
+		# TODO: move implementation to middleware
+		e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
+				arhoWv * e_w + 
+				arhoM * (physics.Liquid["c_m"] * self.T + e_m)
+				+ 0.5 * rho * (u*u)) # TODO: vpT analog needs correction for uv kinetc
+		# Assemble conservative state vector		
+		Uq[:, :, iarhoA]  = arhoA
+		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoM]  = arhoM
+		Uq[:, :, irhou]   = rho * u
 		Uq[:, :, ie]      = e
 		# Tracer quantities
 		Uq[:, :, iarhoWt] = arhoWt

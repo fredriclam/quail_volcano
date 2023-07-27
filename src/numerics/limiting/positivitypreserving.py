@@ -503,26 +503,34 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				# 	mix_rho_bar - quant_elem_faces, POS_TOL)
 				# theta = np.abs((mix_rho_bar - POS_TOL)/denom)
 
-				assert(solver.order <= 1)
+				assert solver.order <= 1, "For higher order, implement piecewise parabola extreme check for PPL"
 				# Compute minimum within element (works for order == 1)
 				# elt_min = Uc[...,0:3].sum(axis=-1, keepdims=True).min(axis=1, keepdims=True)
 				# denom = np.where(mix_rho_bar - elt_min != 0,
 				# 	mix_rho_bar - elt_min, POS_TOL)
 				# theta = np.abs((mix_rho_bar - POS_TOL)/denom)
 
-				thetas = [None, None, None]
-				for i, _name in enumerate(["pDensityA", "pDensityWv", "pDensityM"]):
-					elt_min = Uc[...,i:i+1].min(axis=1, keepdims=True)
-					elt_mean = physics.compute_variable(_name, U_bar)
-					denom = np.where(elt_mean - elt_min != 0, elt_mean - elt_min, POS_TOL)
-					thetas[i] = np.abs((elt_mean - POS_TOL)/denom)
-
+				# Legacy (for np.minimum(a,np.minimum(b,c))). Note that np.minimum takes
+				# strictly two array args.
+				# thetas = [None, None, None]
+				# for i, _name in enumerate(["pDensityA", "pDensityWv", "pDensityM"]):
+				# 	elt_min = Uc[...,i:i+1].min(axis=1, keepdims=True)
+				# 	elt_mean = physics.compute_variable(_name, U_bar)
+				# 	denom = np.where(elt_mean - elt_min != 0, elt_mean - elt_min, POS_TOL)
+				# 	thetas[i] = np.abs((elt_mean - POS_TOL)/denom)
+				elt_min = Uc[...,0:3].min(axis=1, keepdims=True)
+				elt_mean = U_bar[...,0:3]
+				denom = np.where(elt_mean - elt_min != 0, elt_mean - elt_min, POS_TOL)
+				theta = np.abs((elt_mean - POS_TOL)/denom).min(axis=2, keepdims=True)
+					
+			# Pick strictest theta
+			theta1 = trunc(np.minimum(1., np.min(theta, axis=1, keepdims=True)))
 			# theta = np.abs((rho_bar[var_name])/(
 			# 	rho_bar[var_name] - quant_elem_faces + POS_TOL))
 			# Truncate theta1; otherwise, can get noticeably different
 			# results across machines, possibly due to poor conditioning in its
 			# calculation
-			theta1 = trunc(np.minimum(1., np.min(np.minimum(*thetas), axis=1, keepdims=True)))
+			# theta1 = trunc(np.minimum(1., np.min(np.minimum(*thetas), axis=1, keepdims=True)))
 			# theta_test = (mix_rho_bar[...] - POS_TOL)/(mix_rho_bar[...] - Uc.sum(axis=-1, keepdims=True).min(axis=1, keepdims=True))
 
 			# self.theta_store[logger_idx].append(theta1)
@@ -618,15 +626,8 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		''' Limit pressure '''
 		# Compute pressure at quadrature points
 		p_elem_faces = physics.compute_variable(self.var_name4, U_elem_faces)
-		theta = np.ones_like(mix_rho_bar)
 		# Indices where pressure is negative
-		negative_p_indices = np.where(p_elem_faces < 0.)
-		elem_IDs = negative_p_indices[0]
-		i_neg_p  = negative_p_indices[1]
-
-		theta[elem_IDs, i_neg_p] = p_bar[elem_IDs, :, 0] / (
-				p_bar[elem_IDs, :, 0] - p_elem_faces[elem_IDs, i_neg_p])
-
+		theta = np.where(p_elem_faces < 0., p_bar / (p_bar - p_elem_faces), 1.0)
 		# Truncate theta3; otherwise, can get noticeably different
 		# results across machines, possibly due to poor conditioning in its
 		# calculation
@@ -649,11 +650,15 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		np.seterr(divide='warn')
 
 		# HACK: # Ad hoc clip and renormalize
-		if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
-			_rho_mix = Uc[...,0:3].sum(axis=-1 , keepdims=True)
-			_y = Uc[...,0:3] / _rho_mix
-			_y = np.clip(_y, POS_TOL, 1) / _y.sum(axis=-1, keepdims=True)
-			Uc[...,0:3] = _y * _rho_mix
+		# if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
+		# 	if np.any(Uc[...,1:2] > 0):
+		# 		_rho_mix = Uc[...,0:3].sum(axis=-1, keepdims=True)
+		# 		_y_orig = Uc[...,0:3] / _rho_mix
+		# 		_y = np.clip(_y_orig, POS_TOL, 1)
+		# 		_y /= _y.sum(axis=-1, keepdims=True)
+		# 		if not np.all(_y_orig == _y):
+		# 			print("Ad hoc clipping (see positivitypreserving.py)")
+		# 		Uc[...,0:3] = _y * _rho_mix
 
 		# Postcheck
 		if np.any(Uc[...,0:3] < 0.):

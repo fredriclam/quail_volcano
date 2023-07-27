@@ -46,6 +46,18 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 
 	def __init__(self, mesh):
 		super().__init__(mesh)
+		self.pool = None
+		self.pool_ready = False
+
+	def get_pool(self):
+		""" Initializes self.pool if not self.pool_ready, then returns
+		self.pool. This interface simplifies pool just-in-time init
+		to avoid pickling the mp.Pool object. """
+		if not self.pool_ready:
+			# Spin-up pool for this physics object
+			self.pool = mp.Pool(self.num_parallel_workers)
+			self.pool_ready = True
+		return self.pool
 
 	def set_maps(self):
 		# Set physics base maps, but skip parent set_maps
@@ -97,11 +109,8 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		self.tau_d = tau_d
 		# No pool at initialization time (avoid need to pickle on process.start)
 		self.num_parallel_workers = num_parallel_workers
-		self.pool = None
-		if self.num_parallel_workers <= 1:
-			self.pool_ready = True
-		else:
-			self.pool_ready = False
+		# Set pool(==None) as ready if no parallel workers requested
+		self.pool_ready = self.num_parallel_workers <= 1
 		
 	class AdditionalVariables(Enum):
 		Pressure = "p"
@@ -494,3 +503,127 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 		F[:, :, iarhoFm, :] = arhoFm * vel    # Flux of massFm in all directions
 
 		return  F, (u2, v2, sound_speed)
+
+class MultiphaseWLMA1D(MultiphaseWLMA):
+	'''
+	WLMA model for 1D. Inherits
+	  MultiphasevpT.MultiphasevpT > MultiphaseWLMA > MultiphaseWLMA1D
+	'''
+	NUM_STATE_VARS = 5+3 # (essential states + tracer states)
+	NDIMS = 1
+
+	def set_maps(self):
+		super().set_maps()
+
+		d = {
+			# Subatmospheric conduit hydrostatic
+			physics.multiphaseWLMA.functions.FcnType.IsothermalAtmosphere1D:
+			  physics.multiphaseWLMA.functions.IsothermalAtmosphere1D,
+		}
+
+		self.IC_fcn_map.update(d)
+		self.exact_fcn_map.update(d)
+		self.BC_fcn_map.update(d)
+
+		self.source_map.update({
+			physics.multiphasevpT.functions.SourceType.FrictionVolFracVariableMu:
+			  physics.multiphasevpT.functions.FrictionVolFracVariableMu,
+			physics.multiphasevpT.functions.SourceType.FrictionVolFracConstMu:
+			  physics.multiphasevpT.functions.FrictionVolFracConstMu,
+			physics.multiphasevpT.functions.SourceType.GravitySource:
+			  physics.multiphasevpT.functions.GravitySource,
+			physics.multiphasevpT.functions.SourceType.ExsolutionSource:
+			  physics.multiphasevpT.functions.ExsolutionSource,
+			physics.multiphasevpT.functions.SourceType.FragmentationTimescaleSource:
+			  physics.multiphasevpT.functions.FragmentationTimescaleSource,
+		})
+
+		self.conv_num_flux_map.update({
+			physics.base.functions.ConvNumFluxType.LaxFriedrichs:
+				physics.multiphasevpT.functions.LaxFriedrichs1D,
+		})
+
+	class StateVariables(Enum):
+		pDensityA = "\\alpha_a \\rho_a"
+		pDensityWv = "\\alpha_\{wv\} \\rho_\{wv\}"
+		pDensityM = "\\alpha_m \\rho_m"
+		XMomentum = "\\rho u"
+		Energy = "e"
+		pDensityWt = "\\alpha_\{wt\} \\rho_\{wt\}"
+		pDensityC = "\\alpha_c \\rho_c"
+		pDensityFm = "\\alpha_\{fm\} \\rho_\{fm\}"
+
+	def get_state_indices(self):
+		iarhoA = self.get_state_index("pDensityA")
+		iarhoWv = self.get_state_index("pDensityWv")
+		iarhoM = self.get_state_index("pDensityM")
+		imom = self.get_state_index("XMomentum")
+		ie = self.get_state_index("Energy")
+		iarhoWt = self.get_state_index("pDensityWt")
+		iarhoC = self.get_state_index("pDensityC")
+		iarhoFm = self.get_state_index("pDensityFm")
+		return iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm
+
+	def get_state_slices(self):
+		slarhoA = self.get_state_slice("pDensityA")
+		slarhoWv = self.get_state_slice("pDensityWv")
+		slarhoM = self.get_state_slice("pDensityM")
+		slmom = self.get_state_slice("XMomentum")
+		sle = self.get_state_slice("Energy")
+		slarhoWt = self.get_state_slice("pDensityWt")
+		slarhoC = self.get_state_slice("pDensityC")
+		slarhoFm = self.get_state_slice("pDensityFm")
+		return slarhoA, slarhoWv, slarhoM, slmom, sle, slarhoWt, slarhoC, slarhoFm
+
+	def get_mass_slice(self):
+		''' Get slice representation of mass variables for each phase, such that
+		the slice returned sums to the mixture density along axis=-1. '''
+		# Get mass component indices of phases
+		mass_indices = [self.get_state_index("pDensityA"),
+										self.get_state_index("pDensityWv"),
+										self.get_state_index("pDensityM")]
+		return slice(np.min(mass_indices), np.min(mass_indices)+len(mass_indices))
+
+	def get_momentum_slice(self):
+		irhou = self.get_state_index("XMomentum")
+		smom = slice(irhou, irhou+1)
+		return smom
+
+	def get_conv_flux_interior(self, Uq):
+		# Get indices/slices of state variables
+		iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			self.get_state_indices()
+		# Extract data of size [n, nq, 1]
+		arhoA  = Uq[:, :, 0:1]
+		arhoWv = Uq[:, :, 1:2]
+		arhoM  = Uq[:, :, 2:3]
+		rhou   = Uq[:, :, 3:4]
+		e      = Uq[:, :, 4:5]
+		arhoWt = Uq[:, :, 5:6]
+		arhoC  = Uq[:, :, 6:7]
+		arhoFm = Uq[:, :, 7:8]
+
+		# Call mixture backend
+		rhow, p, T, sound_speed, volfracW = \
+			self.wlma(
+				Uq[:, :, self.get_mass_slice()],
+				Uq[:, :, self.get_momentum_slice()],
+				Uq[:, :, self.get_state_slice("Energy")],
+				self.get_pool())
+		# Compute mixture (total) density
+		rho = arhoA + arhoWv + arhoM
+		# Compute scalar velocity
+		u = rhou / rho
+
+		# Construct physical flux
+		F = np.empty(Uq.shape + (self.NDIMS,)) # [n, nq, ns, ndims]
+		# Compute flux of non-tracer mass quantities in all directions
+		F[:, :, self.get_mass_slice(),  0] = \
+			Uq[:, :, self.get_mass_slice()] * u
+		F[:, :, irhou,   0] = rho * u * u + p        # x-flux of x-momentum
+		F[:, :, ie,      0] = (e + p) * u    # Flux of energy in all directions
+		F[:, :, iarhoWt, 0] = arhoWt * u   # Flux of massWt in all directions
+		F[:, :, iarhoC,  0] = arhoC * u    # Flux of massC in all directions
+		F[:, :, iarhoFm, 0] = arhoFm * u    # Flux of massFm in all directions
+
+		return F, ((u*u).squeeze(axis=2), sound_speed.squeeze(axis=2))

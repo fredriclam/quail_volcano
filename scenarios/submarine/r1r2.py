@@ -6,7 +6,7 @@ Numerics = {
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
 	"ArtificialViscosity" : True,
-	"AVParameter" : 0.3,#.30,#0.3,#5e3
+	"AVParameter" : 1,#.30,#0.3,#5e3
 	# "AVParameter" : 500,#5e3
 	# 'L2InitialCondition': True, # Use interpolation instead of L2 projection of Riemann data
 	'L2InitialCondition': False,
@@ -17,7 +17,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "submarine_proto_WLMA11_atm2",
+	"Prefix" : "lavalake1_atm2",
+	# "Prefix" : "submarine_proto_WLMA12_atm2",
 	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

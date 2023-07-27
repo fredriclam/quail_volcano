@@ -398,7 +398,7 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 			ywgrad[...,0:3] /= rho
 			ygrad = np.einsum('ijk, ijkl -> ijl', ywgrad, grad_Uq)
 			# Define relative AV strength for mass fraction
-			YW_AV_STRENGTH = 1.5
+			YW_AV_STRENGTH = 0#1
 			f += YW_AV_STRENGTH * np.linalg.norm(ygrad, axis=2) \
 				 * np.einsum("ijm, ijm -> ij", psgrad, np.abs(Rh))
 
