@@ -2536,8 +2536,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 			if t < ta:
 				phi_crys = self.cVFav
 			elif t < tb:
-				halfAmp = self.cVFamp / 2
-				phi_crys = self.cVFav * ((1-halfAmp) + halfAmp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
+				phi_crys = self.cVFav * (1 + self.cVFamp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
 			else:
 				phi_crys = self.cVFav * (1 - self.cVFamp * np.cos(2 * np.pi * self.cos_freq * (t - tb)))
 		chi_water = self.chi_water

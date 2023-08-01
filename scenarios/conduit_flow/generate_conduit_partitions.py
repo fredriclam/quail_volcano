@@ -1,7 +1,7 @@
 import importlib, io, pprint
 
 # Set primary input file name (without suffix .py)
-input_module_name = "sinusoid_conduit"
+input_module_name = "sinusoid_conduit_4s"
 
 # Specify whether conduit is coupled to 2D atmosphere.
 # If True, run `generate_atm_partitions.py`` as well to write the atmosphere
@@ -78,7 +78,7 @@ str_yWt_source = "lambda t: 0.03 * (1.0 - 0.4) / (1.0 + 0.03)"
 #str_yWt_source = "lambda t: 0.03 * (1 - 0.4) / (1 + 0.03)"
 
 # Define name of the parameter file
-param_filename_map = lambda i: f'sin8s_conduit_sub{i}.py'
+param_filename_map = lambda i: f'sin4s_conduit_sub{i}.py'
 # Define name of the atm parameter files
 atm_param_filename_map = lambda i: f'atm_sub{i}.py'
 
