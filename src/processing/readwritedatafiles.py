@@ -37,12 +37,18 @@ def write_data_file(solver, iwrite):
 	# Remove piped objects
 	bdnet = solver.physics.bdry_data_net
 	solver.physics.bdry_data_net = None
+
+	# Remove local pool if needed for vector state evaluation (WLMA model)
 	local_pool = None
 	try:
 		local_pool = solver.physics.pool
 		solver.physics.pool = None
 	except AttributeError:
 		pass
+	
+	# Remove advection map (don't need to replace this)
+	if hasattr(solver.physics.IC, "advection_map"):
+		solver.physics.IC.advection_map = None
 
 	# Get file name
 	prefix = solver.params["Prefix"]
