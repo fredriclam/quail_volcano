@@ -121,7 +121,7 @@ InitialCondition = {
     "p0_magma": (chi_water / sol_k)**2,
     "solubility_k": sol_k,
     "solubility_n": 0.5,
-    "fragsmooth_scale": 0.01,
+    "fragsmooth_scale": 0.05,
     "approx_massfracs": True,
     "neglect_edfm": True,
 }
