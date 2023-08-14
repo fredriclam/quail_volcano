@@ -15,8 +15,8 @@ Numerics = {'AVParameter': 0.3,
 Mesh = {'ElementShape': 'Segment',
  'File': None,
  'NumElemsX': 200,
- 'xmax': -1050.0,
- 'xmin': -1150.0}
+ 'xmax': -150.0,
+ 'xmin': -250.0}
 
 Physics = {'ConvFluxNumerical': 'LaxFriedrichs',
  'Gas1': {'R': 287.0, 'gamma': 1.4},
@@ -41,13 +41,13 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'source_treatment': 'Explicit',
              'tau_d': 10.0},
  'source4': {'Function': 'FragmentationTimescaleSourceSmoothed',
-             'crit_volfrac': 0.7,
-             'fragsmooth_scale': 0.01,
+             'crit_volfrac': 0.75,
+             'fragsmooth_scale': 0.15,
              'source_treatment': 'Explicit',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10/conduit_sub0',
+ 'Prefix': '/scratch/users/kcoppess/pressureBC/sm0_15_cvf75/sin16s/conduit_sub9',
  'WriteInitialSolution': True,
  'WriteInterval': 540}
 
@@ -57,8 +57,8 @@ InitialCondition = {'Function': 'SteadyState',
  'approx_massfracs': True,
  'c_v_magma': 3000.0,
  'conduit_radius': 50,
- 'crit_volfrac': 0.7,
- 'fragsmooth_scale': 0.01,
+ 'crit_volfrac': 0.75,
+ 'fragsmooth_scale': 0.15,
  'inlet_input_val': 40000000.0,
  'input_type': 'p',
  'neglect_edfm': True,
@@ -78,22 +78,8 @@ InitialCondition = {'Function': 'SteadyState',
 
 ExactSolution = {'Function': 'RiemannProblem'}
 
-BoundaryConditions = {'x1': {'BCType': 'VelocityInlet1D_gaussianPulse',
-        'T_chamber': 1050,
-        'cVFamp': 0.1,
-        'cVFav': 0.4,
-        'p_chamber': 40000000.0,
-        'sig': 4,
-        'tpulse': 20,
-        'trace_arho': 2.6000000000000002e-05,
-        'u': 0.9192744977826306},
- 'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_0_1'}}
+BoundaryConditions = {'x1': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_8_9'},
+ 'x2': {'BCType': 'PressureOutlet1D', 'p': 100000.0}}
 
-LinkedSolvers = [{'BoundaryName': 'comm1D_0_1',
-  'DeckName': 'gaussianPulse_NEWSMOOTH10_conduit_sub1.py'}]
-
-TimeStepping = {'FinalTime': 960,
- 'InitialTime': 0.0,
- 'NumTimeSteps': 12960000,
- 'TimeStepper': 'RK3SR'}
+LinkedSolvers = []
 

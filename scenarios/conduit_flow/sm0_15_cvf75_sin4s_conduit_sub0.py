@@ -41,13 +41,13 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
              'source_treatment': 'Explicit',
              'tau_d': 10.0},
  'source4': {'Function': 'FragmentationTimescaleSourceSmoothed',
-             'crit_volfrac': 0.7,
-             'fragsmooth_scale': 0.01,
+             'crit_volfrac': 0.75,
+             'fragsmooth_scale': 0.15,
              'source_treatment': 'Explicit',
              'tau_f': 1.0}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/gaussian_pulse_injection_NEWSMOOTH10/conduit_sub0',
+ 'Prefix': '/scratch/users/kcoppess/pressureBC/sm0_15_cvf75/sin4s/conduit_sub0',
  'WriteInitialSolution': True,
  'WriteInterval': 540}
 
@@ -57,8 +57,8 @@ InitialCondition = {'Function': 'SteadyState',
  'approx_massfracs': True,
  'c_v_magma': 3000.0,
  'conduit_radius': 50,
- 'crit_volfrac': 0.7,
- 'fragsmooth_scale': 0.01,
+ 'crit_volfrac': 0.75,
+ 'fragsmooth_scale': 0.15,
  'inlet_input_val': 40000000.0,
  'input_type': 'p',
  'neglect_edfm': True,
@@ -78,22 +78,22 @@ InitialCondition = {'Function': 'SteadyState',
 
 ExactSolution = {'Function': 'RiemannProblem'}
 
-BoundaryConditions = {'x1': {'BCType': 'VelocityInlet1D_gaussianPulse',
+BoundaryConditions = {'x1': {'BCType': 'PressureStableLinearizedInlet1D',
         'T_chamber': 1050,
         'cVFamp': 0.1,
         'cVFav': 0.4,
+        'chi_water': 0.03,
+        'cos_freq': 0.25,
+        'is_gaussian': False,
         'p_chamber': 40000000.0,
-        'sig': 4,
-        'tpulse': 20,
-        'trace_arho': 2.6000000000000002e-05,
-        'u': 0.9192744977826306},
+        'trace_arho': 2.6000000000000002e-05},
  'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_0_1'}}
 
 LinkedSolvers = [{'BoundaryName': 'comm1D_0_1',
-  'DeckName': 'gaussianPulse_NEWSMOOTH10_conduit_sub1.py'}]
+  'DeckName': 'sm0_15_cvf75_sin4s_conduit_sub1.py'}]
 
-TimeStepping = {'FinalTime': 960,
+TimeStepping = {'FinalTime': 1200,
  'InitialTime': 0.0,
- 'NumTimeSteps': 12960000,
+ 'NumTimeSteps': 16200000,
  'TimeStepper': 'RK3SR'}
 
