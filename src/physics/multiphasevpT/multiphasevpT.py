@@ -88,6 +88,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
 			BCType.MassFluxInlet1D: mpvpT_fcns.MassFluxInlet1D,
 			BCType.PressureStableLinearizedInlet1D: mpvpT_fcns.PressureStableLinearizedInlet1D,
+			BCType.PressureStableLinearizedInlet1D_genericFunc: mpvpT_fcns.PressureStableLinearizedInlet1D_genericFunc,
 			BCType.VelocityInlet1D: mpvpT_fcns.VelocityInlet1D,
 			BCType.VelocityInlet1D_neutralSinusoid: mpvpT_fcns.VelocityInlet1D_neutralSinusoid,
 			BCType.VelocityInlet1D_gaussianPulse: mpvpT_fcns.VelocityInlet1D_gaussianPulse,
