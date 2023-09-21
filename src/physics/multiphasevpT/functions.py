@@ -2586,7 +2586,7 @@ class PressureStableLinearizedInlet1D_genericFunc(BCWeakPrescribed):
 	Water content is specified as a concentration per dry magma mass (chi_water).
 	'''
 	def __init__(self, cVFfunc, p_chamber:float=100e6, T_chamber:float=1e3, 
-			race_arho:float=1e-6, chi_water:float=0.03, cVFav:float=0.4):
+			trace_arho:float=1e-6, chi_water:float=0.03, cVFav:float=0.4):
 		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
