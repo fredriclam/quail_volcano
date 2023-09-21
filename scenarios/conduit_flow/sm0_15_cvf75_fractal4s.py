@@ -4,9 +4,9 @@ import scipy.interpolate as si
 # Set timestepper
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 60*16,
+	"FinalTime" : 60*20,
 	"TimeStepper" : "RK3SR",
-	"NumTimeSteps" : 60*16*13500, # 4000 (@ dx = 2.0)
+	"NumTimeSteps" : 60*20*13500, # 4000 (@ dx = 2.0)
 	#"NumTimeSteps" : 360*7000, # (@ dx = 1.0)
   # If CFL-limited: LS-SSPRK3-P2 as implemented:
   # For sound speed <= 1925 m/s
@@ -60,7 +60,7 @@ Numerics = {
 
 Output = {
 	#"Prefix" : "ODEsteadyState/conduit",
-	"Prefix" : "/scratch/users/kcoppess/pressureBC/fractal/conduit",
+	"Prefix" : "/scratch/users/kcoppess/pressureBC/sm0_15_cvf75/fractal4s/conduit",
   # "Prefix" : "debug_odestart_consistency",
 	#"Prefix" : "injections/conduit",
   # Write to disk every WriteInterval timesteps
@@ -100,6 +100,7 @@ x_global = np.linspace(Mesh["xmin"], Mesh["xmax"], n_nodes_global)
 
 sol_k = 5e-6
 
+
 InitialCondition = {
     "Function": "SteadyState",
     "x_global": x_global,
@@ -111,7 +112,7 @@ InitialCondition = {
     "yA": 1e-7,
     "yWvInletMin": 1e-5,
     "yCMin": 1e-5,
-    "crit_volfrac": 0.7,
+    "crit_volfrac": 0.75,
     "tau_d": 10.0,
     "tau_f": 1.0, # Resolvable in space( tau_f >~ dx/u)? when frag close to bndry
     "conduit_radius": 50,
@@ -122,7 +123,7 @@ InitialCondition = {
     "p0_magma": (chi_water / sol_k)**2,
     "solubility_k": sol_k,
     "solubility_n": 0.5,
-    "fragsmooth_scale": 0.05,
+    "fragsmooth_scale": 0.15,
     "approx_massfracs": True,
     "neglect_edfm": True,
 }
@@ -199,7 +200,7 @@ BoundaryConditions = {
     # The leftmost boundary
     "x1" : {
       "BCType" : "PressureStableLinearizedInlet1D_genericFunc",
-      "cVFfunc": fractal_timeSeries(TimeStepping["FinalTime"], 0.04, 13, CH, 0.125),
+      "cVFfunc": fractal_timeSeries(TimeStepping["FinalTime"], 0.04, 13, CH, 0.25),
       "p_chamber" : InitialCondition["inlet_input_val"],
       "T_chamber" : InitialCondition["T_chamber"],
       "trace_arho": 1e-8*2600,
