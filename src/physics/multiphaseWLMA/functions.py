@@ -153,15 +153,17 @@ class IsothermalAtmosphere(FcnBase):
 
 		# Determine mass fractions for seawater composition
 		# TODO: rework passing in composition
-		# self.y_underwater = np.array([self.tracer_frac,
-		# 	1.0-2.0*self.tracer_frac, self.tracer_frac])
-		# self.y_overwater = np.array([1.0-self.tracer_frac-1e-7, # TODO: update water trace content
-		# 	1e-7, self.tracer_frac])
-		# Lava lake setting
 		self.y_underwater = np.array([self.tracer_frac,
-			0.0, 1.0-self.tracer_frac])
-		self.y_overwater = np.array([1.0-self.tracer_frac,
-			0.0, self.tracer_frac])
+			1.0-2.0*self.tracer_frac, self.tracer_frac])
+		self.y_overwater = np.array([1.0-self.tracer_frac-1e-7, # TODO: update water trace content
+			1e-7, self.tracer_frac])
+
+		# Lava lake setting
+		# self.y_underwater = np.array([self.tracer_frac,
+		# 	0.0, 1.0-self.tracer_frac])
+		# self.y_overwater = np.array([1.0-self.tracer_frac,
+		# 	0.0, self.tracer_frac])
+
 		# Renormalize out air (dependent)
 		if self.y_underwater[0] < 0:
 			self.y_underwater[0] = 0

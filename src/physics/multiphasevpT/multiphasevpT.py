@@ -44,6 +44,7 @@ from physics.multiphasevpT.functions import SourceType
 import physics.multiphasevpT.atomics as atomics
 
 import numerics.helpers.helpers as helpers
+import numerics.differentiation.eval_divu as eval_divu
 from dataclasses import dataclass
 
 class MultiphasevpT(base.PhysicsBase):
@@ -152,6 +153,18 @@ class MultiphasevpT(base.PhysicsBase):
 			else:
 				self.Gas[i]["gamma"] = self.Gas[i]["c_p"] / self.Gas[i]["c_v"]
 				self.Gas[i]["R"] = self.Gas[i]["c_p"] - self.Gas[i]["c_v"]
+
+	def update_div(self, solver, U):
+		''' This is a hack.
+		Updates divergence in self:PhysicsType to pass in elements of solver. Does
+		not use solver.state_coeffs (uses U instead, to accommodate multistage
+		time steppers). '''
+		
+		# Evaluate strain rate at quadrature points
+		self.strain_rate = eval_divu.eval_strainrate(solver,
+			solver.state_coeffs, 
+			solver.elem_helpers.x_elems,
+			solver.time)
 
 	class AdditionalVariables(Enum):
 		Pressure = "p"

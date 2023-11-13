@@ -74,6 +74,7 @@ class BCType(Enum):
 	PressureOutlet2D = auto()
 	MassFluxInlet1D = auto()
 	PressureStableLinearizedInlet1D = auto()
+	PressureStableLinearizedInlet1D_genericFunc = auto() # Filler
 	VelocityInlet1D = auto()
 	VelocityInlet1D_neutralSinusoid = auto()
 	VelocityInlet1D_gaussianPulse = auto()
@@ -2391,6 +2392,10 @@ class LinearizedImpedance2D(BCWeakPrescribed):
 			raise errors.NotPhysicalError
 
 		return UqB
+
+
+class PressureStableLinearizedInlet1D_genericFunc(BCWeakPrescribed):
+	pass
 
 
 class PressureStableLinearizedInlet1D(BCWeakPrescribed):
