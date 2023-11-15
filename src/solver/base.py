@@ -678,7 +678,7 @@ class SolverBase(ABC):
 			self.custom_user_function(self)
 
 			# Print info
-			#self.print_info(physics, res, itime, t, stepper.dt) #XXX
+			self.print_info(physics, res, itime, t, stepper.dt) # print to console every timestep
 
 
 			# Write data file
