@@ -62,7 +62,7 @@ SourceTerms = {'source1': {'Function': 'GravitySource', # Gravity
 }
 
 Output = {'AutoPostProcess': False,
- 'Prefix': 'tungurahua_StaticPlugtest_conduit_sub0',              # Output filename
+ 'Prefix': 'tungurahua_StaticPlugtest2_conduit_sub0',              # Output filename
  'WriteInitialSolution': True,
  'WriteInterval': 200                                   # Output frequency (this many timesteps pass before file is written)
 }
@@ -132,7 +132,10 @@ BoundaryConditions = {
         'cos_freq': 0.25,                               # Frequency of crystal fraction variation
         'is_gaussian': False,                           # If true, use Gaussian variation instead of cosine
         'p_chamber': p_chamber,                         # Chamber pressure
-        'trace_arho': 2.6000000000000002e-05            # Trace density (for numerical stability)
+        'trace_arho': 2.6000000000000002e-05,           # Trace density (for numerical stability)
+        'approx_mass_fracs': False,                     # Compute exactly the mass fraction of inlet fluid
+        'solubility_k': 5e-06,                          # Henry's law coefficient
+        'solubility_n': 0.5,                            # Henry's law exponent
 },
   # For running serial, using p boundary condition:
  'x2': {'BCType': 'PressureOutlet1D',                   # Pressure outlet boundary condition (automatically chokes if needed)
@@ -155,7 +158,13 @@ LinkedSolvers = []
 # see if the CFL condition is met.
 TimeStepping = {'FinalTime': 120, # Final 
  'InitialTime': 0.0,
- 'NumTimeSteps': 40000000, # Number of timesteps to run for
+ 'NumTimeSteps': 100000, # Number of timesteps to run for
  'TimeStepper': 'RK3SR',  # 4-step RK3 scheme that maximizes CFL stability region per function eval
 }
 
+# dx = 5
+# max wave speed w <~ 2000
+# 1/(2p+1) = 1/5
+# With CFL efficiency of 1:
+# dt ~ dx/w * (1/5) ~ 1/2000 ~ 120/240000
+# (RK3SR efficiency is > 1)

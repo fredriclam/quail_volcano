@@ -2484,20 +2484,30 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	'''
 	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=1e-6,
 			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
-			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0):
+			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0,
+			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5):
 		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
 		# Water concentration
 		self.chi_water = chi_water
+		_water_conc_per_liquid = chi_water / (1.0 - cVFav)
+		self.yWt = _water_conc_per_liquid / (1.0 + _water_conc_per_liquid)
 		# Crystal volume fraction average and perturbation amplitude
 		self.cVFav, self.cVFamp = cVFav, cVFamp
+		self.yC = cVFav
 		# Gaussian pulse if true (else sinusoidal)
 		self.is_gaussian:bool = is_gaussian
 		# Frequency for sinusodial (used if not is_gaussian)
 		self.cos_freq = cos_freq
 		# Gaussian properties (used if is_gaussian)
 		self.gaussian_tpulse, self.gaussian_sig = gaussian_tpulse, gaussian_sig
+		# Set flag for approximating mass fractions
+		self.approx_mass_fracs:bool = approx_mass_fracs
+		# Solubility law
+		self.solubility_k = solubility_k
+		self.solubility_n = solubility_n
+
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
@@ -2531,10 +2541,24 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		uGrid = momxI / rhoGrid
 		# Compute chamber mass properties
 		arhoVecChamber = arhoVecI.copy()
-		arhoVecChamber[...,0] = self.trace_arho # Small amount of air to preserve positivity
-		arhoVecChamber[...,1] = self.trace_arho # Small amount of water to preserve positivity
-		# Approximate partial density of magma by density
-		arhoVecChamber[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+		if self.approx_mass_fracs:
+			arhoVecChamber[...,0] = self.trace_arho # Small amount of air to preserve positivity
+			arhoVecChamber[...,1] = self.trace_arho # Small amount of water to preserve positivity
+			# Approximate partial density of magma by density
+			arhoVecChamber[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+		else:
+			yL = 1.0 - (self.yC + self.yWt)
+			yWd_eq = np.clip(yL * self.solubility_k * p_chamber ** self.solubility_n,
+										   1e-7, 
+											 self.yWt - 1e-7)
+			# Exsolved water vapour
+			yWv = self.yWt - yWd_eq
+			yA = 1e-7
+			yM = 1.0 - (yA + yWv)
+			rho = atomics.mixture_density(np.array([yA, yWv, yM]), p_chamber, T_chamber, physics)
+			arhoVecChamber[...,0] = rho * yA
+			arhoVecChamber[...,1] = rho * yWv
+			arhoVecChamber[...,2] = rho * yM
 		rhoChamber = atomics.rho(arhoVecChamber)
 		GammaChamber = atomics.Gamma(arhoVecChamber, physics)
 		cChamber = atomics.sound_speed(GammaChamber, p_chamber, rhoChamber,
