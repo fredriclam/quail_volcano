@@ -18,7 +18,7 @@ Mesh = {
 
 Output = {
 	# "Prefix" : "lavalake1_atm2",
-	"Prefix" : "deep_submarine_atm2",
+	"Prefix" : "deep_submarine_injection_atm2",
 	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,

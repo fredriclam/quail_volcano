@@ -77,6 +77,7 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 			# Overriden WLMA functions
 			physics.multiphaseWLMA.functions.BCType.LinearizedImpedance2D:
 			  physics.multiphaseWLMA.functions.LinearizedImpedance2D,
+			# WLMA-only functions
 			# BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
 			# BCType.MultiphasevpT2D1DCylindrical: mpvpT_fcns.MultiphasevpT2D1DCylindrical,
@@ -402,6 +403,8 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 			  physics.multiphasevpT.functions.GravitySource,
 			physics.multiphasevpT.functions.SourceType.CylindricalGeometricSource:
 			  physics.multiphasevpT.functions.CylindricalGeometricSource,
+			physics.multiphaseWLMA.functions.SourceType.WaterMassSource:
+			  physics.multiphaseWLMA.functions.WaterMassSource,
 		})
 
 		self.conv_num_flux_map.update({

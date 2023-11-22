@@ -262,6 +262,9 @@ class RK3SR(StepperBase):
 		except AttributeError:
 			update_div = lambda solver, U: None
 
+		# HACK: disable update div
+		update_div = lambda solver, U: None
+
 		res = self.res
 
 		# Cache solution at current step

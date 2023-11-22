@@ -82,9 +82,11 @@ Mesh 2;
 // Mesh export
 Physical Curve("r1",       1) = {1};
 Physical Curve("ground",   2) = {2};
-Physical Curve("flare",    3) = {3};
-Physical Curve("pipewall", 4) = {4};
-Physical Curve("x2",       5) = {5};
-Physical Curve("symmetry", 6) = {6};
+Physical Curve("ground2",  3) = {3};
+Physical Curve("flare",    4) = {4};
+Physical Curve("pipewall", 5) = {5};
+Physical Curve("x2",       6) = {6};
+Physical Curve("symmetry", 7) = {7};
+Physical Curve("symmetry2", 8) = {8};
 Physical Surface("domain1") = {1};
 Save "submarine_one_block.msh";

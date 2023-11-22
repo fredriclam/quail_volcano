@@ -26,11 +26,11 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : "../meshes/submarinetestA1.msh",
+	"File" : "../meshes/submarine_one_block.msh",
 }
 
 Output = {
-	"Prefix" : "deep_submarine_atm1",
+	"Prefix" : "deep_submarine_injection0_atm1",
 	# "Prefix" : "submarine_proto_WLMA12_atm1",
 	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
@@ -56,6 +56,13 @@ SourceTerms = {
 	# 	"Function" : "CylindricalGeometricSource",
 	# 	# "source_treatment" : "Explicit",
 	# }
+	'source5': {'Function': 'WaterMassSource',
+	'mass_rate': 0.0,
+	'specific_energy': 109388.56885035457,
+	'injection_depth': -50,
+	'gaussian_width': 50,
+	'conduit_radius': 50,
+	}
 }
 
 # Restart = {
@@ -69,15 +76,21 @@ mode = "WaterLayer"
 if "WaterLayer" == mode:
 	InitialCondition = {
 		"Function" : "IsothermalAtmosphere",
+		"h0": -150,
+		"hmax": 3000,
 	}
 
 	BoundaryConditions = {
 		"r1" : {
-			"BCType" : "MultiphasevpT2D2D",
-			"bkey": "r1",
+			"BCType" : "SlipWall",
+			# "BCType" : "MultiphasevpT2D2D",
+			# "bkey": "r1",
 		},
 		"ground" : {
 			"BCType" : "SlipWall",
+		},
+		"ground2" : {
+			"BCType" : "SlipWall", # Extra section in ground for mesh dx control
 		},
 		"flare" : {
 			"BCType" : "SlipWall",
@@ -91,6 +104,9 @@ if "WaterLayer" == mode:
 		},
 		"symmetry" : {
 			"BCType" : "SlipWall",
+		},
+		"symmetry2" : {
+			"BCType" : "SlipWall", # Extra section in ground for mesh dx control
 		},
 	}
 elif "DebrisFlow" == mode:
@@ -127,12 +143,12 @@ else:
 
 # LinkedSolvers = []
 LinkedSolvers = [
-# 	{
-# 		"DeckName": "conduit.py",
-# 		"BoundaryName": "vent",
-# 	},
-	{
-		"DeckName": "r1r2.py",
-		"BoundaryName": "r1",
-	},
+	# {
+	# 	"DeckName": "conduit.py",
+	# 	"BoundaryName": "vent",
+	# },
+	# {
+	# 	"DeckName": "r1r2.py",
+	# 	"BoundaryName": "r1",
+	# },
 ]

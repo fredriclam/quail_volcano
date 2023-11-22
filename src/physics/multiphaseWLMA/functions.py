@@ -66,7 +66,7 @@ class BCType(Enum):
 class SourceType(Enum):
 	''' SourceTypes specific to multiphaseWLMA (see also
 	physics.multiphasevpT.functions). '''
-	pass
+	WaterMassSource = auto()
 	# FrictionVolFracVariableMu = auto()
 	# FrictionVolFracConstMu = auto()
 	# GravitySource = auto()
@@ -181,7 +181,7 @@ class IsothermalAtmosphere(FcnBase):
 			y = theta * self.y_underwater + (1 - theta) * self.y_overwater
 			return y
 
-		p_surface = 1e5
+		p_surface = 5e5
 		def mixture_spec_vol(height:float, p:float, T:float):
 			# Specific volume as function of p, T
 			# Select composition
@@ -1000,3 +1000,67 @@ class VelocityInlet1D(BCWeakPrescribed):
 		#UqB[:,:,6] = rho * phi_crys
 
 		return UqB
+
+class WaterMassSource(SourceBase):
+	'''
+	Added water mass source. Distributes a mass rate over a Gaussian function.
+	Partial density rate is used instead if partial_density_rate is not None.
+	  mass_rate: sets the rate of water added in units of mass per time.
+		specific_energy: sets prescribed specific energy (J/kg) of influx water
+
+	Note: the density rate is related to the total mass rate by
+		mass_rate = int (partial_density_rate * pi * conduit_radius**2) dz,
+	meaning that int (partial_density_rate) dz = mass_rate / (pi * radius**2).
+
+	Default specific energy is computed for:
+	  p = 4.0000e7 Pa, T = 300 K
+	giving
+	  rho = 1013.7496496496497 kg/m^3
+	and
+	  e = 109388.56885035457 J/kg,
+	where e is relative to the energy of pure liquid at the triple point.
+	'''
+	def __init__(self,
+							 mass_rate=0.0,
+							 specific_energy=109388.56885035457,
+							 injection_depth=-350,
+							 gaussian_width=50,
+							 conduit_radius=50,
+							 **kwargs):
+		super().__init__(kwargs)
+		self.mass_rate = mass_rate
+		self.specific_energy = specific_energy
+		self.injection_depth = injection_depth
+		self.gaussian_width = gaussian_width
+		self.conduit_radius = conduit_radius
+		self._sqrtpi = np.sqrt(np.pi)
+
+	def scaled_gaussian(self, x):
+		''' Returns the scaled and shifted gaussian with unit integral. '''
+		_t = (x - self.injection_depth) / self.gaussian_width
+		return np.exp(-_t*_t) / (self._sqrtpi * self.gaussian_width)
+
+	def get_source(self, physics, Uq, x, t):
+		S = np.zeros_like(Uq)
+		# Compute mixture density
+		state_indices = physics.get_state_indices()
+		if len(state_indices) == 8:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+					physics.get_state_indices()
+		elif len(state_indices) == 9:
+			iarhoA, iarhoWv, iarhoM, imomx, imomy, ie, iarhoWt, iarhoC, iarhoFm = \
+					physics.get_state_indices()
+		else:
+			raise ValueError("Unknown number of state_indices; can't unpack state_indices")
+		# Get mass-specific energy from input
+		specific_energy = self.specific_energy
+		# Compute partial density rate scaling
+		partial_density_rate = self.mass_rate / (
+			np.pi * self.conduit_radius * self.conduit_radius)
+		# Compute partial density source using last spatial coordinate (x in 1D, y in 2D)
+		partial_density_source = partial_density_rate * self.scaled_gaussian(x[:,:,-1:])
+		# Assemble and return source vector
+		S[:,:,iarhoWv:iarhoWv+1] = partial_density_source
+		S[:,:,iarhoWt:iarhoWt+1] = partial_density_source
+		S[:,:,ie:ie+1]=  partial_density_source * specific_energy
+		return S # [ne, nq, ns]
