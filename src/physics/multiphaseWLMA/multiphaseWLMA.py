@@ -405,6 +405,8 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 			  physics.multiphasevpT.functions.CylindricalGeometricSource,
 			physics.multiphaseWLMA.functions.SourceType.WaterMassSource:
 			  physics.multiphaseWLMA.functions.WaterMassSource,
+			physics.multiphaseWLMA.functions.SourceType.MagmaMassSource:
+			  physics.multiphaseWLMA.functions.MagmaMassSource,
 		})
 
 		self.conv_num_flux_map.update({

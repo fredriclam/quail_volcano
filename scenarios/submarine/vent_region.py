@@ -30,7 +30,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "deep_submarine_injection0_atm1",
+	"Prefix" : "deep_submarine_injection2_atm1",
 	# "Prefix" : "submarine_proto_WLMA12_atm1",
 	"WriteInterval" : 5,
 	"WriteInitialSolution" : True,
@@ -40,7 +40,7 @@ Output = {
 Physics = {
     "Type" : "MultiphaseWLMA",
     "ConvFluxNumerical" : "LaxFriedrichs",
-    "num_parallel_workers": 3,
+    "num_parallel_workers": 7,
 }
 
 SourceTerms = {
@@ -56,14 +56,31 @@ SourceTerms = {
 	# 	"Function" : "CylindricalGeometricSource",
 	# 	# "source_treatment" : "Explicit",
 	# }
-	'source5': {'Function': 'WaterMassSource',
-	'mass_rate': 0.0,
-	'specific_energy': 109388.56885035457,
+	# 'source5': {'Function': 'WaterMassSource',
+	# 'mass_rate': 0.0,
+	# 'specific_energy': 109388.56885035457,
+	# 'injection_depth': -50,
+	# 'gaussian_width': 50,
+	# 'conduit_radius': 50,
+	# }
+	'source6': {'Function': 'MagmaMassSource',
+	'mass_rate': 100.0,
 	'injection_depth': -50,
 	'gaussian_width': 50,
 	'conduit_radius': 50,
 	}
 }
+
+'''# Log
+injection1: watermasssource, 0.0 mass rate
+injection2: 'mass_rate': 100.0,
+						'injection_depth': -50,
+						'gaussian_width': 50,
+						'conduit_radius': 50,
+injection3:
+
+
+'''
 
 # Restart = {
 # 	"File" : "___.pkl",
