@@ -399,8 +399,8 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 		self.BC_fcn_map.update(d)
 
 		self.source_map.update({
-			physics.multiphasevpT.functions.SourceType.GravitySource:
-			  physics.multiphasevpT.functions.GravitySource,
+			physics.multiphaseWLMA.functions.SourceType.GravitySource:
+			  physics.multiphaseWLMA.functions.GravitySource,
 			physics.multiphasevpT.functions.SourceType.CylindricalGeometricSource:
 			  physics.multiphasevpT.functions.CylindricalGeometricSource,
 			physics.multiphaseWLMA.functions.SourceType.WaterMassSource:
