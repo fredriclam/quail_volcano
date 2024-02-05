@@ -468,6 +468,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 			FcnType.SteadyState: mpvpT_fcns.SteadyState,
+			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,
 		}
 
 		self.IC_fcn_map.update(d)

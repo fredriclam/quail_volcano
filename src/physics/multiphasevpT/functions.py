@@ -53,6 +53,7 @@ class FcnType(Enum):
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
 	SteadyState = auto()
+	StaticPlug = auto()
 	NohProblem = auto()
 
 
@@ -384,6 +385,58 @@ class SteadyState(FcnBase):
 			# Remove lambdas for compatibility with pickle module
 			self.advection_map = None
 
+		return U_init
+	
+class StaticPlug(FcnBase):
+	''' 1D steady state with zero velocity and an initial plug drag.
+	  Calls submodule compressible-conduit-steady
+		(https://github.com/fredriclam/compressible-conduit-steady).
+	'''
+	def __init__(self,
+							 traction_fn:callable, yWt_fn:callable, yC_fn:callable, T_fn:callable,
+							 x_global:np.array=None,
+							 p_chamber=40e6,
+							 yA=1e-7,
+							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
+							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
+							 neglect_edfm=True,
+							 enforce_p_vent=None):
+		'''
+		Interface to compressible_conduit_steady.StaticPlug.
+		'''
+		if x_global is None:
+			raise ValueError(
+				"x_global must be specified in the StaticPlug initial condition. " +
+				"x_global provides 1D mesh information across all partitions of " +
+				"the 1D domain.")
+		props = {
+				"yA": yA,
+				"c_v_magma": c_v_magma,
+				"rho0_magma": rho0_magma,
+				"K_magma": K_magma,
+				"p0_magma": p0_magma,
+				"solubility_k": solubility_k,
+				"solubility_n": solubility_n,
+				"neglect_edfm": neglect_edfm,
+		}
+		# Register StaticPlug object from steady state module
+		self.f:callable = plugin_steady_state.StaticPlug(x_global,
+																									 p_chamber,
+			traction_fn,
+			yWt_fn,
+			yC_fn,
+			T_fn,
+			override_properties=props,
+			enforce_p_vent=enforce_p_vent,
+		)
+		# Save argument values
+		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.p_chamber = p_chamber
+		self.enforce_p_vent = enforce_p_vent
+
+	def get_state(self, physics, x, t):
+		# Evaluate intial condition
+		U_init = self.f(x)
 		return U_init
 
 class UniformExsolutionTest(FcnBase):
@@ -2224,8 +2277,9 @@ class PressureOutlet1D(BCWeakRiemann):
 		if np.any(velI >= cI):
 			return UqB
 		elif np.any(velI < 0):
-			raise ValueError("Inflow. Check fragmentation state (front too close?) " +
-				"and stability with respect to timestepper.")
+			pass
+			# raise ValueError("Inflow. Check fragmentation state (front too close?) " +
+			# 	"and stability with respect to timestepper.")
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
@@ -2431,20 +2485,30 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	'''
 	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=1e-6,
 			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
-			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0):
+			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0,
+			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5):
 		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
 		# Water concentration
 		self.chi_water = chi_water
+		_water_conc_per_liquid = chi_water / (1.0 - cVFav)
+		self.yWt = _water_conc_per_liquid / (1.0 + _water_conc_per_liquid)
 		# Crystal volume fraction average and perturbation amplitude
 		self.cVFav, self.cVFamp = cVFav, cVFamp
+		self.yC = cVFav
 		# Gaussian pulse if true (else sinusoidal)
 		self.is_gaussian:bool = is_gaussian
 		# Frequency for sinusodial (used if not is_gaussian)
 		self.cos_freq = cos_freq
 		# Gaussian properties (used if is_gaussian)
 		self.gaussian_tpulse, self.gaussian_sig = gaussian_tpulse, gaussian_sig
+		# Set flag for approximating mass fractions
+		self.approx_mass_fracs:bool = approx_mass_fracs
+		# Solubility law
+		self.solubility_k = solubility_k
+		self.solubility_n = solubility_n
+
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
@@ -2478,10 +2542,24 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		uGrid = momxI / rhoGrid
 		# Compute chamber mass properties
 		arhoVecChamber = arhoVecI.copy()
-		arhoVecChamber[...,0] = self.trace_arho # Small amount of air to preserve positivity
-		arhoVecChamber[...,1] = self.trace_arho # Small amount of water to preserve positivity
-		# Approximate partial density of magma by density
-		arhoVecChamber[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+		if self.approx_mass_fracs:
+			arhoVecChamber[...,0] = self.trace_arho # Small amount of air to preserve positivity
+			arhoVecChamber[...,1] = self.trace_arho # Small amount of water to preserve positivity
+			# Approximate partial density of magma by density
+			arhoVecChamber[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+		else:
+			yL = 1.0 - (self.yC + self.yWt)
+			yWd_eq = np.clip(yL * self.solubility_k * p_chamber ** self.solubility_n,
+										   1e-7, 
+											 self.yWt - 1e-7)
+			# Exsolved water vapour
+			yWv = self.yWt - yWd_eq
+			yA = 1e-7
+			yM = 1.0 - (yA + yWv)
+			rho = atomics.mixture_density(np.array([yA, yWv, yM]), p_chamber, T_chamber, physics)
+			arhoVecChamber[...,0] = rho * yA
+			arhoVecChamber[...,1] = rho * yWv
+			arhoVecChamber[...,2] = rho * yM
 		rhoChamber = atomics.rho(arhoVecChamber)
 		GammaChamber = atomics.Gamma(arhoVecChamber, physics)
 		cChamber = atomics.sound_speed(GammaChamber, p_chamber, rhoChamber,
