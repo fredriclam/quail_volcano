@@ -1,7 +1,7 @@
 import importlib, io, pprint
 
 # Set primary input file name (without suffix .py)
-input_module_name = "sm0_15_cvf75_exponential4s"
+input_module_name = "sm0_15_cvf75_exponential"
 
 # Specify whether conduit is coupled to 2D atmosphere.
 # If True, run `generate_atm_partitions.py`` as well to write the atmosphere
@@ -19,7 +19,6 @@ import scipy.interpolate as si
 
 def exponential_timeSeries(end_time, dt, SEED, std_dev, cor_len, max_freq):
   t = np.linspace(0,end_time+dt,int((end_time+dt) / dt))
-  R_t = std_dev**2 * np.exp(-np.abs(t)/cor_len)
 
   N = len(t) # number of Fourier sample points
   h = t[1]-t[0] # grid spacing, nominally h=0.1 km for r=1
@@ -35,7 +34,7 @@ def exponential_timeSeries(end_time, dt, SEED, std_dev, cor_len, max_freq):
   Y = np.fft.fft(y)*h
 
   # apply exponential PSD
-  PSD_exponential = np.fft.fft(R_t) * h
+  PSD_exponential = 2 * std_dev**2 * cor_len / (1 + omega**2 * cor_len**2)
   PSD_exponential[np.abs(omega) > max_freq * 2 * np.pi] = 0
 
   Y_exponential = Y * np.sqrt(PSD_exponential)
@@ -111,10 +110,10 @@ str_yWt_source = "lambda t: 0.03 * (1.0 - 0.4) / (1.0 + 0.03)"
 #str_yC_source = "lambda t:  0.4 * (1.1 - 0.1 * np.cos(2*np.pi*0.5*t))"
 #str_yWt_source = "lambda t: 0.03 * (1 - 0.4) / (1 + 0.03)"
 
-cVFfunc = "exponential_timeSeries(TimeStepping[\"FinalTime\"], 0.04, 1, 0.02, 10, 0.25)"
+cVFfunc = "exponential_timeSeries(TimeStepping[\"FinalTime\"], 0.04, 9, 0.03, 1, 0.25)"
 
 # Define name of the parameter file
-param_filename_map = lambda i: f'sm0_15_cvf75_exponential4s_conduit_sub{i}.py'
+param_filename_map = lambda i: f'sm0_15_cvf75_exponential_a1s_conduit_sub{i}.py'
 # Define name of the atm parameter files
 atm_param_filename_map = lambda i: f'atm_sub{i}.py'
 
