@@ -15,7 +15,7 @@ Numerics = {'AVParameter': 0.3,
 Mesh = {'ElementShape': 'Segment',
  'File': None,
  'NumElemsX': 400,
- 'xmax': -150,
+ 'xmax': -650,
  'xmin': -1150.0}
 
 Physics = {'ConvFluxNumerical': 'LaxFriedrichs',
@@ -51,9 +51,9 @@ SourceTerms = {
 
 
 Output = {'AutoPostProcess': False,
- 'Prefix': 'cosine_inlet_test_conduit',
+ 'Prefix': 'memtest_conduit1',
  'WriteInitialSolution': True,
- 'WriteInterval': 100}
+ 'WriteInterval': 1000}
 
 InitialCondition = {'Function': 'SteadyState',
  'K_magma': 10000000000.0,
@@ -72,7 +72,7 @@ InitialCondition = {'Function': 'SteadyState',
  'solubility_n': 0.5,
  'tau_d': 10.0,
  'tau_f': 1.0,
- 'x_global': np.linspace(-1.150e+03, -150.0, 401),
+ 'x_global': np.unique(np.hstack([np.linspace(-1.150e+03, -650., 401), np.linspace(-650, -150, 401)])),
  'yA': 1e-07,
  'yC': lambda t: 0.4,
  'yCMin': 1e-05,
@@ -92,13 +92,13 @@ BoundaryConditions = {'x1': {'BCType': 'PressureStableLinearizedInlet1D',
         'gaussian_sig': 4,
         'gaussian_tpulse': 20,
         'trace_arho': 2.6000000000000002e-05,},
- 'x2': {'BCType': 'SlipWall'}}
+ 'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_1_2'}}
 
-LinkedSolvers = []# [{'BoundaryName': 'comm1D_0_1', 'DeckName': 'gaussianPulse_conduit_sub1.py'}]
+LinkedSolvers = [{'BoundaryName': 'comm1D_1_2', 'DeckName': 'conduit_inlet_test2.py'}]
 
 TimeStepping = {'FinalTime': 1,
  'InitialTime': 0.0,
- 'NumTimeSteps': 10000,
+ 'NumTimeSteps': 100000,
  'TimeStepper': 'RK3SR'}
 
 # Restart = {'File': 'inlet_test_conduit_100.pkl',
