@@ -40,13 +40,15 @@ SourceTerms = {'source1': {'Function': 'GravitySource',
  'source3': {'Function': 'ExsolutionSource',
              'source_treatment': 'Explicit',
              'tau_d': 10.0},
- 'source4': {'Function': 'FragmentationTimescaleSource',
+ 'source4': {'Function': 'FragmentationTimescaleSourceSmoothed',
              'crit_volfrac': 0.7,
              'source_treatment': 'Explicit',
-             'tau_f': 1.0}}
+             'tau_f': 1.0,
+             'fragsmooth_scale': 0.002,
+             "fake_parameter": 23,}}
 
 Output = {'AutoPostProcess': False,
- 'Prefix': '/scratch/users/kcoppess/gaussian_pulse_injection/conduit_sub0',
+ 'Prefix': '__debug_test_sub0',
  'WriteInitialSolution': True,
  'WriteInterval': 540}
 
@@ -85,9 +87,9 @@ BoundaryConditions = {'x1': {'BCType': 'VelocityInlet1D_gaussianPulse',
         'tpulse': 20,
         'trace_arho': 2.6000000000000002e-05,
         'u': 0.8831114392108765},
- 'x2': {'BCType': 'MultiphasevpT1D1D', 'bkey': 'comm1D_0_1'}}
+ 'x2': {'BCType': 'SlipWall'}}
 
-LinkedSolvers = [{'BoundaryName': 'comm1D_0_1', 'DeckName': 'gaussianPulse_conduit_sub1.py'}]
+LinkedSolvers = []# [{'BoundaryName': 'comm1D_0_1', 'DeckName': 'gaussianPulse_conduit_sub1.py'}]
 
 TimeStepping = {'FinalTime': 960,
  'InitialTime': 0.0,
