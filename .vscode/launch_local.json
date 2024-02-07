@@ -17,11 +17,10 @@
       // "args": ["-p", "conduit.py"],
       //
       // "args": ["vent_region.py"],
-      // "args": ["gaussianPulse_conduit_sub0.py"],
       // "args": ["noh_problem2.py"], // Noh problem in axisymmetry
       // "args": ["conduit_p.py"], // BC tester
       // "args": ["conduit_v2.py"], // // Testing for 1D steadystate 
-      "args": ["conduit_inlet_test.py"],
+      "args": ["conduit_sub0.py"],
       // "args": ["-p", "post_process.py"],
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\mixture_shocktube\\",
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit_flow\\", // Testing for 1D steadystate !! revisit
@@ -30,7 +29,7 @@
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\verification_acoustic\\",
       // "cwd": "C:\\Users\\fredr\\Documents\\quail_volcano\\scenarios\\verification_acoustic\\",
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\axisymmetric_test\\", // Noh problem in axisymmetry
-      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\tungurahua\\",
+      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\tungurahua_vulcanian\\",
       "subProcess": true,
     }
   ]

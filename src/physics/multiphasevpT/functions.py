@@ -53,6 +53,7 @@ class FcnType(Enum):
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
 	SteadyState = auto()
+	StaticPlug = auto()
 	NohProblem = auto()
 
 
@@ -74,6 +75,7 @@ class BCType(Enum):
 	PressureOutlet2D = auto()
 	MassFluxInlet1D = auto()
 	PressureStableLinearizedInlet1D = auto()
+	PressureStableLinearizedInlet1D_genericFunc = auto()
 	VelocityInlet1D = auto()
 	VelocityInlet1D_neutralSinusoid = auto()
 	VelocityInlet1D_gaussianPulse = auto()
@@ -383,6 +385,58 @@ class SteadyState(FcnBase):
 			# Remove lambdas for compatibility with pickle module
 			self.advection_map = None
 
+		return U_init
+	
+class StaticPlug(FcnBase):
+	''' 1D steady state with zero velocity and an initial plug drag.
+	  Calls submodule compressible-conduit-steady
+		(https://github.com/fredriclam/compressible-conduit-steady).
+	'''
+	def __init__(self,
+							 traction_fn:callable, yWt_fn:callable, yC_fn:callable, T_fn:callable,
+							 x_global:np.array=None,
+							 p_chamber=40e6,
+							 yA=1e-7,
+							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
+							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
+							 neglect_edfm=True,
+							 enforce_p_vent=None):
+		'''
+		Interface to compressible_conduit_steady.StaticPlug.
+		'''
+		if x_global is None:
+			raise ValueError(
+				"x_global must be specified in the StaticPlug initial condition. " +
+				"x_global provides 1D mesh information across all partitions of " +
+				"the 1D domain.")
+		props = {
+				"yA": yA,
+				"c_v_magma": c_v_magma,
+				"rho0_magma": rho0_magma,
+				"K_magma": K_magma,
+				"p0_magma": p0_magma,
+				"solubility_k": solubility_k,
+				"solubility_n": solubility_n,
+				"neglect_edfm": neglect_edfm,
+		}
+		# Register StaticPlug object from steady state module
+		self.f:callable = plugin_steady_state.StaticPlug(x_global,
+																									 p_chamber,
+			traction_fn,
+			yWt_fn,
+			yC_fn,
+			T_fn,
+			override_properties=props,
+			enforce_p_vent=enforce_p_vent,
+		)
+		# Save argument values
+		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.p_chamber = p_chamber
+		self.enforce_p_vent = enforce_p_vent
+
+	def get_state(self, physics, x, t):
+		# Evaluate intial condition
+		U_init = self.f(x)
 		return U_init
 
 class UniformExsolutionTest(FcnBase):
@@ -2223,8 +2277,9 @@ class PressureOutlet1D(BCWeakRiemann):
 		if np.any(velI >= cI):
 			return UqB
 		elif np.any(velI < 0):
-			raise ValueError("Inflow. Check fragmentation state (front too close?) " +
-				"and stability with respect to timestepper.")
+			pass
+			# raise ValueError("Inflow. Check fragmentation state (front too close?) " +
+			# 	"and stability with respect to timestepper.")
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
@@ -2430,20 +2485,195 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	'''
 	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=1e-6,
 			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
-			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0):
+			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0,
+			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5):
 		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
 		# Water concentration
 		self.chi_water = chi_water
+		_water_conc_per_liquid = chi_water / (1.0 - cVFav)
+		self.yWt = _water_conc_per_liquid / (1.0 + _water_conc_per_liquid)
 		# Crystal volume fraction average and perturbation amplitude
 		self.cVFav, self.cVFamp = cVFav, cVFamp
+		self.yC = cVFav
 		# Gaussian pulse if true (else sinusoidal)
 		self.is_gaussian:bool = is_gaussian
 		# Frequency for sinusodial (used if not is_gaussian)
 		self.cos_freq = cos_freq
 		# Gaussian properties (used if is_gaussian)
 		self.gaussian_tpulse, self.gaussian_sig = gaussian_tpulse, gaussian_sig
+		# Set flag for approximating mass fractions
+		self.approx_mass_fracs:bool = approx_mass_fracs
+		# Solubility law
+		self.solubility_k = solubility_k
+		self.solubility_n = solubility_n
+
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Compute a boundary state by replacing Riemann problem with acoustic
+		waves, and then approximating the acoustic wave. '''
+		UqB = UqI.copy()
+		''' Check validity of flow state, check number of boundary points. '''
+		if UqI.shape[0] * UqI.shape[1] > 1:
+			raise NotImplementedError('''Not implemented: for-loop over more than one
+				inflow boundary point in 1D.''')
+
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to outgoing acoustic waves) of the interior
+		solution. '''
+		# Extract data from node values
+		arhoVecI = UqI[:,:,physics.get_mass_slice()]
+		momxI = UqI[...,physics.get_momentum_slice()]
+		eI = UqI[...,physics.get_state_slice("Energy")]
+		# Extract specified mass flux and prescribed chamber/reservoir values
+		p_chamber, T_chamber = self.p_chamber, self.T_chamber
+		# Extract material properties
+		K, rho0, p0 = \
+			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
+		
+		# Compute grid primitives
+		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
+		gas_volfrac = atomics.gas_volfrac(arhoVecI, TGrid, physics)
+		pGrid = atomics.pressure(arhoVecI, TGrid, gas_volfrac, physics)
+		rhoGrid = atomics.rho(arhoVecI)
+		GammaGrid = atomics.Gamma(arhoVecI, physics)
+		cGrid = atomics.sound_speed(GammaGrid, pGrid, rhoGrid, gas_volfrac, physics)
+		uGrid = momxI / rhoGrid
+		# Compute chamber mass properties
+		arhoVecChamber = arhoVecI.copy()
+		if self.approx_mass_fracs:
+			arhoVecChamber[...,0] = self.trace_arho # Small amount of air to preserve positivity
+			arhoVecChamber[...,1] = self.trace_arho # Small amount of water to preserve positivity
+			# Approximate partial density of magma by density
+			arhoVecChamber[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+		else:
+			yL = 1.0 - (self.yC + self.yWt)
+			yWd_eq = np.clip(yL * self.solubility_k * p_chamber ** self.solubility_n,
+										   1e-7, 
+											 self.yWt - 1e-7)
+			# Exsolved water vapour
+			yWv = self.yWt - yWd_eq
+			yA = 1e-7
+			yM = 1.0 - (yA + yWv)
+			rho = atomics.mixture_density(np.array([yA, yWv, yM]), p_chamber, T_chamber, physics)
+			arhoVecChamber[...,0] = rho * yA
+			arhoVecChamber[...,1] = rho * yWv
+			arhoVecChamber[...,2] = rho * yM
+		rhoChamber = atomics.rho(arhoVecChamber)
+		GammaChamber = atomics.Gamma(arhoVecChamber, physics)
+		cChamber = atomics.sound_speed(GammaChamber, p_chamber, rhoChamber,
+			atomics.gas_volfrac(arhoVecChamber, T_chamber, physics), physics)
+
+		# Compute composition-based properties
+		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
+			# Outflow
+			Gamma = GammaGrid
+			y = atomics.massfrac(arhoVecI)
+			S = TGrid / pGrid**((Gamma-1)/Gamma)
+		else:
+			# Inflow
+			Gamma = GammaChamber
+			y = atomics.massfrac(arhoVecChamber)
+			S = T_chamber / p_chamber**((Gamma-1)/Gamma)
+
+		# Compute acoustic impedances Z and admittances Y = 1/Z
+		ZGrid = rhoGrid * cGrid
+		ZChamber = rhoChamber * cChamber
+		YGrid = 1.0 / ZGrid
+		YChamber = 1.0 / ZChamber
+		# Approximate pressure as Y-weighted average
+		p = (YGrid * pGrid + YChamber * p_chamber) / (YGrid + YChamber)
+		# Approximate corresponding velocity in x-direction TODO: generalize with face normal
+		u = uGrid + (p_chamber - pGrid) / (ZChamber + ZGrid)
+
+		# Evaluate temperature from isentropic outgoing wave
+		T = S * p**((Gamma-1)/Gamma)
+		rho = atomics.mixture_density(y, p, T, physics)
+
+		''' Check positivity of computed state. '''
+		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
+			raise errors.NotPhysicalError
+
+		''' Map to conservative variables '''
+		UqB[:,:,physics.get_mass_slice()] = rho * y
+		UqB[:,:,physics.get_momentum_slice()] = rho * u
+		UqB[:,:,physics.get_state_slice("Energy")] = \
+			atomics.c_v(rho * y, physics) * T \
+			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
+			+ 0.5 * rho * u * u
+		# Update adiabatically compressed/expanded tracer partial densities
+		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+
+		# crystal vol / suspension vol
+		ta = 5
+		tb = 5 + (1 / (2 * self.cos_freq)) if self.cos_freq != 0 else +np.inf
+		if self.is_gaussian:
+			phi_crys = self.cVFav + self.cVFamp \
+				* np.exp(-((t - self.gaussian_tpulse)/ self.gaussian_sig) **2 / 2)
+		else:
+			if t < ta:
+				phi_crys = self.cVFav
+			elif t < tb:
+				phi_crys = self.cVFav * (1 + self.cVFamp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
+			else:
+				phi_crys = self.cVFav * (1 - self.cVFamp * np.cos(2 * np.pi * self.cos_freq * (t - tb)))
+		chi_water = self.chi_water
+		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
+		UqB[:,:,6] = rho * phi_crys
+		# Fragmented state
+		UqB[:,:,7] = 0.0
+	
+		return UqB
+
+class PressureStableLinearizedInlet1D_genericFunc(BCWeakPrescribed):
+	'''
+	Takes in generic functional form for crystal volume fraction variation
+	
+	Linearized inlet conditions that solve a linearized version of the Riemann
+	problem with uL == uR. The Riemann problem consists of a jump in the state
+	variables at the boundary between the designated (inlet) values and the
+	numerical trace from the interior of the numerical domain. The constraints
+	for the problem are:
+		1. Entropy and mass fractions are given by the inlet values
+		2. Particle velocity is continuous (uL == uR)
+		3. Pressure of the inlet is used in the Riemann problem (pL) but is not
+		     necessarily the pressure used at the boundary.
+	The entering shock is linearized as an acoustic (expansion) wave, resulting
+	in a three-wave structure.
+
+	Asymptotically, the pressure at the boundary becomes that of the inlet (pL),
+	motivating the name "PressureStable".
+	Also, by construction, the entropy and mass fractions at the boundary are
+	those of the inlet.
+	There is no asymptotic statement about the velocity at the boundary, since
+	this in general depends on the interior solution.
+
+	The problem linearized on both sides of the contact wave has solution
+	  p = (YL * pL + YR * pR) / (YL + YR) + (uL - uR) / (YL + YR)
+	and the assumption of continuous particle velocity drops the latter term.
+
+	Usage:
+	  cVFav sets the averages crystal volume fraction.
+	  For a constant state boundary, set is_gaussian=False, cos_freq=0.0.
+	  For a sinusoidal boundary, set is_gaussian=False, cos_freq > 0. The
+		  amplitude is controlled by cVFamp, with average cVFav.
+		For a gaussian boundary, set is_gaussian=True. cos_freq is ignored.
+		  The gaussian is controlled by gaussian_tpulse, gaussian_sig, and
+		  cVFamp, with background value cVFav.
+	Water content is specified as a concentration per dry magma mass (chi_water).
+	'''
+	def __init__(self, cVFfunc, p_chamber:float=100e6, T_chamber:float=1e3, 
+			trace_arho:float=1e-6, chi_water:float=0.03, cVFav:float=0.4):
+		# Arguments for chamber properties
+		self.p_chamber, self.T_chamber, self.trace_arho = \
+			p_chamber, T_chamber, trace_arho
+		# Water concentration
+		self.chi_water = chi_water
+		# Crystal volume fraction average
+		self.cVFav = cVFav
+		# Crystal volume fraction variation function
+		self.cVFfunc = cVFfunc
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
@@ -2527,18 +2757,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
 
 		# crystal vol / suspension vol
-		ta = 5
-		tb = 5 + (1 / (2 * self.cos_freq)) if self.cos_freq != 0 else +np.inf
-		if self.is_gaussian:
-			phi_crys = self.cVFav + self.cVFamp \
-				* np.exp(-((t - self.gaussian_tpulse)/ self.gaussian_sig) **2 / 2)
-		else:
-			if t < ta:
-				phi_crys = self.cVFav
-			elif t < tb:
-				phi_crys = self.cVFav * (1 + self.cVFamp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
-			else:
-				phi_crys = self.cVFav * (1 - self.cVFamp * np.cos(2 * np.pi * self.cos_freq * (t - tb)))
+		phi_crys = self.cVFav + self.cVFfunc(t)
 		chi_water = self.chi_water
 		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
 		UqB[:,:,6] = rho * phi_crys
