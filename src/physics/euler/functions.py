@@ -1072,7 +1072,7 @@ class CouplingBC(BCWeakRiemann):
 	bstate (CouplingBC.LocalState): Local state data object
 	'''
 
-	@dataclass
+	# @dataclass
 	class LocalState:
 		''' Data namespace for states at a point in the boundary sequence'''
 		U: np.array = np.array(np.nan)       # State in native domain

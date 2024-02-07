@@ -87,7 +87,11 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.PressureOutlet1D : mpvpT_fcns.PressureOutlet1D,
 			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
 			BCType.MassFluxInlet1D: mpvpT_fcns.MassFluxInlet1D,
+			BCType.PressureStableLinearizedInlet1D: mpvpT_fcns.PressureStableLinearizedInlet1D,
+			BCType.PressureStableLinearizedInlet1D_genericFunc: mpvpT_fcns.PressureStableLinearizedInlet1D_genericFunc,
 			BCType.VelocityInlet1D: mpvpT_fcns.VelocityInlet1D,
+			BCType.VelocityInlet1D_neutralSinusoid: mpvpT_fcns.VelocityInlet1D_neutralSinusoid,
+			BCType.VelocityInlet1D_gaussianPulse: mpvpT_fcns.VelocityInlet1D_gaussianPulse,
 			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
 			BCType.LinearizedIsothermalOutflow2D: mpvpT_fcns.LinearizedIsothermalOutflow2D,
@@ -464,6 +468,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 			FcnType.SteadyState: mpvpT_fcns.SteadyState,
+			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -477,6 +482,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
 			SourceType.FragmentationTimescaleSource: mpvpT_fcns.FragmentationTimescaleSource,
+			SourceType.FragmentationTimescaleSourceSmoothed: mpvpT_fcns.FragmentationTimescaleSourceSmoothed,
 			SourceType.WaterInflowSource: mpvpT_fcns.WaterInflowSource,
 		})
 
