@@ -22,3 +22,14 @@ The 1-D steady-state implementation of the same governing equations is available
 ### Setup
 
 Python 3.9 is recommended. The latest version of `numpy` and `scipy` are recommended. See also the [Quail documentation](https://github.com/IhmeGroup/quail) for additional help setting up the code.
+
+With python, numpy and scipy installed, clone this repository. Then, install submodules (including the steady-solver for setting up the initial condition) by using
+```
+git submodule init compressible-conduit-steady
+git submodule update
+```
+to load the submodule. To update the local code on your computer, use
+```
+git pull origin main
+```
+to update the main branch. Furthermore, to update the submodule, navigate to the submodule (e.g., `src/compressible_conduit_steady`)and use the same command.
