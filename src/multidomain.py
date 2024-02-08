@@ -217,8 +217,12 @@ class Domain():
         if True in ["CylindricalGeometricSource" in str(source_term.__class__)
             for source_term in solver.physics.source_terms]:
           # Compute state averaged over the boundary (Polar)
-          # TODO: generalize boundary_measure to any r (here only [0,a])
-          boundary_measure = 0.5 * boundary_length**2
+          # e.g. for interval [0, a], boundary_measure is 0.5 * a**2
+          boundary_measure = np.einsum('ijm, jn, ij -> ',
+            np.linalg.norm(normals, axis=2, keepdims=True),
+            solver.bface_helpers.quad_wts,
+            x[:,:,0] # r coordinate
+            )
           data["bdry_face_state_averaged"] = np.expand_dims(
             np.einsum('ijm, ijk, jn, ij -> k',
             np.linalg.norm(normals, axis=2, keepdims=True),

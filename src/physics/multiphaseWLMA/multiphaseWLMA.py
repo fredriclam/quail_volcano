@@ -74,6 +74,8 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 			  physics.multiphasevpT.functions.SlipWall,
 			physics.multiphasevpT.functions.BCType.MultiphasevpT2D2D:
 				physics.multiphasevpT.functions.MultiphasevpT2D2D,
+			physics.multiphasevpT.functions.BCType.MultiphasevpT2D1D:
+				physics.multiphasevpT.functions.MultiphasevpT2D1D,
 			# Overriden WLMA functions
 			physics.multiphaseWLMA.functions.BCType.LinearizedImpedance2D:
 			  physics.multiphaseWLMA.functions.LinearizedImpedance2D,
@@ -390,8 +392,12 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 		d = {
 			physics.multiphaseWLMA.functions.FcnType.IsothermalAtmosphere:
 			  physics.multiphaseWLMA.functions.IsothermalAtmosphere,
-			physics.multiphaseWLMA.functions.FcnType.DebrisFlow:
-			  physics.multiphaseWLMA.functions.DebrisFlow,
+			physics.multiphaseWLMA.functions.FcnType.OverOceanIsothermalAtmosphere:
+			  physics.multiphaseWLMA.functions.OverOceanIsothermalAtmosphere,
+			physics.multiphaseWLMA.functions.FcnType.UnderwaterMagmaConduit:
+			  physics.multiphaseWLMA.functions.UnderwaterMagmaConduit,
+			# physics.multiphaseWLMA.functions.FcnType.DebrisFlow:
+			#   physics.multiphaseWLMA.functions.DebrisFlow,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -522,8 +528,12 @@ class MultiphaseWLMA1D(MultiphaseWLMA):
 
 		d = {
 			# Subatmospheric conduit hydrostatic
-			physics.multiphaseWLMA.functions.FcnType.IsothermalAtmosphere1D:
-			  physics.multiphaseWLMA.functions.IsothermalAtmosphere1D,
+			physics.multiphaseWLMA.functions.FcnType.IsothermalAtmosphere:
+			  physics.multiphaseWLMA.functions.IsothermalAtmosphere,
+			physics.multiphaseWLMA.functions.FcnType.OverOceanIsothermalAtmosphere:
+			  physics.multiphaseWLMA.functions.OverOceanIsothermalAtmosphere,
+			physics.multiphaseWLMA.functions.FcnType.UnderwaterMagmaConduit:
+			  physics.multiphaseWLMA.functions.UnderwaterMagmaConduit,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -541,6 +551,8 @@ class MultiphaseWLMA1D(MultiphaseWLMA):
 			  physics.multiphasevpT.functions.ExsolutionSource,
 			physics.multiphasevpT.functions.SourceType.FragmentationTimescaleSource:
 			  physics.multiphasevpT.functions.FragmentationTimescaleSource,
+			physics.multiphaseWLMA.functions.SourceType.WaterMassSource:
+			  physics.multiphaseWLMA.functions.WaterMassSource,
 		})
 
 		self.conv_num_flux_map.update({
@@ -608,6 +620,12 @@ class MultiphaseWLMA1D(MultiphaseWLMA):
 		arhoC  = Uq[:, :, 6:7]
 		arhoFm = Uq[:, :, 7:8]
 
+		''' Spin-up local pool '''
+		if not self.pool_ready:
+			# TODO: reduce jank
+			self.pool = mp.Pool(self.num_parallel_workers)
+			self.pool_ready = True
+
 		# Call mixture backend
 		rhow, p, T, sound_speed, volfracW = \
 			self.wlma(
@@ -625,10 +643,10 @@ class MultiphaseWLMA1D(MultiphaseWLMA):
 		# Compute flux of non-tracer mass quantities in all directions
 		F[:, :, self.get_mass_slice(),  0] = \
 			Uq[:, :, self.get_mass_slice()] * u
-		F[:, :, irhou,   0] = rho * u * u + p        # x-flux of x-momentum
-		F[:, :, ie,      0] = (e + p) * u    # Flux of energy in all directions
-		F[:, :, iarhoWt, 0] = arhoWt * u   # Flux of massWt in all directions
-		F[:, :, iarhoC,  0] = arhoC * u    # Flux of massC in all directions
-		F[:, :, iarhoFm, 0] = arhoFm * u    # Flux of massFm in all directions
+		F[:, :, irhou,   0:1] = rho * u * u + p        # x-flux of x-momentum
+		F[:, :, ie,      0:1] = (e + p) * u    # Flux of energy in all directions
+		F[:, :, iarhoWt, 0:1] = arhoWt * u   # Flux of massWt in all directions
+		F[:, :, iarhoC,  0:1] = arhoC * u    # Flux of massC in all directions
+		F[:, :, iarhoFm, 0:1] = arhoFm * u    # Flux of massFm in all directions
 
 		return F, ((u*u).squeeze(axis=2), sound_speed.squeeze(axis=2))
