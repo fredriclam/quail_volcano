@@ -70,7 +70,6 @@ class BCType(Enum):
 	MultiphasevpT2D2D = auto()
 	NonReflective1D = auto()
 	PressureOutlet1D = auto()
-	PressureOutlet2D = auto()
 	MassFluxInlet1D = auto()
 	PressureStableLinearizedInlet1D = auto()
 	PressureStableLinearizedInlet1D_genericFunc = auto()
@@ -305,7 +304,7 @@ class SteadyState(FcnBase):
 	''' 1D steady state. Calls submodule compressible-conduit-steady
 		(https://github.com/fredriclam/compressible-conduit-steady).
 	'''
-	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,
+	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,.
 		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
@@ -2082,11 +2081,6 @@ class PressureOutlet1D(BCWeakRiemann):
 			raise errors.NotPhysicalError
 		
 		return UqB
-
-
-class PressureOutlet2D(BCWeakPrescribed):
-	''' Planned content. '''
-	pass
 
 
 class LinearizedImpedance2D(BCWeakPrescribed):
@@ -3868,55 +3862,6 @@ class ExsolutionSource(SourceBase):
 			raise Exception("Unexpected physics num dimension in GravitySource.")
 		return jac
 
-	def compute_exsolution_source_sgradient(self, physics, Uq):
-		'''
-		Compute the state-gradient of the exsolution scalar source function.
-
-		Inputs:
-		-------
-			Uq: solution in each element evaluated at quadrature points [ne, nq, ns]
-
-		Outputs:
-		--------
-			array: state-gradient of the scalar source function [ne, nq, ns]
-		'''
-		if physics.NDIMS != 1:
-			raise NotImplementedError(f"compute_exsolution_source_sgradient called for" +
-																f"NDIMS=={self.NDIMS}, which is not 1.")
-		raise NotImplementedError(f"Gradient does not account for cystal content. If" +
-			" this is fine, remove the raise in compute_exsolution_source_sgradient. This" +
-			" gradient is used typically for implicit source timestepping.")
-		
-		# Extract variables
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
-		slarhoWv = physics.get_state_slice("pDensityWv")
-		slarhoM = physics.get_state_slice("pDensityM")
-		slarhoWt = physics.get_state_slice("pDensityWt")
-		arhoWv = Uq[:, :, slarhoWv]
-		arhoM = Uq[:, :, slarhoM]
-		arhoWt = Uq[:, :, slarhoWt]
-		p = physics.compute_additional_variable("Pressure", Uq, True)
-
-		# Compute source gradient
-		dSdU = np.zeros_like(Uq)
-		# Change in source term due to pressure-related solubility change
-		dSdU = (arhoM - arhoWt + arhoWv) \
-			* ExsolutionSource.get_eq_conc_deriv(physics, p) \
-			* physics.compute_pressure_sgradient(Uq)
-		# Chemical potential change
-		dSdU[:, :, slarhoWv] += (1.0+ExsolutionSource.get_eq_conc(physics, p))
-		dSdU[:, :, slarhoM] += ExsolutionSource.get_eq_conc(physics, p)
-		# Apply tau_d
-		dSdU /= -self.tau_d
-		# Remove vacuum-related spurious values at quadrature points
-		dSdU[np.where(np.logical_and(
-			arhoWt-arhoWv <= general.eps,
-			arhoM <= general.eps
-			))] = 0.0
-
-		return dSdU
-
 
 class FragmentationTimescaleSourceSmoothed(SourceBase):
 	'''
@@ -4087,6 +4032,7 @@ and methods. Information specific to the corresponding child classes can
 be found below. These classes should correspond to the ConvNumFluxType 
 or DiffNumFluxType enum members above.
 '''
+
 class LaxFriedrichs1D(ConvNumFluxBase):
 	'''
 	Local Lax-Friedrichs flux function.

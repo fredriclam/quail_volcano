@@ -58,9 +58,9 @@ class MultiphasevpT(base.PhysicsBase):
 		5. mass per total volume, water, dissolved
 		6. mass of crystals per total volume (crystallinity)
 		7. mass of fragmented magma per total volume (11/28/2022 Update)
-	where the last states after the line are passive tracers for the conservation
-	equations (pressure and sound speed are not dependent on these states), though
-	these tracer states can enter in the source term.
+	where the last states after the line are essentially passive tracers for the
+	conservation equations (pressure and sound speed are not dependent on these
+	states), though these tracer states can enter in the source term.
 
 	Abstract class. Inherited by MultiphasevpT1D and MultiphasevpT2D.
 	'''
@@ -81,11 +81,8 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.MultiphasevpT2D2D: mpvpT_fcns.MultiphasevpT2D2D,
 			BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 			BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
-			BCType.MultiphasevpT2D1DCylindrical: mpvpT_fcns.MultiphasevpT2D1DCylindrical,
-			BCType.MultiphasevpT2D2DCylindrical: mpvpT_fcns.MultiphasevpT2D2DCylindrical,
 			BCType.NonReflective1D : mpvpT_fcns.NonReflective1D,
 			BCType.PressureOutlet1D : mpvpT_fcns.PressureOutlet1D,
-			BCType.PressureOutlet2D : mpvpT_fcns.PressureOutlet2D,
 			BCType.MassFluxInlet1D: mpvpT_fcns.MassFluxInlet1D,
 			BCType.PressureStableLinearizedInlet1D: mpvpT_fcns.PressureStableLinearizedInlet1D,
 			BCType.PressureStableLinearizedInlet1D_genericFunc: mpvpT_fcns.PressureStableLinearizedInlet1D_genericFunc,
@@ -165,11 +162,13 @@ class MultiphasevpT(base.PhysicsBase):
 		Velocity = "|u|"
 		XVelocity = "u"
 		YVelocity = "v"
+		# Intermediate variables to simplify eigensystem
 		Psi1 = "Psi1" # Thermodynamic parameter (liquid-related)
 		beta = "beta" # Thermodynamic parameter
 		pi1 = "pi1"   # Thermodynamic parameter (Psi1 * Gas1-related quantity)
 		pi2 = "pi2"   # Thermodynamic parameter (Psi1 * Gas2-related quantity)
 		pi3 = "pi3"   # Thermodynamic parameter (Psi1 * Liquid-related quantity)
+		# Thermodynamic quantities
 		Enthalpy = "Enthalpy" # Enthalpy *excluding* kinetic energy contribution
 		Gamma = "Gamma"       # Pseudogas Gamma (mixture heat capacity ratio)
 		phi = "phi"                   # Sum of gas volume fractions
@@ -196,7 +195,7 @@ class MultiphasevpT(base.PhysicsBase):
 		'''
 		if flag_non_physical:
 			if np.any(arhoA < 0.) or np.any(arhoWv < 0.) or np.any(arhoM < 0.) \
-				 or np.any(arhoWt < 0.): # or np.any(arhoC < 0.):
+				 or np.any(arhoWt < 0.):
 				raise errors.NotPhysicalError
 
 		''' Nested functions for common quantities 
@@ -403,7 +402,7 @@ class MultiphasevpT(base.PhysicsBase):
 	
 	def compute_phi_sgradient(self, Uq):
 		'''
-		Compute the state-gradient of porosity phi.
+		Compute the gradient of porosity phi with respect to the state variables.
 		This is needed for source gradients (for backward stepping of sources
 		involving volume-fraction-based fragmentation criteria).
 
@@ -449,8 +448,8 @@ class MultiphasevpT(base.PhysicsBase):
 		dphidU[:, :, slmom] = -coeff * (Gamma-1) * u
 		dphidU[:, :, sle] = coeff * (Gamma-1)
 
-		# # Multiply with dU/dx for spatial gradient (function of grad_Uq)
-		# dphidx = np.einsum('ijk, ijkl -> ijl', dphidU, grad_Uq)
+		# N. B. Multiply with dU/dx for spatial gradient (function of grad_Uq)
+		#   dphidx = np.einsum('ijk, ijkl -> ijl', dphidU, grad_Uq)
 		return dphidU
 
 class MultiphasevpT1D(MultiphasevpT):
@@ -476,7 +475,6 @@ class MultiphasevpT1D(MultiphasevpT):
 		self.BC_fcn_map.update(d)
 
 		self.source_map.update({
-			# SourceType.Exsolution: mpvpT_fcns.Exsolution,
 			SourceType.FrictionVolFracVariableMu: mpvpT_fcns.FrictionVolFracVariableMu,
 			SourceType.FrictionVolFracConstMu: mpvpT_fcns.FrictionVolFracConstMu,
 			SourceType.GravitySource: mpvpT_fcns.GravitySource,
@@ -527,7 +525,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		mass_indices = [self.get_state_index("pDensityA"),
 										self.get_state_index("pDensityWv"),
 										self.get_state_index("pDensityM")]
-		# TODO: implement for non-contiguous states
+		# TODO: suggestion: implement for non-contiguous states
 		return slice(np.min(mass_indices), np.min(mass_indices)+len(mass_indices))
 
 	def get_momentum_slice(self):
@@ -536,7 +534,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		return smom
 
 	def get_conv_flux_interior(self, Uq):
-		# Rider check for correct inverse eigenvector matrix
+		# Uncomment to check for correct inverse eigenvector matrix
 		# 1. L * R == I
 		# print(np.abs(np.einsum("ijkl,ijlm->ijkm",
 		# 	self.get_eigenvectors_L(np.tile(Uq,(1,1,1))),
@@ -564,12 +562,9 @@ class MultiphasevpT1D(MultiphasevpT):
 			self)
 		gas_volfrac = atomics.gas_volfrac(Uq[:, :, self.get_mass_slice()], T, self)
 		p = atomics.pressure(Uq[:, :, self.get_mass_slice()], T, gas_volfrac, self)
-		# p = self.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
 		u = mom / rho
-		# u2 = np.sum(mom**2, axis=2, keepdims=True) / np.power(rho, 2.)
 		
 		# Construct physical flux
-		# Set F (shape ne, nq, ns, nd) = Uq (shape ne, nq, ns) 
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
 			self.get_state_indices()
 		F = np.repeat(Uq[...,np.newaxis], self.NDIMS, axis=-1)
@@ -585,8 +580,6 @@ class MultiphasevpT1D(MultiphasevpT):
 		a = atomics.sound_speed(
 			atomics.Gamma(Uq[:, :, self.get_mass_slice()], self),
 			p, rho, gas_volfrac, self)
-		# a = self.compute_additional_variable("SoundSpeed", Uq, True)
-		# a = np.squeeze(a, axis=2)
 
 		return F, ((u*u).squeeze(axis=2), a.squeeze(axis=2))
 
@@ -610,84 +603,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		# Skip legacy code and reroute to analytic eigenvector matrix
 		return self.get_eigenvectors_R(U_bar), self.get_eigenvectors_L(U_bar)
 
-		# Unpack
-		ne = U_bar.shape[0]
-		ns = self.NUM_STATE_VARS
-
-		print("Warning: vpT eigenvector in get_conv_eigenvectors not fully implemented.")
-		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, _ = self.get_state_indices()
-
-		arhoA  = U_bar[:, :, iarhoA]
-		arhoWv = U_bar[:, :, iarhoWv]
-		arhoM  = U_bar[:, :, iarhoM]
-		rhou   = U_bar[:, :, irhou]
-		e      = U_bar[:, :, ie]
-
-		rho = arhoA + arhoWv + arhoM
-		u = rhou / rho
-		u2 = u**2
-		p = np.squeeze(self.compute_additional_variable("Pressure", U_bar, True), axis=2)
-		H = (e + p)/rho
-		a = np.squeeze(self.compute_additional_variable("SoundSpeed", U_bar, True), axis=2)
-		y1 = arhoA/rho
-		y2 = arhoWv/rho
-		y3 = arhoM/rho
-		pi1 = np.squeeze(self.compute_additional_variable("pi1", U_bar, True), axis=2)
-		pi2 = np.squeeze(self.compute_additional_variable("pi2", U_bar, True), axis=2)
-		pi3 = np.squeeze(self.compute_additional_variable("pi3", U_bar, True), axis=2)
-		beta = np.squeeze(self.compute_additional_variable("beta", U_bar, True), axis=2)
-
-		# Check
-		# Gamma = np.squeeze(self.compute_additional_variable("Gamma", U_bar, True), axis=2)
-		# Psi1 = np.squeeze(self.compute_additional_variable("Psi1", U_bar, True), axis=2)
-		# H - 0.5*u2 - Gamma * (e/rho - 0.5*u2) - (y1*pi1+y2*pi2+y3*pi3)/Psi1
-
-		# Allocate the right and left eigenvectors
-		right_eigen = np.zeros([ne, 1, ns, ns])
-		left_eigen = np.zeros([ne, 1, ns, ns])
-
-		if False:
-			''' Legacy, without tracer states '''
-
-		# # Calculate the right and left eigenvectors
-		right_eigen[:, :, iarhoA,  iarhoA]  = pi2 - pi3
-		right_eigen[:, :, iarhoWv, iarhoA]  = pi3 - pi1
-		right_eigen[:, :, iarhoM,  iarhoA]  = pi1 - pi2
-		right_eigen[:, :, irhou,   iarhoA]  = 0.
-		right_eigen[:, :, ie,      iarhoA]  = 0.
-		right_eigen[:, :, iarhoA,  iarhoWv] = -pi2
-		right_eigen[:, :, iarhoWv, iarhoWv] = pi1
-		right_eigen[:, :, iarhoM,  iarhoWv] = 0.
-		right_eigen[:, :, irhou,   iarhoWv] = u*(pi1 - pi2)
-		right_eigen[:, :, ie,      iarhoWv] = 0.5*u2*(pi1 - pi2)
-		right_eigen[:, :, iarhoA,  iarhoM]  = -2*beta
-		right_eigen[:, :, iarhoWv, iarhoM]  = 2*beta
-		right_eigen[:, :, iarhoM,  iarhoM]  = 0.
-		right_eigen[:, :, irhou,   iarhoM]  = 0.
-		right_eigen[:, :, ie,      iarhoM]  = pi1 - pi2
-		right_eigen[:, :, iarhoA,  irhou]   = y1
-		right_eigen[:, :, iarhoWv, irhou]   = y2
-		right_eigen[:, :, iarhoM,  irhou]   = y3
-		right_eigen[:, :, irhou,   irhou]   = u - a
-		right_eigen[:, :, ie,      irhou]   = H - a*u
-		right_eigen[:, :, iarhoA,  ie]      = y1
-		right_eigen[:, :, iarhoWv, ie]      = y2
-		right_eigen[:, :, iarhoM,  ie]      = y3
-		right_eigen[:, :, irhou,   ie]      = u + a
-		right_eigen[:, :, ie,      ie]      = H + a*u
-
-		# Try permuting
-		# right_eigen[:, :, :, :] = right_eigen[:, :, :, [irhou, ie, iarhoA, iarhoWv, iarhoM]]
-
-		# left_eigen = np.linalg.inv(right_eigen)
-		# Can uncomment line below to test l dot r = kronecker delta
-		# test = np.einsum('elij,eljk->elik', left_eigen, right_eigen)
-
-		return right_eigen
-		return right_eigen, left_eigen # [ne, 1, ns, ns]
-
 	def get_essential_eigenvectors_R(self, U):
-		# TODO: add NDIMS_ess to physics
 		ns_ess = self.NDIMS + 4
 
 		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, _ = self.get_state_indices()
@@ -740,7 +656,6 @@ class MultiphasevpT1D(MultiphasevpT):
 		return right_eigen
 
 	def get_essential_eigenvectors_L(self, U):
-		# TODO: add NDIMS_ess to physics
 		ns_ess = self.NDIMS + 4
 
 		iarhoA, iarhoWv, iarhoM, irhou, ie, _, _, _ = self.get_state_indices()
@@ -810,7 +725,6 @@ class MultiphasevpT1D(MultiphasevpT):
 		return left_eigen
 
 	def get_eigenvectors_R(self, U):
-		# TODO: add NDIMS_ess to physics
 		ns_ess = self.NDIMS + 4
 		ns = self.NUM_STATE_VARS
 		# Number of columns for eigenvalue u in essential system
@@ -835,7 +749,6 @@ class MultiphasevpT1D(MultiphasevpT):
 		return right_eigen
 
 	def get_eigenvectors_L(self, U):
-		# TODO: add NDIMS_ess to physics
 		ns_ess = self.NDIMS + 4
 		ns = self.NUM_STATE_VARS
 		# Number of columns for eigenvalue u in essential system
@@ -911,9 +824,6 @@ class MultiphasevpT2D(MultiphasevpT):
 			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
 			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
 			FcnType.NohProblem: mpvpT_fcns.NohProblem,
-			# euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
-			# euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
-			# euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
 		}
 
 		self.IC_fcn_map.update(d)
