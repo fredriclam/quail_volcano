@@ -272,6 +272,7 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 			# psgrad = physics.compute_pressure_sgradient(Uq)
 			pgrad = np.einsum('ijk, ijkl -> ijl', psgrad, grad_Uq)
 
+			# pgradhydro = 0 * -9.8 * arhoVec.sum(axis=-1, keepdims=True) # Turn off for gravity-free problems
 			pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
 			f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:,:,0] + 1e-12)
 

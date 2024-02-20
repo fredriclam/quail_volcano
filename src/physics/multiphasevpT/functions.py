@@ -304,7 +304,7 @@ class SteadyState(FcnBase):
 	''' 1D steady state. Calls submodule compressible-conduit-steady
 		(https://github.com/fredriclam/compressible-conduit-steady).
 	'''
-	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,.
+	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,
 		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
