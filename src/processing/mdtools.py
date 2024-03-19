@@ -3,6 +3,7 @@ import copy
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from matplotlib.patches import Polygon
 import numpy as np
 import processing.readwritedatafiles as readwritedatafiles
 import processing.plot as plot
@@ -73,6 +74,77 @@ def plot_mean(x, q, clims):
 		plt.gca().add_patch(pp)
 	plt.axis("auto")
 	plt.axis("equal")
+
+# DEV: Piecewise plot
+def plot_detailed(x_tri, q, clims, cmap=None, order=1, solver=None,
+									xview:tuple=None, yview:tuple=None,
+									colorbar_label:str="value", n_samples:int=3, ax=None):
+	''' Create plot with higher sampling in element '''
+
+	if solver is not None:
+		# Retrieve x nodes from solver
+		x_tri = solver.mesh.node_coords[solver.mesh.elem_to_node_IDs]
+	# Retrieve cmap if not provided
+	cmap = plt.get_cmap() if cmap is None else cmap
+
+	# Restrict draw to elements partially in viewport
+	if xview is None:
+		xview = (x_tri[...,0].min(), x_tri[...,0].max())
+	if yview is None:
+		yview = (x_tri[...,1].min(), x_tri[...,1].max())
+	
+	if ax is None:
+		ax = plt.gca()
+	
+	x_in_viewport = (x_tri[:,:,0:1] >= xview[0]) & (x_tri[:,:,0:1] <= xview[1])
+	y_in_viewport = (x_tri[:,:,1:2] >= yview[0]) & (x_tri[:,:,1:2] <= yview[1])
+	indices = np.where(np.any(x_in_viewport & y_in_viewport, axis=1))[0]
+
+	if order != 1:
+		raise NotImplementedError("Only implemented for order 1.")
+
+	for i in indices:
+		xmin, xmax = x_tri[i, :, 0].min(), x_tri[i, :, 0].max()
+		ymin, ymax = x_tri[i,:, 1].min(), x_tri[i, :, 1].max()
+		# Sample grid points xbox in image order (x as normal, y downward)
+		xbox = np.stack(np.meshgrid(
+			np.linspace(xmin, xmax, n_samples),
+			np.linspace(ymax, ymin, n_samples), indexing="xy"),
+			axis=-1)
+		# Apply affine mapping from physical to reference coordinates
+		_a00 = x_tri[:,1,0] - x_tri[:,0,0]
+		_a01 = x_tri[:,2,0] - x_tri[:,0,0]
+		_a10 = x_tri[:,1,1] - x_tri[:,0,1]
+		_a11 = x_tri[:,2,1] - x_tri[:,0,1]
+		ref_mapping = np.array([[_a11, -_a01], [-_a10, _a00]]) / (_a00 * _a11 - _a01 * _a10)
+		ref_coords = np.einsum("ij, ...j -> ...i", ref_mapping[...,i], xbox - x_tri[i,0,:])[...,np.newaxis]
+		# Evaluate basis function
+		f = (q[i,0,:] * (1 - ref_coords[...,0,:] - ref_coords[...,1,:])
+		+ q[i,1,:] * (ref_coords[...,0,:])
+		+ q[i,2,:] * (ref_coords[...,1,:]))
+
+		img = ax.imshow(f,
+										extent=[xmin, xmax, ymin, ymax],
+										vmin=clims[0],
+										vmax=clims[1],
+										interpolation='bilinear',
+										cmap=cmap)
+		polygon = Polygon(x_tri[i, :, :], closed=True,
+											facecolor='none',
+											edgecolor='none')
+		ax.add_patch(polygon)
+		img.set_clip_path(polygon)
+
+	plt.axis("auto")
+	plt.axis("equal")
+
+	sm = plt.cm.ScalarMappable(
+		norm=matplotlib.colors.Normalize(vmin=clims[0], vmax=clims[1]),
+		cmap=plt.get_cmap())
+	cb = plt.colorbar(sm)
+	cb.set_label(colorbar_label)
+
+	return (ax, cb)
 
 def plot_mean1D(x, q, clims, xscale=1.0, xshift=0.0):
 	''' Create very cheap plot '''

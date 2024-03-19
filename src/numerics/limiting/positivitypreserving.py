@@ -418,7 +418,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 								self.var_name2: physics.compute_variable(self.var_name2, U_bar),
 								self.var_name3: physics.compute_variable(self.var_name3, U_bar),
 								self.var_nameT1: physics.compute_variable(self.var_nameT1, U_bar),
-								self.var_nameT2: physics.compute_variable(self.var_nameT2, U_bar),
+								# self.var_nameT2: physics.compute_variable(self.var_nameT2, U_bar),
 								}
 		p_bar = physics.compute_variable(self.var_name4, U_bar)
 
@@ -503,7 +503,6 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				# 	mix_rho_bar - quant_elem_faces, POS_TOL)
 				# theta = np.abs((mix_rho_bar - POS_TOL)/denom)
 
-				assert solver.order <= 1, "For higher order, implement piecewise parabola extreme check for PPL"
 				# Compute minimum within element (works for order == 1)
 				# elt_min = Uc[...,0:3].sum(axis=-1, keepdims=True).min(axis=1, keepdims=True)
 				# denom = np.where(mix_rho_bar - elt_min != 0,
@@ -518,10 +517,84 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				# 	elt_mean = physics.compute_variable(_name, U_bar)
 				# 	denom = np.where(elt_mean - elt_min != 0, elt_mean - elt_min, POS_TOL)
 				# 	thetas[i] = np.abs((elt_mean - POS_TOL)/denom)
-				elt_min = Uc[...,0:3].min(axis=1, keepdims=True)
-				elt_mean = U_bar[...,0:3]
-				denom = np.where(elt_mean - elt_min != 0, elt_mean - elt_min, POS_TOL)
-				theta = np.abs((elt_mean - POS_TOL)/denom).min(axis=2, keepdims=True)
+
+				if solver.order == 0 or solver.order == 1 or solver.physics.NDIMS == 1:
+					elt_min = Uc.min(axis=1, keepdims=True)
+				elif solver.order == 2:
+					# Analytic QP solution for element minimum
+					# Compute first-order condition == linear system coefficients
+					A00 = 4*Uc[:,2,:] + 4*Uc[:,0,:] - 8*Uc[:,1,:]
+					A01 = 4*Uc[:,0,:] - 4*Uc[:,3,:] - 4*Uc[:,1,:] + 4*Uc[:,4,:]
+					A10 = A01
+					A11 = 4*Uc[:,5,:] + 4*Uc[:,0,:] - 8*Uc[:,3,:]
+					b0 = Uc[:,2,:] + 3*Uc[:,0,:] - 4*Uc[:,1,:]
+					b1 = Uc[:,5,:] + 3*Uc[:,0,:] - 4*Uc[:,3,:]
+					# y = 0 edge
+					A_y0 = A00
+					b_y0 = b0
+					# x = 0 edge
+					A_x0 = A11
+					b_x0 = b1
+					# t = 0 edge
+					A_t0 = 4*Uc[:,2,:] - 8*Uc[:,4,:] + 4*Uc[:,5,:]
+					b_t0 = Uc[:,2,:] - 4*Uc[:,4,:] + 3*Uc[:,5,:]
+					# Allocate zeros for candidates points
+					#   with shape (n_elements, n_states, n_candidates=7, n_dims==2)
+					candidate_points = np.zeros((Uc.shape[0], Uc.shape[2], 7, 2))
+					# Compute 2D interior critical point
+					det = A00 * A11 - A01 * A10
+					np.divide(np.stack([A11 * b0 - A01 * b1, -A10 * b0 + A00 * b1], axis=-1),
+										det[...,np.newaxis],
+										out=candidate_points[:,:,0,:],
+										where=(~np.isclose(det[...,np.newaxis], 0)))
+					# Compute 1D boundary critical points
+					np.divide(np.stack([b_y0, 0*b_y0], axis=-1),
+										A_y0[...,np.newaxis],
+										out=candidate_points[:,:,1,:],
+										where=(~np.isclose(A_y0[...,np.newaxis], 0)))
+					np.divide(np.stack([0*b_x0, b_x0], axis=-1),
+										A_x0[...,np.newaxis],
+										out=candidate_points[:,:,2,:],
+										where=(~np.isclose(A_x0[...,np.newaxis], 0)))
+					np.divide(np.stack([b_t0, A_t0 - b_t0], axis=-1),
+										A_t0[...,np.newaxis],
+										out=candidate_points[:,:,3,:],
+										where=(~np.isclose(A_t0[...,np.newaxis], 0)))
+					# Include corner nodes
+					candidate_points[:,:,4,:] = np.array([0, 0])
+					candidate_points[:,:,5,:] = np.array([1, 0])
+					candidate_points[:,:,6,:] = np.array([0, 1])
+					# Restrict points to the triangle x >= 1, y >= 1, t = 1 - x - y >= 0
+					candidate_points = np.clip(candidate_points, 0, 1)
+					candidate_points[:,:,:,1] = np.minimum(candidate_points[:,:,:,1], 1 - candidate_points[:,:,:,0])
+
+					def eval_basis_at(x, coeffs):
+						''' Evaluate basis against coefficients for arbitrary x
+						      x: shape (ne, ns, ncandidates==7, ndims=2)
+									coeffs: shape (ne, nb==6, ns)
+						'''
+						_x = x[...,0]
+						_y = x[...,1]
+						_t = (1 - _x - _y)
+						# Multiply coefficients against coordinates, newaxis for every sample point (last axis of x)
+						return (coeffs[...,0,:,np.newaxis] * (_t * (2 * _t - 1))
+									+ coeffs[...,1,:,np.newaxis] * (4 * _x * _t)
+									+ coeffs[...,2,:,np.newaxis] * (_x * (2 * _x - 1))
+									+ coeffs[...,3,:,np.newaxis] * (4 * _y * _t)
+									+ coeffs[...,4,:,np.newaxis] * (4 * _x * _y)
+									+ coeffs[...,5,:,np.newaxis] * (_y * (2 * _y - 1)))
+					# Compute elementwise extrema(n_elements, 1, n_states)
+					# elt_max = basis_vec(candidate_points, Uc).max(axis=2)[:,np.newaxis,:]
+					elt_min = eval_basis_at(candidate_points, Uc).min(axis=2)[:,np.newaxis,:]
+
+				else:
+					assert solver.order <= 2, "For higher order, implement piecewise polynomial extreme check for PPL"
+				# Compute based on 2D: density variables, total energy density
+				_i = [0,1,2,5,6,7,8,]
+				denom = np.where(U_bar[...,_i] - elt_min[...,_i] != 0, U_bar[...,_i] - elt_min[...,_i], POS_TOL)
+				pos_tol_vec = POS_TOL * np.ones_like(denom)
+				pos_tol_vec[...,3] *= 1e6 # Energy scaling
+				theta = np.abs((U_bar[...,_i] - pos_tol_vec)/denom).min(axis=2, keepdims=True)
 					
 			# Pick strictest theta
 			theta1 = trunc(np.minimum(1., np.min(theta, axis=1, keepdims=True)))
@@ -541,6 +614,9 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			if basis.MODAL_OR_NODAL == general.ModalOrNodal.Nodal:
 				Uc[elem_IDs, :, 0:3] = theta1[elem_IDs] * Uc[elem_IDs, :, 0:3] \
 					+ (1.0 - theta1[elem_IDs]) * mix_rho_bar[elem_IDs,...] * y[elem_IDs,...]
+				# Energy and other densities
+				Uc[elem_IDs, :, 5:9] = theta1[elem_IDs] * Uc[elem_IDs, :, 5:9] \
+					+ (1.0 - theta1[elem_IDs]) * U_bar[elem_IDs, :, 5:9]
 			elif basis.MODAL_OR_NODAL == general.ModalOrNodal.Modal:
 				raise NotImplementedError("Mod for modal in vpT not implemented.")
 				irho = physics.get_state_index(var_name)
@@ -664,7 +740,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		if np.any(Uc[...,0:3] < 0.):
 			raise errors.NotPhysicalError("An essential mass variable is negative")
 		if np.any(Uc[...,5:6] < 0.):
-			# Energy
+			# Energy 
 			raise errors.NotPhysicalError("Total energy is negative")
 
 		return Uc # [ne, nq, ns]

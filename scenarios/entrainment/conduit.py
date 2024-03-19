@@ -61,9 +61,15 @@ SourceTerms = {'source1': {'Function': 'GravitySource', # Gravity
 }
 
 Output = {'AutoPostProcess': False,
- 'Prefix': 'ringfault_above_ocean_conduit3',              # Output filename
+#  'Prefix': 'ringfault_above_ocean_conduit4',              # Output filename
+ 'Prefix': 'ringfault_above_ocean_conduit4_1175plus',              # Output filename
  'WriteInitialSolution': True,
  'WriteInterval': 20,                                   # Output frequency (this many timesteps pass before file is written)
+}
+
+Restart = {
+	"File" : "ringfault_above_ocean_conduit4_1175.pkl",
+	"StartFromFileTime" : True
 }
 
 # Define a traction function

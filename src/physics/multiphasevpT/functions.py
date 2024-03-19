@@ -84,6 +84,7 @@ class BCType(Enum):
 	EntropyPressureInlet1D = auto()
 	NohInlet = auto()
 	LinearizedIsothermalOutflow2D = auto()
+	ChokedInlet2D = auto()
 
 
 class SourceType(Enum):
@@ -697,78 +698,53 @@ above.
 
 class SlipWall(BCWeakPrescribed):
 	'''
-	This class corresponds to a slip wall. See documentation for more
-	details.
+	This class corresponds to a slip wall.
+	Optionally, a stagnation correction is applied where the specific energy,
+	entropy are conserved. This is specific to the multiphasevpT physics model.
+	Q is the maximum density ratio between the numerical state and the boundary
+	state. The stagnation density is limited to (1/Q, Q) times the interior
+	density.
 	'''
+	def __init__(self, use_stagnation_correction:bool=False, Q:float=10):
+		self.use_stagnation_correction = use_stagnation_correction
+		# Stagnation correction density limiting factor
+		self.Q = Q
+
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		smom = physics.get_momentum_slice()
+		UqB = UqI.copy()
 
 		# Unit normals
 		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
 
 		# Remove momentum contribution in normal direction from boundary
 		# state
-		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
-		UqB = UqI.copy()
 		UqB[:, :, smom] -= rhoveln * n_hat
 
-		return UqB
-		
-		# Ideal gas HACK: TODO: correction for
-		if np.any(UqI[...,1] + UqI[...,2] > 0):
-			raise NotImplementedError("Remove wall correction for non-ideal gas in functions.py")
-		gamma = physics.Gas[0]["gamma"]
+		if self.use_stagnation_correction:
+			# Compute dependent variables
+			arhoVec = UqI[:, :, 0:3]
+			T = atomics.temperature(arhoVec,
+				UqI[:, :, smom],
+				UqI[:, :, physics.get_state_slice("Energy")], physics)
+			phi = atomics.gas_volfrac(arhoVec, T, physics)
+			p = atomics.pressure(arhoVec, T, phi, physics)
+			rho = arhoVec.sum(axis=-1, keepdims=True)
+			y = arhoVec / rho
+			Gamma = atomics.Gamma(arhoVec, physics)
+			# rho^2 v_t^2
+			rhovelt2 = np.sum(UqI[:, :, smom] * UqI[:, :, smom], axis=2, keepdims=True) - rhoveln * rhoveln
+			# Energy, transverse kinetic
+			ekt = 0.5 * rhovelt2 /rho
 
-		# HACK to turn off enforcement on horizontal walls
-		# if np.abs(n_hat[0,0,0]) < np.abs(n_hat[0,0,1]):
-			# return UqB
-
-		if False:
-			# Compute isentropic deceleration quantity
-			rho = UqI[:, :, 0]
-			p = physics.compute_variable("Pressure", UqI)
-			Z = 0.5 * (gamma - 1) * rhoveln.squeeze(axis=2)**2.0 / rho / p.squeeze(axis=2)
-
-			# Compute density factor (density_new == densityFactor * density_old)
-			# Exponent 1/(gamma - 1) applies for specific energy conservation and
-			# 1/gamma applies for volumetric energy conservation
-			densityFactor = (1 + Z) ** (1/(gamma - 1))
-			# Prevent infinite compression for strong shock limit
-			densityFactor = np.clip(densityFactor, None, 2e2)
-			# Compute isentropically compressed mass density
-			UqB[:, :, 0] *= densityFactor
-			# Compute volumetric energy due to compressed mass density
-			UqB[:, :, 5] *= densityFactor
-		else:
-			''' Rankine-Hugoniot boundary construction '''
-			# Compute using inward normal
-			rhoveln *= -1
-			rhoveln = np.squeeze(rhoveln, axis=-1)
-			# Get nonzero sign of velocity
-			signum = np.sign(rhoveln)
-			signum[rhoveln == 0] = -1
-			# Define shock speed function
-			shock_speed = lambda rho, u, p, e: (3-gamma)/4*u - signum * np.sqrt(
-				((gamma-3)/4 * u)**2 + (gamma-1) * (e+p)/rho
-			)
-			# Compute density from air only
-			rho = UqI[:,:,0]
-			u = rhoveln / rho
-			e = UqI[:,:,5]
-			# Compute internal energy, removing all components
-			e_int = e - 0.5 * np.linalg.norm(UqI[:,:,3:5], axis=-1)**2 / rho
-			p = (gamma - 1) * e_int
-			c = np.sqrt(gamma*p/rho)
-			# Compute 1D projected shock speed
-			# S = shock_speed(rho, u, p, e_int + 0.5*rho*u*u)
-			S = shock_speed(rho, u, p, e)
-			# Compute and set target states
-			hat_rho = rho - rhoveln / S
-			hat_p = p + rhoveln * (u - S)
-			hat_e = e - u / S * (e + p)
-			hat_u = 0
-			UqB[:,:,0] = hat_rho
-			UqB[:,:,5] = hat_e
+			# Compute stagnation state, conserving mass-specific energy
+			# This approximates the enthalpy calculation for dilute (low particle vol frac), Gamma ~ 1 mixtures
+			T_stag = (UqI[:, :, physics.get_state_slice("Energy")] - ekt) / atomics.c_v(arhoVec, physics)
+			p_stag = p * (T_stag / T) ** (Gamma/(Gamma-1))
+			rho_stag = atomics.mixture_density(y, p_stag, T_stag, physics)
+			# Apply limited density rescaling to non-momentum variables
+			UqB[:,:,[0,1,2,5,6,7,8]] *= np.clip(rho_stag / rho, 1.0/self.Q, self.Q)
 
 		return UqB
 
@@ -3340,6 +3316,54 @@ class NohInlet(BCWeakRiemann):
 		UqB[:, :, iarhoWt] = 0.0
 		UqB[:, :, iarhoC]  = 0.0
 		UqB[:, :, iarhoFm]  = 0.0
+
+		return UqB
+
+
+class ChokedInlet2D(BCWeakPrescribed):
+	'''
+	Inlet conditions for exactly sonic flow.
+	'''
+
+	def __init__(self, p_in=1e5, T_in=1000, yWv=0.03, yA=1e-7, yWt=0.04,
+							yF=1-1e-7, yC=1-1e-7):
+		self.p_in = p_in
+		self.T_in = T_in
+		self.yWv = yWv
+		self.yA = yA
+		self.yM = 1.0 - (self.yWv + self.yA)
+		self.yWt = yWt
+		self.yF = yF
+		self.yC = yC
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):		
+		# Package boundary state
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
+		UqB = np.empty_like(UqI)
+		# Store mass fractions
+		UqB[:,:,0] = self.yA
+		UqB[:,:,1] = self.yWv
+		UqB[:,:,2] = self.yM
+		# Compute intermediates
+		p = self.p_in*np.ones_like(UqB[:,:,3:4])
+		T = self.T_in*np.ones_like(UqB[:,:,3:4])
+		rho = 1.0 / atomics.mixture_spec_vol(UqB[:,:,0:3], p, T, physics)
+		# Update mass fractions to partial densities
+		UqB[:,:,0:3] *= rho
+		# Compute intermediates
+		phi = atomics.gas_volfrac(UqB[:,:,0:3], T, physics)
+		Gamma = atomics.Gamma(UqB[:,:,0:3], physics)
+		c = atomics.sound_speed(Gamma, p, rho, phi, physics)
+		rho_c_v = atomics.c_v(UqB[:,:,0:3], physics)
+		vel_y = 1.5*c
+		# Fill in conserved variables
+		UqB[:, :, 3:4] = 0.0
+		UqB[:, :, 4:5] = rho * vel_y # Vertical momentum only
+		UqB[:, :, 5:6] = rho_c_v * T + 0.5 * rho * vel_y * vel_y
+		UqB[:, :, 6:7] = self.yWt * rho
+		UqB[:, :, 7:8] = self.yC * rho
+		UqB[:, :, 8:9] = self.yF * rho
 
 		return UqB
 

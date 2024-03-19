@@ -70,6 +70,7 @@ class SourceType(Enum):
 	''' SourceTypes specific to multiphaseWLMA (see also
 	physics.multiphasevpT.functions). '''
 	WaterMassSource = auto()
+	WaterEntrainmentSource = auto()
 	MagmaMassSource = auto()
 	# FrictionVolFracVariableMu = auto()
 	# FrictionVolFracConstMu = auto()
@@ -1708,6 +1709,69 @@ class WaterMassSource(SourceBase):
 	def __init__(self,
 							 mass_rate=0.0,
 							 specific_energy=109388.56885035457,
+							 injection_depth=-350,
+							 gaussian_width=50,
+							 conduit_radius=50,
+							 **kwargs):
+		super().__init__(kwargs)
+		self.mass_rate = mass_rate
+		self.specific_energy = specific_energy
+		self.injection_depth = injection_depth
+		self.gaussian_width = gaussian_width
+		self.conduit_radius = conduit_radius
+		self._sqrtpi = np.sqrt(np.pi)
+
+	def scaled_gaussian(self, x):
+		''' Returns the scaled and shifted gaussian with unit integral. '''
+		_t = (x - self.injection_depth) / self.gaussian_width
+		return np.exp(-_t*_t) / (self._sqrtpi * self.gaussian_width)
+
+	def get_source(self, physics, Uq, x, t):
+		S = np.zeros_like(Uq)
+		# Compute mixture density
+		state_indices = physics.get_state_indices()
+		if len(state_indices) == 8:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+					physics.get_state_indices()
+		elif len(state_indices) == 9:
+			iarhoA, iarhoWv, iarhoM, imomx, imomy, ie, iarhoWt, iarhoC, iarhoFm = \
+					physics.get_state_indices()
+		else:
+			raise ValueError("Unknown number of state_indices; can't unpack state_indices")
+		# Get mass-specific energy from input
+		specific_energy = self.specific_energy
+		# Compute partial density rate scaling
+		partial_density_rate = self.mass_rate / (
+			np.pi * self.conduit_radius * self.conduit_radius)
+		# Compute partial density source using last spatial coordinate (x in 1D, y in 2D)
+		partial_density_source = partial_density_rate * self.scaled_gaussian(x[:,:,-1:])
+		# Assemble and return source vector
+		S[:,:,iarhoWv:iarhoWv+1] = partial_density_source
+		S[:,:,iarhoWt:iarhoWt+1] = partial_density_source
+		S[:,:,ie:ie+1]=  partial_density_source * specific_energy
+		return S # [ne, nq, ns]
+
+class WaterEntrainmentSource(SourceBase):
+	'''
+	Added water mass source that scalings with quasi-1D velocity.
+		entrainment_coeff: coefficient of proportionality mass rate per velocity
+		specific_energy: sets prescribed specific energy (J/kg) of influx water
+
+	Note: the density rate is related to the total mass rate by
+		mass_rate = int (partial_density_rate * pi * conduit_radius**2) dz,
+	meaning that int (partial_density_rate) dz = mass_rate / (pi * radius**2).
+
+	Default specific energy is computed for:
+	  p = 4.0000e7 Pa, T = 300 K
+	giving
+	  rho = 1013.7496496496497 kg/m^3
+	and
+	  e = 109388.56885035457 J/kg,
+	where e is relative to the energy of pure liquid at the triple point.
+	'''
+	def __init__(self,
+							 mass_rate=0.0,
+							 specific_energy=109388.56885035457, ##### TODO: better treatment for this
 							 injection_depth=-350,
 							 gaussian_width=50,
 							 conduit_radius=50,

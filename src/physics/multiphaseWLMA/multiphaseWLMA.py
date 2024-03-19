@@ -411,6 +411,8 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 			  physics.multiphasevpT.functions.CylindricalGeometricSource,
 			physics.multiphaseWLMA.functions.SourceType.WaterMassSource:
 			  physics.multiphaseWLMA.functions.WaterMassSource,
+			physics.multiphaseWLMA.functions.SourceType.WaterEntrainmentSource:
+			  physics.multiphaseWLMA.functions.WaterEntrainmentSource,
 			physics.multiphaseWLMA.functions.SourceType.MagmaMassSource:
 			  physics.multiphaseWLMA.functions.MagmaMassSource,
 		})

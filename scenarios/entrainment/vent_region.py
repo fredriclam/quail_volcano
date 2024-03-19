@@ -2,8 +2,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 360, # 3 for msh1, msh2 for ringfault; 30 for msh3
-	"NumTimeSteps" : 240000, #FE:48000, # 12000 for msh1 msh2 msh3 # 20 m mesh? 20/1500 = 0.01333 s =1/(75) Hz
+	"FinalTime" : 6*60, # 3 for msh1, msh2 for ringfault; 30 for msh3
+	"NumTimeSteps" : 6*20000, #FE:48000, # 12000 for msh1 msh2 msh3 # 20 m mesh? 20/1500 = 0.01333 s =1/(75) Hz
 	"TimeStepper" : "FE", #"FE", #"RK3SR",
 }
 
@@ -35,7 +35,8 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "ringfault_above_ocean_vent_region3",
+	# "Prefix" : "ringfault_above_ocean_vent_region4",
+	"Prefix" : "ringfault_above_ocean_vent_region4_1175plus",
 	# "Prefix" : "deep_submarine_crater10blast_atm1", # AGU checkpoint (crater blast)
 	# "Prefix" : "submarine_proto_WLMA12_atm1",
 	"WriteInterval" : 20, # 5
@@ -65,8 +66,12 @@ tracer_frac_w, tracer_frac_m separately, new WLMA y and p clipping
 20000 steps, near-axis refinement (fault found near axis)
   crash @ 1136
 TODO: 1e9 to 1e8 pressure clip
-kernel fix: continue iteration to 1e-24 precision, remove water when estimated
+kernel fix: continue iteration to 1e-26 precision, remove water when estimated
 volfrac _alphaw_init < 1e-4, add new guesses
+
+ringfault_above_ocean_vent_region3
+kernel: 1e-24 precision, remove new guesses except 1e-7 volfracW
+20000 steps / 60s
 
 '''
 
@@ -108,10 +113,10 @@ SourceTerms = {
 	# }
 }
 
-# Restart = {
-# 	"File" : "___.pkl",
-# 	"StartFromFileTime" : True
-# }
+Restart = {
+	"File" : "ringfault_above_ocean_vent_region4_1175.pkl",
+	"StartFromFileTime" : True
+}
 
 # Tracer frac calculation
 # 3 kPa saturation (25degC) @ 80%RH: 2.4 kPa water partial pressure
