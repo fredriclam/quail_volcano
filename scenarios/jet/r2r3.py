@@ -1,26 +1,23 @@
 import numpy as np
+import run_globals
 
 Numerics = {
-	"SolutionOrder" : 1,
+	"SolutionOrder" : run_globals.ElementOrder,
 	"SolutionBasis" : "LagrangeTri",
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
 	"ArtificialViscosity" : True,
-		# Flag to use artificial viscosity
-		# If true, artificial visocity will be added
-	"AVParameter" : 30,#5e3
-		# Parameter in the artificial viscosity term. A larger value will
-		# increase the amount of AV added, giving a smoother solution.
+	"AVParameter" : 30,
 	'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
 Mesh = {
-	"File" : "../meshes/conical1_3.msh",
+	"File" : f"../meshes/{run_globals.mesh_prefix}_3.msh",
 }
 
 Output = {
-	"Prefix" : "jet_atm3_test2",
-	"WriteInterval" : 100,
+	"Prefix" : f"{run_globals.file_prefix}_atm3",
+	"WriteInterval" : run_globals.write_interval,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -35,49 +32,39 @@ SourceTerms = {
 		"Function" : "GravitySource",
 		"gravity": 9.8,
 	},
-	# "source3": {
-	# 		"Function": "ExsolutionSource",
-	# 		"source_treatment" : "Implicit",
-	# },
 	"source4": {
 		"Function" : "CylindricalGeometricSource",
-		# "source_treatment" : "Explicit",
 	}
 }
 
-# Restart = {
-# 	"File" : "___.pkl",
-# 	"StartFromFileTime" : True
-# }
-
-InitialCondition = {
-	"Function" : "IsothermalAtmosphere",
-  "h0": -1100, # TODO: fix
-  "massFracM": 1e-5,
-}
+InitialCondition = run_globals.InitialCondition
 
 ExactSolution = InitialCondition.copy()
 
+extend_atm = True
+i = 3
+
 BoundaryConditions = {
-	"ground3" : {
-		"BCType" : "SlipWall",
-	},
-	"symmetry3" : {
-		"BCType" : "SlipWall",
-	},
-	"r3" : {
-		# "BCType" : "MultiphasevpT2D2D",
-		"BCType" : "SlipWall",
-		# "bkey": "r3",
-	},
-	"r2" : {
+	f"ground{i}" : run_globals.SlipWallQ,
+	f"symmetry{i}" : run_globals.SlipWallQ,
+	f"r{i}" : {
 		"BCType" : "MultiphasevpT2D2D",
-		"bkey": "r2",
+		"bkey": f"r{i}",
+	},
+	f"r{i-1}" : {
+		"BCType" : "MultiphasevpT2D2D",
+		"bkey": f"r{i-1}",
 	},
 }
-# LinkedSolvers = [
-# 	{
-# 		"DeckName": "r3r4.py",
-# 		"BoundaryName": "r3",
-# 	},
-# ]
+LinkedSolvers = [
+	{
+		"DeckName": f"r{i}r{i+1}.py",
+		"BoundaryName": f"r{i}",
+	},
+]
+
+if not extend_atm:
+	BoundaryConditions[f"r{i}"] = {
+		"BCType" : "LinearizedImpedance2D",
+	}
+	LinkedSolvers = []

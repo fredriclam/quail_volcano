@@ -1,34 +1,30 @@
 import numpy as np
+import run_globals
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 60*1, # 2*490e-4*25,#0.030,#1.0, #0.1 @ meter scale
-	"NumTimeSteps" : 60*6000, # 490*25*2,#60,#2000,#1*1000, # 20000,#2*20000*4,#5000*2, #13000*2, #5000 @ meter scale
-     # 100000 for generalB1, 400~K
+	"FinalTime" : 60*1,
+	"NumTimeSteps" : 60*8000, # P1: 60*1000, # 60*6000
 	"TimeStepper" : "RK3SR",
 }
 
 Numerics = {
-	"SolutionOrder" : 1,
+	"SolutionOrder" : run_globals.ElementOrder,
 	"SolutionBasis" : "LagrangeTri",
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
 	"ArtificialViscosity" : True,
-		# Flag to use artificial viscosity
-		# If true, artificial visocity will be added
-	"AVParameter" : 30, #5e3
-		# Parameter in the artificial viscosity term. A larger value will
-		# increase the amount of AV added, giving a smoother solution.
-	'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
+	"AVParameter" : 30,
+	'L2InitialCondition': False,
 }
 
 Mesh = {
-	"File" : "../meshes/conical1_1.msh", # TODO: use flat out for comparison
+	"File" : f"../meshes/{run_globals.mesh_prefix}_1.msh",
 }
 
 Output = {
-	"Prefix" : "jet_atm1_test2",
-	"WriteInterval" : 100,
+	"Prefix" : f"{run_globals.file_prefix}_atm1",
+	"WriteInterval" : run_globals.write_interval // 2,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -43,26 +39,12 @@ SourceTerms = {
 		"Function" : "GravitySource",
 		"gravity": 9.8,
 	},
-	# "source3": {
-	# 		"Function": "ExsolutionSource",
-	# 		"source_treatment" : "Implicit",
-	# },
 	"source4": {
 		"Function" : "CylindricalGeometricSource",
-		# "source_treatment" : "Explicit",
 	}
 }
 
-# Restart = {
-# 	"File" : "___.pkl",
-# 	"StartFromFileTime" : True
-# }
-
-InitialCondition = {
-	"Function" : "IsothermalAtmosphere",
-  "h0": -1100, # TODO: fix
-  "massFracM": 1e-5,
-}
+InitialCondition = run_globals.InitialCondition
 
 ExactSolution = InitialCondition.copy()
 
@@ -71,24 +53,12 @@ BoundaryConditions = {
 		"BCType" : "MultiphasevpT2D2D",
 		"bkey": "r1",
 	},
-	"ground" : {
-		"BCType" : "SlipWall",
-	},
-	"flare" : {
-		"BCType" : "SlipWall",
-    "use_stagnation_correction": True,
-    "Q": True,
-	},
-	"pipewall" : {
-		"BCType" : "SlipWall",
-	},
-	# "x2" : {
-	# 	"BCType" : "MultiphasevpT2D1D",
-	# 	"bkey": "vent",
-	# },
+	"ground" : run_globals.SlipWallQ,
+	"flare" : run_globals.SlipWallQ,
+	"pipewall" : run_globals.SlipWallQ,
   "x2" : {
 		"BCType" : "ChokedInlet2D",
-    "p_in": 1e6,
+    "p_in": 1e5,
     "T_in": 1000,
     "yWv": 0.03,
     "yA": 1e-4,
@@ -96,17 +66,10 @@ BoundaryConditions = {
 		"yF": 1-1e-7,
 		"yC": 1-1e-7,
 	},
-	"symmetry" : {
-		"BCType" : "SlipWall",
-	},
+	"symmetry" : run_globals.SlipWallQ,
 }
 
-# LinkedSolvers = []
 LinkedSolvers = [
-	# {
-	# 	"DeckName": "conduit.py",
-	# 	"BoundaryName": "vent",
-	# },
 	{
 		"DeckName": "r1r2.py",
 		"BoundaryName": "r1",

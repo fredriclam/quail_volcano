@@ -12,12 +12,12 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : f"../meshes/{run_globals.mesh_prefix}_2.msh",
+	"File" : f"../meshes/{run_globals.mesh_prefix}_9.msh",
 }
 
 Output = {
-	"Prefix" : f"{run_globals.file_prefix}_atm2",
-	"WriteInterval" : run_globals.write_interval // 2,
+	"Prefix" : f"{run_globals.file_prefix}_atm9",
+	"WriteInterval" : run_globals.write_interval,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -41,29 +41,30 @@ InitialCondition = run_globals.InitialCondition
 
 ExactSolution = InitialCondition.copy()
 
-extend_atm = True
+extend_atm = False
+i = 9
 
 BoundaryConditions = {
-	"ground2" : run_globals.SlipWallQ,
-	"symmetry2" : run_globals.SlipWallQ,
-	"r2" : {
+	f"ground{i}" : run_globals.SlipWallQ,
+	f"symmetry{i}" : run_globals.SlipWallQ,
+	f"r{i}" : {
 		"BCType" : "MultiphasevpT2D2D",
-		"bkey": "r2",
+		"bkey": f"r{i}",
 	},
-	"r1" : {
+	f"r{i-1}" : {
 		"BCType" : "MultiphasevpT2D2D",
-		"bkey": "r1",
+		"bkey": f"r{i-1}",
 	},
 }
 LinkedSolvers = [
 	{
-		"DeckName": "r2r3.py",
-		"BoundaryName": "r2",
+		"DeckName": f"r{i}r{i+1}.py",
+		"BoundaryName": f"r{i}",
 	},
 ]
 
 if not extend_atm:
-	BoundaryConditions["r2"] = {
+	BoundaryConditions[f"r{i}"] = {
 		"BCType" : "LinearizedImpedance2D",
 	}
 	LinkedSolvers = []
