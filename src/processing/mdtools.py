@@ -75,12 +75,14 @@ def plot_mean(x, q, clims):
 	plt.axis("auto")
 	plt.axis("equal")
 
-# DEV: Piecewise plot
-def plot_detailed(x_tri, q, clims, cmap=None, order=1, solver=None,
+def plot_detailed(x_tri, q, clims:tuple, order:int, cmap=None, solver=None,
 									xview:tuple=None, yview:tuple=None,
 									colorbar_label:str="value", n_samples:int=3, ax=None,
 									add_colorbar=True):
-	''' Create plot with higher sampling in element '''
+	''' Create plot with higher sampling in element.
+	For order == 1, n_samples only needs to be 2 (bilinear interpolation is used
+	while drawing the gradient).
+		 '''
 
 	if solver is not None:
 		# Retrieve x nodes from solver
@@ -96,17 +98,25 @@ def plot_detailed(x_tri, q, clims, cmap=None, order=1, solver=None,
 	
 	if ax is None:
 		ax = plt.gca()
+
+	# Check size of q compared to expected size for a given order
+	if order > 2 or order < 0:
+		raise NotImplementedError("Only implemented for orders 0 to 2.")
+	else:
+		expected_num_dof = [1, 3, 6]
+		if q.shape[1] != expected_num_dof[order]:
+			raise ValueError(f"q has axis 1 of size {q.shape[1]}, but expected "
+										+ f"size {expected_num_dof[order]} for order {order}.") 
+
 	
 	x_in_viewport = (x_tri[:,:,0:1] >= xview[0]) & (x_tri[:,:,0:1] <= xview[1])
 	y_in_viewport = (x_tri[:,:,1:2] >= yview[0]) & (x_tri[:,:,1:2] <= yview[1])
 	indices = np.where(np.any(x_in_viewport & y_in_viewport, axis=1))[0]
 
-	if order != 1:
-		raise NotImplementedError("Only implemented for order 1.")
-
 	for i in indices:
-		xmin, xmax = x_tri[i, :, 0].min(), x_tri[i, :, 0].max()
-		ymin, ymax = x_tri[i,:, 1].min(), x_tri[i, :, 1].max()
+		# Establish bounding box
+		xmin, xmax = x_tri[i,:,0].min(), x_tri[i,:,0].max()
+		ymin, ymax = x_tri[i,:,1].min(), x_tri[i,:,1].max()
 		# Sample grid points xbox in image order (x as normal, y downward)
 		xbox = np.stack(np.meshgrid(
 			np.linspace(xmin, xmax, n_samples),
@@ -120,9 +130,24 @@ def plot_detailed(x_tri, q, clims, cmap=None, order=1, solver=None,
 		ref_mapping = np.array([[_a11, -_a01], [-_a10, _a00]]) / (_a00 * _a11 - _a01 * _a10)
 		ref_coords = np.einsum("ij, ...j -> ...i", ref_mapping[...,i], xbox - x_tri[i,0,:])[...,np.newaxis]
 		# Evaluate basis function
-		f = (q[i,0,:] * (1 - ref_coords[...,0,:] - ref_coords[...,1,:])
-		+ q[i,1,:] * (ref_coords[...,0,:])
-		+ q[i,2,:] * (ref_coords[...,1,:]))
+		if order == 0:
+			f = q[i,0,:] * np.ones_like(ref_coords[...,0,:])
+		elif order == 1:
+			f = (q[i,0,:] * (1 - ref_coords[...,0,:] - ref_coords[...,1,:])
+			+ q[i,1,:] * (ref_coords[...,0,:])
+			+ q[i,2,:] * (ref_coords[...,1,:]))
+		elif order == 2:
+			_x = ref_coords[...,0,:]
+			_y = ref_coords[...,1,:]
+			f = (q[i,0,:] * (1 - 2*_x - 2*_y) * (1 - _x - _y)
+			+ q[i,1,:] * 4 * _x * (1 - _x - _y)
+			+ q[i,2,:] * _x * (2*_x - 1)
+			+ q[i,3,:] * 4 * _y * (1 - _x - _y)
+			+ q[i,4,:] * 4 * _x * _y
+			+ q[i,5,:] * _y * (2*_y - 1)
+			)
+		else:
+			raise NotImplementedError("Only implemented for orders 0 to 2.")
 
 		img = ax.imshow(f,
 										extent=[xmin, xmax, ymin, ymax],
