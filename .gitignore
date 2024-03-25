@@ -59,6 +59,7 @@ Cases/Miscellaneous/Plot
 *.m
 *.gmsh
 *.pkl
+*.npz
 *.mp4
 *.png
 *.swp
