@@ -3326,7 +3326,7 @@ class ChokedInlet2D(BCWeakPrescribed):
 	'''
 
 	def __init__(self, p_in=1e5, T_in=1000, yWv=0.03, yA=1e-7, yWt=0.04,
-							yF=1-1e-7, yC=1-1e-7):
+							yF=1-1e-7, yC=1-1e-7, M_in=1.0):
 		self.p_in = p_in
 		self.T_in = T_in
 		self.yWv = yWv
@@ -3335,6 +3335,7 @@ class ChokedInlet2D(BCWeakPrescribed):
 		self.yWt = yWt
 		self.yF = yF
 		self.yC = yC
+		self.M_in = M_in
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):		
 		# Package boundary state
@@ -3356,7 +3357,7 @@ class ChokedInlet2D(BCWeakPrescribed):
 		Gamma = atomics.Gamma(UqB[:,:,0:3], physics)
 		c = atomics.sound_speed(Gamma, p, rho, phi, physics)
 		rho_c_v = atomics.c_v(UqB[:,:,0:3], physics)
-		vel_y = 1.5*c
+		vel_y = self.M_in*c
 		# Fill in conserved variables
 		UqB[:, :, 3:4] = 0.0
 		UqB[:, :, 4:5] = rho * vel_y # Vertical momentum only
