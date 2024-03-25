@@ -441,6 +441,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		where m = POS_TOL and M = +inf. '''
 
 		if solver.order == 0 or solver.order == 1 or solver.physics.NDIMS == 1:
+			candidate_states = Uc.copy()
 			elt_min = Uc.min(axis=1, keepdims=True)
 		elif solver.order == 2:
 			# Analytic QP solution for element minimum
@@ -505,10 +506,11 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 							+ coeffs[...,3,:,np.newaxis] * (4 * _y * _t)
 							+ coeffs[...,4,:,np.newaxis] * (4 * _x * _y)
 							+ coeffs[...,5,:,np.newaxis] * (_y * (2 * _y - 1)))
-			candidate_states = eval_basis_at(candidate_points, Uc)
+			# Compute candidate_states (ne, ns, 8) and swap to (ne, 8, ns)
+			candidate_states = np.swapaxes(eval_basis_at(candidate_points, Uc), 1, 2)
 			# Compute elementwise extrema(n_elements, 1, n_states)
 			# elt_max = basis_vec(candidate_points, Uc).max(axis=2)[:,np.newaxis,:]
-			elt_min = candidate_states.min(axis=2)[:,np.newaxis,:]
+			elt_min = candidate_states.min(axis=1, keepdims=True)
 
 		else:
 			assert solver.order <= 2, "For higher order, implement piecewise polynomial extreme check for PPL"
@@ -604,8 +606,8 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			p_elem_faces = physics.compute_variable("Pressure", U_elem_faces)
 			# Indices where pressure is negative
 			theta = np.where(p_elem_faces < 0., (p_bar - POS_TOL) / (p_bar - p_elem_faces), 1.0)
-			# Use candidate_states (ne, ns, 8) swapped to (ne, 8, ns) to compute pressure (ne, 8, 1)
-			p_extrema = physics.compute_variable("Pressure", np.swapaxes(candidate_states,1,2))
+			# Use candidate_states to compute pressure 
+			p_extrema = physics.compute_variable("Pressure", candidate_states)
 			theta_extrema = np.clip(np.abs((p_bar - POS_TOL) / (p_bar - p_extrema)), 0, 1)
 			theta = np.concatenate((theta, theta_extrema), axis=1)
 		
