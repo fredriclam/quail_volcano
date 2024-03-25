@@ -2,14 +2,14 @@ SetFactory("Built-in");
 //+
 
 // Set characteristic mesh size with constraint for 20 Hz, 300 m/s: >~ 15 m
-dx_max = 100; // Background dx
-dx = 5;      // Minimum dx
-scale = 100;  // Scale for refinement (meters)
+dx_max = 30; // Background dx
+dx = 10;      // Minimum dx
+scale = 60;  // Scale for refinement (meters)
 
 // Set interior sphere size
 r1 = 30;
 // Set exterior sphere size
-r2 = 3000;
+r2 = 2000;
 
 // Define inlet points (r < r1)
 Point(1) = {1e-10, r1, 0, dx_max};
@@ -45,4 +45,4 @@ Physical Curve("symmetrylower",   2) = {2};
 Physical Curve("r2", 3) = {3};
 Physical Curve("symmetryupper", 4) = {4};
 Physical Surface("domain1") = {1};
-Save "sphere.msh";
+Save "sphere_uniform.msh";

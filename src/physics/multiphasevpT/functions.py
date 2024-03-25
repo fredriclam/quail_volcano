@@ -54,6 +54,7 @@ class FcnType(Enum):
 	RightTravelingGaussian = auto()
 	SteadyState = auto()
 	NohProblem = auto()
+	UniformAir = auto()
 
 
 class BCType(Enum):
@@ -85,6 +86,7 @@ class BCType(Enum):
 	NohInlet = auto()
 	LinearizedIsothermalOutflow2D = auto()
 	ChokedInlet2D = auto()
+	OscillatingSphere = auto()
 
 
 class SourceType(Enum):
@@ -609,6 +611,44 @@ class LinearAtmosphere(FcnBase):
 		Uq[:, :, iarhoFm] = arhoFm
 
 		return Uq # [ne, nq, ns]
+
+
+class UniformAir(FcnBase):
+	'''
+	Isothermal air atmosphere as an initial condition.
+	'''
+
+	def __init__(self, T:float=300., p:float=1e5, R:float=287, c_v:float=717.5000000000001):
+		''' Set atmosphere temperature, pressure, and location of pressure.
+		Pressure distribution is computed as hydrostatic profile with p = p_atm
+		at elevation h0.
+		'''
+		self.T = T
+		self.p = p
+		self.R = R
+		self.c_v = c_v
+
+	def get_state(self, physics, x, t):
+		''' Computes the pressure in an isothermal atmosphere for an ideal gas
+		mixture with air and water vapour. Trace amounts of magma phase are added
+		and the pressure profile is iteratively corrected. '''
+
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		if physics.NDIMS == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
+		elif physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+					physics.get_state_indices() 
+		else:
+			raise ValueError(f"Unexpected ndims {physics.NDIMS}")
+		
+		rho = self.p / (self.R * self.T)
+		Uq[:,:,iarhoA] = rho
+		Uq[:,:,ie] = rho * self.c_v * self.T
+
+		return Uq
 
 
 class NohProblem(FcnBase):
@@ -2299,73 +2339,55 @@ class LinearizedImpedance2D(BCWeakPrescribed):
 		''' Computes the boundary state that satisfies the pressure BC strongly. '''
 
 		UqB = UqI.copy()
-		''' Compute normal velocity. '''
-		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-		# rhoI = UqI[:, :, physics.get_mass_slice()].sum(axis=2, keepdims=True)
+		
 		arhoVec = UqI[:,:,physics.get_mass_slice()]
+		yI = atomics.massfrac(arhoVec)		
+		Gamma = atomics.Gamma(UqI[...,0:3], physics)
 		rhoI = atomics.rho(arhoVec)
-		velI = UqI[:, :, physics.get_momentum_slice()]/rhoI
+		# Velocity vector
+		velI = UqI[:, :, physics.get_momentum_slice()] / rhoI
+		# Normal vector
+		n_hat = normals / np.linalg.norm(normals, axis=2, keepdims=True)
 		# Normal velocity scalar
 		veln = np.sum(velI * n_hat, axis=2, keepdims=True)
 		# Normal velocity vector
-		velvec_n = np.einsum("...i, ...i -> ...i", veln, n_hat)
+		velvec_n = veln * n_hat
+		# Tangent velocity vector
 		velvec_t = velI - velvec_n
-		''' Inflow handling '''
-		# if np.any(veln < 0.):
-			# print("Incoming flow at outlet")
-		''' Inflow handling '''
-		# if np.any(velI < 0.): # TODO:
-			# print("Incoming flow at outlet")
-		''' Record first pressure encountered at boundary. '''
+
+		# Record first pressure encountered at boundary.
 		if not self.initialized:
 			self.p = physics.compute_variable("Pressure", UqI)
 			self.initialized = True
-		''' Compute interior pressure. '''
-		# pI = physics.compute_variable("Pressure", UqI)
-		# Linearized computation of outgoing stuff
-		pGrid = physics.compute_variable("Pressure", UqI)
-		ZGrid = physics.compute_variable("SoundSpeed", UqI) * atomics.rho(UqI[...,0:3])
-		uGrid = veln
-		TGrid = physics.compute_variable("Temperature", UqI)
-		psiPlus = uGrid + (pGrid-self.p) / ZGrid
-		uHat = 0.5 * psiPlus
-		pHat = self.p + ZGrid * (0.5 * psiPlus)
-		# Isentropic temp change
-		Gamma = atomics.Gamma(UqI[...,0:3], physics)
-		THat = TGrid * (pHat/pGrid)**((Gamma-1)/Gamma)
 
+		TI = atomics.temperature(arhoVec, UqI[:, :, physics.get_momentum_slice()],
+											UqI[:,:,physics.get_state_slice("Energy")], physics)
+		gas_volfrac = atomics.gas_volfrac(arhoVec, TI, physics)
+		pI = atomics.pressure(arhoVec, TI, gas_volfrac, physics)
+		cI = atomics.sound_speed(Gamma, pI, rhoI, gas_volfrac, physics)
+		ZI = cI * rhoI
+		# Compute target (u, p) from removing ingoing linear acoustic waves
+		psiPlus = veln + (pI - self.p) / ZI
+		uHat = 0.5 * psiPlus
+		pHat = self.p + ZI * (0.5 * psiPlus)
 		if np.any(pHat < 0.):
 			raise errors.NotPhysicalError
-		''' Short-circuit function for sonic exit based on interior '''
-		# cI = physics.compute_variable("SoundSpeed", UqI)		
-		# cI = atomics.sound_speed(atomics.Gamma(arhoVec, physics),
-		# 	pI, rhoI, gas_volfrac, physics)
-		# if np.any(velI >= cI):
-		# 	return UqB
-
-
-		''' Compute boundary-satisfying primitive state that preserves Riemann
-		invariants (corresponding to ingoing acoustic waves) of the interior
-		solution. '''
-		# Compute mass fractions of interior solution
-		yI = atomics.massfrac(arhoVec)
+		# Compute temperature through isentropic temp change
+		THat = TI * (pHat/pI)**((Gamma-1)/Gamma)
 		rho_target = atomics.mixture_density(yI, pHat, THat, physics)
-		velvec_target = np.einsum("...i, ...i -> ...i", uHat, n_hat) \
-			+ velvec_t
-		''' Map to conservative variables '''
+		velvec_target =  uHat * n_hat + velvec_t
+
+		# Map to conservative variables
 		UqB[:,:,physics.get_mass_slice()] = rho_target * yI
-		UqB[:,:,physics.get_momentum_slice()] = rho_target * uHat
+		UqB[:,:,physics.get_momentum_slice()] = rho_target * velvec_target
 		UqB[:,:,physics.get_state_slice("Energy")] = \
-			atomics.c_v(rho_target * yI, physics) * THat \
+			rho_target * atomics.c_v(yI, physics) * THat \
 			+ (rho_target * yI[:,:,2:3]) * physics.Liquid["E_m0"] \
 			+ 0.5 * rho_target * np.sum(velvec_target*velvec_target, axis=2, keepdims=True)
-		''' Update adiabatically compressed/expanded tracer partial densities '''
-		UqB[:,:,[physics.get_state_index("pDensityWt"),
-						 physics.get_state_index("pDensityC")]] *= rho_target / rhoI
-
-		''' Post-computation validity check '''
-		if np.any(THat < 0.):
-			raise errors.NotPhysicalError
+		# Update adiabatically compressed/expanded tracer partial densities
+		# UqB[:,:,[physics.get_state_index("pDensityWt"),
+		# 			 	 physics.get_state_index("pDensityC"),
+		# 				 physics.get_state_index("pDensityF")]] *= rho_target / rhoI
 
 		return UqB
 
@@ -3368,6 +3390,30 @@ class ChokedInlet2D(BCWeakPrescribed):
 
 		return UqB
 
+
+class OscillatingSphere(BCWeakPrescribed):
+	''' Oscillating sphere with prescribed sinusoidal velocity in the
+	negative z-direction. '''
+	def __init__(self, linear_freq:float=20.0, u_amplitude:float=1.0):
+		self.linear_freq = linear_freq
+		self.u_amplitude = u_amplitude
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		smom = physics.get_momentum_slice()
+		UqB = UqI.copy()
+		# Unit normals
+		n_hat = normals / np.linalg.norm(normals, axis=2, keepdims=True)
+		# Compute component rhoveln
+		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
+		# Extract density
+		rho = UqI[:,:,0:3].sum(axis=2, keepdims=True)
+		# Compute sphere velocity v(t)
+		v_sphere = self.u_amplitude * np.sin(2 * np.pi * self.linear_freq * t)
+		# Remove component (rho * u.n + rho * u_sphere * e_y.n) n
+		# where + sign comes from n being the domain normal, negative of the
+		# sphere normal
+		UqB[:, :, smom] -= (rhoveln + v_sphere * rho * n_hat[...,1:2]) * n_hat
+		return UqB
 
 '''
 ---------------------

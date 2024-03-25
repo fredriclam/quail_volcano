@@ -96,6 +96,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
 			BCType.ChokedInlet2D: mpvpT_fcns.ChokedInlet2D,
 			BCType.LinearizedIsothermalOutflow2D: mpvpT_fcns.LinearizedIsothermalOutflow2D,
+			BCType.OscillatingSphere: mpvpT_fcns.OscillatingSphere,
 		})
 
 	def set_physical_params(self, 
@@ -923,6 +924,7 @@ class MultiphasevpT2D(MultiphasevpT):
 			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
 			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
 			FcnType.NohProblem: mpvpT_fcns.NohProblem,
+			FcnType.UniformAir: mpvpT_fcns.UniformAir,
 			# euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
 			# euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
 			# euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
