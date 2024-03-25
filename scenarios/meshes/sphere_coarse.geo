@@ -2,7 +2,7 @@ SetFactory("Built-in");
 //+
 
 // Set characteristic mesh size with constraint for 20 Hz, 300 m/s: >~ 15 m
-dx_max = 600; // Background dx
+dx_max = 100; // Background dx
 dx = 10;      // Minimum dx
 scale = 60;  // Scale for refinement (meters)
 
@@ -27,8 +27,7 @@ Line(4) = {6, 1};
 // Define outer curves
 Curve Loop(1) = {1, 2, 3, 4};
 
-// Set planes with compatible (reversed) orientation
-Plane Surface(1) = {-1};
+Plane Surface(1) = {1};
 
 // Set refinement formula from inner radius
 Field[1] = Distance;
@@ -45,4 +44,5 @@ Physical Curve("r1", 1) = {1};
 Physical Curve("symmetrylower",   2) = {2};
 Physical Curve("r2", 3) = {3};
 Physical Curve("symmetryupper", 4) = {4};
+Physical Surface("domain1") = {1};
 Save "sphere_coarse.msh";

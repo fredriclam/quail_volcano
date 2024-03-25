@@ -75,13 +75,81 @@ def plot_mean(x, q, clims):
 	plt.axis("auto")
 	plt.axis("equal")
 
-def plot_detailed(x_tri, q, clims:tuple, order:int, cmap=None, solver=None,
+def compute_ref_mapping(x_tri):
+	''' Compute jacobian
+	x_tri: triangle nodes (..., 3, 2)
+
+	Returns
+	Matrix collection (..., 2, 2) such that reference coordinates can be
+	obtained from
+
+		M @ (x - x_tri[0,:]).
+
+	'''
+	_a00 = x_tri[...,1:2,0:1] - x_tri[...,0:1,0:1]
+	_a01 = x_tri[...,2:3,0:1] - x_tri[...,0:1,0:1]
+	_a10 = x_tri[...,1:2,1:2] - x_tri[...,0:1,1:2]
+	_a11 = x_tri[...,2:3,1:2] - x_tri[...,0:1,1:2]
+	_M = np.zeros((*x_tri.shape[:-2], 2, 2))
+	_M[...,0:1,0:1] = _a11
+	_M[...,0:1,1:2] = -_a01
+	_M[...,1:2,0:1] = -_a10
+	_M[...,1:2,1:2] = _a00
+	_M /= (_a00 * _a11 - _a01 * _a10)
+	return _M
+
+def eval_state_at(U_loc:np.array, ref_coords_loc:np.array, order:int):
+	'''
+	U_loc: state coefficients for element (..., nb, ns)
+	ref_coords_loc: 2D reference coordinates local to element (..., 2); shape has
+	  to be broadcastable when multiplied against U_loc
+	order: polynomial order in element
+	'''
+
+	# Check size of U_loc compared to expected size for a given order
+	if order > 2 or order < 0:
+		raise NotImplementedError("Only implemented for orders 0 to 2.")
+	else:
+		expected_num_dof = [1, 3, 6]
+		if U_loc.shape[-2] != expected_num_dof[order]:
+			raise ValueError(f"U_loc has axis -2 of size {U_loc.shape[-2]}, but "
+				+ f" expected size {expected_num_dof[order]} for order {order}.") 
+	# Pad axis for state-index
+	ref_coords_loc = ref_coords_loc[...,np.newaxis]
+	# Evaluate state by summing coefficients against basis functions
+	_x = ref_coords_loc[...,0,:]
+	_y = ref_coords_loc[...,1,:]
+	if order == 0:
+		U_sample = U_loc[...,0,:]
+	elif order == 1:
+		U_sample = (U_loc[...,0,:] * (1 - _x - _y)
+		+ U_loc[...,1,:] * _x
+		+ U_loc[...,2,:] * _y)
+	elif order == 2:
+		U_sample = (U_loc[...,0,:] * (1 - 2*_x - 2*_y) * (1 - _x - _y)
+		+ U_loc[...,1,:] * 4 * _x * (1 - _x - _y)
+		+ U_loc[...,2,:] * _x * (2*_x - 1)
+		+ U_loc[...,3,:] * 4 * _y * (1 - _x - _y)
+		+ U_loc[...,4,:] * 4 * _x * _y
+		+ U_loc[...,5,:] * _y * (2*_y - 1)
+		)
+	else:
+		raise NotImplementedError("Only implemented for orders 0 to 2.")
+	return U_sample
+
+def plot_detailed(x_tri, U, quantity_fn:callable, clims:tuple, order:int, cmap=None, solver=None,
 									xview:tuple=None, yview:tuple=None,
 									colorbar_label:str="value", n_samples:int=3, ax=None,
-									add_colorbar=True):
+									add_colorbar=True, coordinate_scaling:callable=None,
+									postproc_filter:callable=None):
 	''' Create plot with higher sampling in element.
 	For order == 1, n_samples only needs to be 2 (bilinear interpolation is used
 	while drawing the gradient).
+
+	x_tri: Triangle points: (ne,3,2)
+	U:     State coefficients at nodes (ne, nb, ns), ordered in the reference
+	       triangle in dictionary order for (y_ref, x_ref)
+	quantity_fn: Quantity function evaluated at the sampling points (e.g. U -> p)
 		 '''
 
 	if solver is not None:
@@ -99,21 +167,15 @@ def plot_detailed(x_tri, q, clims:tuple, order:int, cmap=None, solver=None,
 	if ax is None:
 		ax = plt.gca()
 
-	# Check size of q compared to expected size for a given order
-	if order > 2 or order < 0:
-		raise NotImplementedError("Only implemented for orders 0 to 2.")
-	else:
-		expected_num_dof = [1, 3, 6]
-		if q.shape[1] != expected_num_dof[order]:
-			raise ValueError(f"q has axis 1 of size {q.shape[1]}, but expected "
-										+ f"size {expected_num_dof[order]} for order {order}.") 
-
-	
+	# Restrict rendering to points at least partially in the viewport
 	x_in_viewport = (x_tri[:,:,0:1] >= xview[0]) & (x_tri[:,:,0:1] <= xview[1])
 	y_in_viewport = (x_tri[:,:,1:2] >= yview[0]) & (x_tri[:,:,1:2] <= yview[1])
-	indices = np.where(np.any(x_in_viewport & y_in_viewport, axis=1))[0]
+	render_indices = np.where(np.any(x_in_viewport & y_in_viewport, axis=1))[0]
 
-	for i in indices:
+	# Compute reference mapping matrix
+	ref_mapping = compute_ref_mapping(x_tri)
+
+	for i in render_indices:
 		# Establish bounding box
 		xmin, xmax = x_tri[i,:,0].min(), x_tri[i,:,0].max()
 		ymin, ymax = x_tri[i,:,1].min(), x_tri[i,:,1].max()
@@ -122,33 +184,20 @@ def plot_detailed(x_tri, q, clims:tuple, order:int, cmap=None, solver=None,
 			np.linspace(xmin, xmax, n_samples),
 			np.linspace(ymax, ymin, n_samples), indexing="xy"),
 			axis=-1)
-		# Apply affine mapping from physical to reference coordinates
-		_a00 = x_tri[:,1,0] - x_tri[:,0,0]
-		_a01 = x_tri[:,2,0] - x_tri[:,0,0]
-		_a10 = x_tri[:,1,1] - x_tri[:,0,1]
-		_a11 = x_tri[:,2,1] - x_tri[:,0,1]
-		ref_mapping = np.array([[_a11, -_a01], [-_a10, _a00]]) / (_a00 * _a11 - _a01 * _a10)
-		ref_coords = np.einsum("ij, ...j -> ...i", ref_mapping[...,i], xbox - x_tri[i,0,:])[...,np.newaxis]
-		# Evaluate basis function
-		if order == 0:
-			f = q[i,0,:] * np.ones_like(ref_coords[...,0,:])
-		elif order == 1:
-			f = (q[i,0,:] * (1 - ref_coords[...,0,:] - ref_coords[...,1,:])
-			+ q[i,1,:] * (ref_coords[...,0,:])
-			+ q[i,2,:] * (ref_coords[...,1,:]))
-		elif order == 2:
-			_x = ref_coords[...,0,:]
-			_y = ref_coords[...,1,:]
-			f = (q[i,0,:] * (1 - 2*_x - 2*_y) * (1 - _x - _y)
-			+ q[i,1,:] * 4 * _x * (1 - _x - _y)
-			+ q[i,2,:] * _x * (2*_x - 1)
-			+ q[i,3,:] * 4 * _y * (1 - _x - _y)
-			+ q[i,4,:] * 4 * _x * _y
-			+ q[i,5,:] * _y * (2*_y - 1)
-			)
-		else:
-			raise NotImplementedError("Only implemented for orders 0 to 2.")
-
+		# Compute reference coordinates for this element (ny=n_samples, nx=n_samples, 2)
+		ref_coords_loc = np.einsum("ij, ...j -> ...i",
+														   ref_mapping[i,...], xbox - x_tri[i,0,:])
+		f = eval_state_at(U[i,:,:], ref_coords_loc, order)
+		# Compute state -> quantity at sample points
+		# f has shape (ny=n_samples, nx=n_samples, ns)
+		f = quantity_fn(f)
+		# Apply optional coordinate scaling
+		if coordinate_scaling is not None:
+			f *= coordinate_scaling(xbox)
+		# Apply optional post-processing filter
+		if postproc_filter is not None:
+			f = postproc_filter(f)
+		# Render triangle
 		img = ax.imshow(f,
 										extent=[xmin, xmax, ymin, ymax],
 										vmin=clims[0],

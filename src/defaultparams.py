@@ -246,6 +246,8 @@ Output = {
 		# time step and residual information
 		# If True, will also print out the input deck and the min/max of
 		# the state variables
+  "CompressedOutput" : False,
+    # If True, saves npz of state_coeffs instead of pkl after the 0th step
 	"ProgressBar" : False,
 		# If False, iteration info is printed to console
 		# If True, a progress bar is given instead of iteration info

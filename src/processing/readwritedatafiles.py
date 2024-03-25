@@ -21,6 +21,7 @@
 #
 # ------------------------------------------------------------------------ #
 import pickle
+import numpy as np
 
 def write_data_file(solver, iwrite):
 	'''
@@ -57,9 +58,14 @@ def write_data_file(solver, iwrite):
 	else:
 		fname = prefix + "_final" + ".pkl"
 
-	with open(fname, 'wb') as fo:
-		# Save solver
-		pickle.dump(solver, fo, pickle.HIGHEST_PROTOCOL)
+	if solver.params["CompressedOutput"] and iwrite >= 1:
+		np.savez_compressed(fname[:-3] + "npz",
+											  state_coeffs=solver.state_coeffs,
+											  time=solver.time)
+	else:
+		with open(fname, 'wb') as fo:
+			# Save solver
+			pickle.dump(solver, fo, pickle.HIGHEST_PROTOCOL)
 	
 	# Replace removed objects
 	solver.physics.bdry_data_net = bdnet
