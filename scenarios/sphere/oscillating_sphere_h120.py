@@ -3,12 +3,12 @@ import numpy as np
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 9.0,
-	"NumTimeSteps" : 9*9*25   * 4, # 3*9*5*2,
+	"NumTimeSteps" : 573 , # 3*9*5*2,
 	"TimeStepper" : "RK3SR",
 }
 
 Numerics = {
-	"SolutionOrder" : 2,
+	"SolutionOrder" : 1,
 	"SolutionBasis" : "LagrangeTri",
 	"Solver" : "DG",
 	# "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -18,12 +18,12 @@ Numerics = {
 }
 
 Mesh = {
-	"File" : f"../meshes/sphere_uniform_h34.msh",
+	"File" : f"../meshes/sphere_uniform_h120.msh",
 }
 
 Output = {
-	"Prefix" : "sphere_h34p2", # mesh sphere_uniform2 (finer, smaller) @ 5 Hz: "sphere_5" # 5 Hz: "sphere_4"    # 10 Hz: "sphere_3",
-	"WriteInterval" : 75,
+	"Prefix" : "sphere_h120p1", # mesh sphere_uniform2 (finer, smaller) @ 5 Hz: "sphere_5" # 5 Hz: "sphere_4"    # 10 Hz: "sphere_3",
+	"WriteInterval" : 191,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
   "CompressedOutput": True,

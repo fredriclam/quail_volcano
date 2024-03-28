@@ -2,8 +2,10 @@ SetFactory("Built-in");
 //+
 
 // Set characteristic mesh size with constraint for 20 Hz, 300 m/s: >~ 15 m
-dx_max = 17; // 17/2; // Background dx
-dx = 10;//dx_max/2; //10;      // Minimum dx
+dx_max = 17; // Background dx
+dx = 10;     // Minimum dx
+// dx_max = 120; // 17/2; // Background dx
+// dx = dx_max/2; //10;      // Minimum dx
 scale = 60;  // Scale for refinement (meters)
 
 // Set interior sphere size
@@ -46,3 +48,4 @@ Physical Curve("r2", 3) = {3};
 Physical Curve("symmetryupper", 4) = {4};
 Physical Surface("domain1") = {1};
 Save "sphere_uniform2.msh";
+// Save "sphere_uniform_h120.msh";

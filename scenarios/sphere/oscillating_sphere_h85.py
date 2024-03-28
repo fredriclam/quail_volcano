@@ -2,8 +2,8 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
-	"FinalTime" : 3.0,
-	"NumTimeSteps" : 3*9*5*2,
+	"FinalTime" : 9.0,
+	"NumTimeSteps" : 9*9*5*2   * 4 , # 4x timesteps for p2 output file
 	"TimeStepper" : "RK3SR",
 }
 
@@ -22,7 +22,7 @@ Mesh = {
 }
 
 Output = {
-	"Prefix" : "sphere_h85", # mesh sphere_uniform2 (finer, smaller) @ 5 Hz: "sphere_5" # 5 Hz: "sphere_4"    # 10 Hz: "sphere_3",
+	"Prefix" : "sphere_h85p2", # mesh sphere_uniform2 (finer, smaller) @ 5 Hz: "sphere_5" # 5 Hz: "sphere_4"    # 10 Hz: "sphere_3",
 	"WriteInterval" : 90,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
