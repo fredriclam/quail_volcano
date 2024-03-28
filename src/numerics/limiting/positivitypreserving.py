@@ -444,7 +444,10 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			candidate_states = Uc.copy()
 			elt_min = Uc.min(axis=1, keepdims=True)
 		elif solver.order == 2:
-			# Analytic QP solution for element minimum
+			# Analytic QP solution for element minimum of each state variable,
+			# independently. Note that the resulting candidate_states are not
+			# state vectors at particular points; these contain the extreme values
+			# of the state scalars independently. 
 			# Compute first-order condition == linear system coefficients
 			A00 = 4*Uc[:,2,:] + 4*Uc[:,0,:] - 8*Uc[:,1,:]
 			A01 = 4*Uc[:,0,:] - 4*Uc[:,3,:] - 4*Uc[:,1,:] + 4*Uc[:,4,:]
@@ -606,8 +609,8 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			p_elem_faces = physics.compute_variable("Pressure", U_elem_faces)
 			# Indices where pressure is negative
 			theta = np.where(p_elem_faces < 0., (p_bar - POS_TOL) / (p_bar - p_elem_faces), 1.0)
-			# Use candidate_states to compute pressure 
-			p_extrema = physics.compute_variable("Pressure", candidate_states)
+			# Use (updated) Uc to compute nodal pressure 
+			p_extrema = physics.compute_variable("Pressure", Uc)
 			theta_extrema = np.clip(np.abs((p_bar - POS_TOL) / (p_bar - p_extrema)), 0, 1)
 			theta = np.concatenate((theta, theta_extrema), axis=1)
 		
