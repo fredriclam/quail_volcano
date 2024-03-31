@@ -690,6 +690,8 @@ def main(argv):
 				else:
 					raise Exception("Specified serial solve for multiple domains.")
 			else:
+				import tracemalloc
+				tracemalloc.start()
 				# Map domain list to processes
 				process_list = [mp.Process(
 					target=dom.solve,

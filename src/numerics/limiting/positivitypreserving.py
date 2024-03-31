@@ -504,8 +504,11 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		elem_IDs = negative_p_indices[0]
 		i_neg_p  = negative_p_indices[1]
 
-		theta[elem_IDs, i_neg_p] = p_bar[elem_IDs, :, 0] / (
-				p_bar[elem_IDs, :, 0] - p_elem_faces[elem_IDs, i_neg_p])
+		# theta[elem_IDs, i_neg_p] = p_bar[elem_IDs, :, 0] / (
+		# 		p_bar[elem_IDs, :, 0] - p_elem_faces[elem_IDs, i_neg_p])
+		# Modification for low-pressure Noh usage:
+		theta[elem_IDs, i_neg_p] = np.clip((p_bar[elem_IDs, :, 0] - 1e-5) / (
+				p_bar[elem_IDs, :, 0] - p_elem_faces[elem_IDs, i_neg_p]), 0, 1)
 
 		# Truncate theta3; otherwise, can get noticeably different
 		# results across machines, possibly due to poor conditioning in its

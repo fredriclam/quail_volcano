@@ -40,7 +40,7 @@ def write_data_file(solver, iwrite):
 	
 	# Remove advection map (don't need to replace this)
 	if hasattr(solver.physics.IC, "advection_map"):
-		solver.physics.IC.advection_map = None
+		solver.physics.IC = "Deleted to pickle"
 
 	# Get file name
 	prefix = solver.params["Prefix"]

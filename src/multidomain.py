@@ -91,6 +91,15 @@ class Domain():
     # Provide sequence of custom users functions to Quail API
     self.solver.custom_user_function = self.user_functions
 
+    ''' Additional warmup procedures '''
+    # Get source terms by name
+    source_term_names = [source.__class__.__name__.casefold()
+                         for source in self.solver.physics.source_terms] 
+    # Check for sources that depend on solution divergence
+    if "FragmentationStrainRateSource".casefold() in source_term_names:
+      # Assign solver directly to source term
+      self.solver.physics.source_terms[source_term_names.index("FragmentationStrainRateSource".casefold())].solver = self.solver
+
     ''' Run solver.solve'''
     # Call solver solve
     self.solver.solve()

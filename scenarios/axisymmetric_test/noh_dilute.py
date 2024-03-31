@@ -2,46 +2,39 @@ import numpy as np
 
 TimeStepping = {
 	"InitialTime" : 0.0,
+	"FinalTime" : 0.001,
+	"NumTimeSteps" : 10000,
+	"TimeStepper" : "FE",
+}
+
+TimeStepping = {
+	"InitialTime" : 0.0,
 	"FinalTime" : 1.0,
 	"NumTimeSteps" : 5000*4,
 	"TimeStepper" : "RK3SR", # "FE",
 }
 
 Numerics = {
-	"SolutionOrder" : 1,# 2,
-	# "SolutionBasis" : "LagrangeSeg",
+	"SolutionOrder" : 0, #AV10:1,# 2,
 	"SolutionBasis" : "LagrangeTri",
 	# "ApplyLimiters" : ["PositivityPreservingMultiphasevpT", "WENO", "PositivityPreservingMultiphasevpT"], "ShockIndicator": "MinMod", "TVBParameter": 0.0,
 	"Solver" : "DG",
 	"ApplyLimiters" : "PositivityPreservingMultiphasevpT",
-	"ArtificialViscosity" : True, #True,
+	"ArtificialViscosity" : True, #AV10:True, #True,
 		# Flag to use artificial viscosity
 		# If true, artificial visocity will be added
-	"AVParameter" : 30,#5e3
+	"AVParameter" : 30, #noh_problem2:0.01,#5e3
 		# Parameter in the artificial viscosity term. A larger value will
 		# increase the amount of AV added, giving a smoother solution.
 	'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
 }
 
-is_1D = True
-
-if is_1D:
-	Numerics["SolutionBasis"] = "LagrangeSeg"
-
-if is_1D:
-	Mesh = {'ElementShape': 'Segment',
-	'File': None,
-	'NumElemsX': 2000,
-	'xmax': 1,   # Top of the conduit is placed at -150 m for 2D coupling, but you can choose whatever if not coupling to 2D.
-	'xmin': 0
-	}
-else:
-	Mesh = {
-		"File" : "../meshes/rectangle.msh",
-	}
+Mesh = {
+	"File" : "../meshes/rectangle.msh", # Unit square
+}
 
 Output = {
-	"Prefix" : "noh_problem1D_e7N2000p1c1e3",
+	"Prefix" : "noh_mixture_dilute2",
 	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -55,13 +48,12 @@ Physics = {
 SourceTerms = {
 	"source4": {
 		"Function" : "CylindricalGeometricSource",
-		# "source_treatment" : "Explicit",
 	}
 }
 
 InitialCondition = {
-	"Function" : "NohProblem",
-	"eps": 1e-5, #1e-5, , #1e-5, # 1e-7 works fine, N=2000 for unit interval
+	"Function" : "NohProblemMixture",
+	"mode": "dilute",
 }
 
 ExactSolution = InitialCondition.copy()
@@ -69,31 +61,14 @@ ExactSolution = InitialCondition.copy()
 BoundaryConditions = {
 	"x1" : {
 		"BCType" : "SlipWall",
-		"use_stagnation_correction": True,
-		"Q": 1e2, # Max density factor limiter
 	},
 	"x2" : {
-		"BCType" : "NohInlet",
-		"eps": InitialCondition["eps"]
+		"BCType" : "NohInletMixture",
+	},
+	"y1" : {
+		"BCType" : "SlipWall",
+	},
+	"y2" : {
+		"BCType" : "SlipWall",
 	},
 }
-
-if not is_1D:
-  BoundaryConditions["y1"] = {
-    "BCType" : "SlipWall",
-	}
-  BoundaryConditions["y2"] = {
-    "BCType" : "SlipWall",
-	}
-
-# LinkedSolvers = []
-# LinkedSolvers = [
-# 	{
-# 		"DeckName": "conduit.py",
-# 		"BoundaryName": "vent",
-# 	},
-# 	{
-# 		"DeckName": "r1r2_cyl.py",
-# 		"BoundaryName": "r1",
-# 	},
-# ]

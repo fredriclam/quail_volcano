@@ -91,6 +91,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.VelocityInlet1D_gaussianPulse: mpvpT_fcns.VelocityInlet1D_gaussianPulse,
 			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
+			BCType.NohInletMixture: mpvpT_fcns.NohInletMixture,
 			BCType.LinearizedIsothermalOutflow2D: mpvpT_fcns.LinearizedIsothermalOutflow2D,
 		})
 
@@ -468,6 +469,8 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 			FcnType.SteadyState: mpvpT_fcns.SteadyState,
 			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,
+			FcnType.NohProblem: mpvpT_fcns.NohProblem,
+			FcnType.NohProblemMixture: mpvpT_fcns.NohProblemMixture,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -481,7 +484,9 @@ class MultiphasevpT1D(MultiphasevpT):
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
 			SourceType.FragmentationTimescaleSource: mpvpT_fcns.FragmentationTimescaleSource,
 			SourceType.FragmentationTimescaleSourceSmoothed: mpvpT_fcns.FragmentationTimescaleSourceSmoothed,
+			SourceType.FragmentationStrainRateSource: mpvpT_fcns.FragmentationStrainRateSource,
 			SourceType.WaterInflowSource: mpvpT_fcns.WaterInflowSource,
+			SourceType.CylindricalGeometricSource: mpvpT_fcns.CylindricalGeometricSource,
 		})
 
 		self.conv_num_flux_map.update({
@@ -824,6 +829,7 @@ class MultiphasevpT2D(MultiphasevpT):
 			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
 			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
 			FcnType.NohProblem: mpvpT_fcns.NohProblem,
+			FcnType.NohProblemMixture: mpvpT_fcns.NohProblemMixture,
 		}
 
 		self.IC_fcn_map.update(d)

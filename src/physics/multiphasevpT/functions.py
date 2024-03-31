@@ -36,6 +36,7 @@ from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
 import physics.multiphasevpT.atomics as atomics
 import compressible_conduit_steady.steady_state as plugin_steady_state
 from compressible_conduit_steady.advection_map import advection_map
+import numerics.differentiation.eval_divu as eval_divu
 
 from dataclasses import dataclass
 import copy
@@ -55,6 +56,7 @@ class FcnType(Enum):
 	SteadyState = auto()
 	StaticPlug = auto()
 	NohProblem = auto()
+	NohProblemMixture = auto()
 
 
 class BCType(Enum):
@@ -78,6 +80,7 @@ class BCType(Enum):
 	VelocityInlet1D_gaussianPulse = auto()
 	LinearizedImpedance2D = auto()
 	NohInlet = auto()
+	NohInletMixture = auto()
 	LinearizedIsothermalOutflow2D = auto()
 	# Future planned content:
 	# EntropyTotalenthalpyInlet1D = auto()
@@ -97,6 +100,7 @@ class SourceType(Enum):
 	FragmentationTimescaleSourceSmoothed = auto()
 	WaterInflowSource = auto()
 	CylindricalGeometricSource = auto()
+	FragmentationStrainRateSource = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -309,7 +313,8 @@ class SteadyState(FcnBase):
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
 		p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5, approx_massfracs=False,
-		neglect_edfm=True, fragsmooth_scale=0.010):
+		neglect_edfm=True, fragsmooth_scale=0.010, fragmentation_criterion:str="VolumeFraction",
+		crit_strain_rate_k=0.01):
 		'''
 		Interface to compressible_conduit_steady.SteadyState.
 		'''
@@ -337,6 +342,8 @@ class SteadyState(FcnBase):
 				"solubility_n": solubility_n,
 				"neglect_edfm": neglect_edfm,
 				"fragsmooth_scale": fragsmooth_scale,
+				"fragmentation_criterion": fragmentation_criterion,
+				"crit_strain_rate_k": crit_strain_rate_k, 
 		}
 		self.approx_massfracs = approx_massfracs
 		if approx_massfracs:
@@ -662,10 +669,10 @@ class LinearAtmosphere(FcnBase):
 
 class NohProblem(FcnBase):
 	'''
-	Noh problem for axisymmetric testing in the (r,z) view. This is a shock
+	Axisymmetric Noh problem for testing in the (r,z) view. This is a shock
 	propagation test in the r-direction only (to test the implementation of the
 	radial geometric source term.)
-	See doi:10.1115/1.4041195
+	See for example doi:10.1115/1.4041195
 	'''
 
 	def __init__(self, eps=1e-3, rho0=1.0, u0=1.0):
@@ -680,8 +687,13 @@ class NohProblem(FcnBase):
 	def get_state(self, physics, x, t):
 		# Initialize and get useful index names
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
+		if physics.NDIMS == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			  physics.get_state_indices()
+		elif physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			  physics.get_state_indices()
+			irhov = slice(0,0)
 		# Take gamma of air
 		gamma = physics.Gas[0]["gamma"]
 
@@ -697,6 +709,147 @@ class NohProblem(FcnBase):
 		Uq[:, :, irhou]   = -self.rho0 * self.u0
 		Uq[:, :, irhov]   = 0.0
 		Uq[:, :, ie]      = e0
+		# Leave tracer quantities zero
+
+		return Uq # [ne, nq, ns]
+
+
+class NohProblemMixture(FcnBase):
+	'''
+	Axisymmetric Noh problem for testing in the (r,z) view. This is a shock
+	propagation test in the r-direction only (to test the implementation of the
+	radial geometric source term). See also NohProblem.
+	'''
+
+	def __init__(self, mode:str="unspecified"):
+		''' Returns the unshocked solution for the Noh problem with a mixture
+		with several percent non-gas volume fraction. Sampling at t = 0 gives the
+		axisymmetric Noh problem initial condition. Sampling at x > 0, t > 0 gives
+		the unshocked solution, appropriate for the boundary condition at r = R
+		as long as t < x / (-self.u).
+
+		Use mode "dilute" for a dilute suspension (99.97% vol gas).
+		Use mode "nondilute" for a nondilute suspension (97.21% vol gas).
+		The mode must be specified; the default raises an exception.
+
+		In the case of "nondilute", for the unit box, use t < 0.002417.
+		In the case of "nondilute", for the unit box, use t < 0.001226.
+
+		The shock strength is specified by ratio -u/us = 20.
+		'''
+
+		if mode.casefold() == "nondilute":
+			# Set mass fractions
+			self.yM = 0.999
+			self.yA = 1.0 * (1 - self.yM)
+			self.yWv = 0.0 * (1 - self.yM)
+			# Set independent rho_inf
+			self.rho_inf = 1.0
+			self.p_inf = 1e-5
+			# Set dependent temperature (EOS, rootfinding)
+			self.T_inf = 3.483030713963251e-05
+			# Set dependent u_inf (ODE solution)
+			self.u = -0.9109531213865723
+			# Set shock speed (parameter U(eta = 1) = 20)
+			self.us = 0.018219062427731445
+			# Set dependent volume fraction (listed for convenience)
+			self.phi_inf = 0.999629814907454
+		elif mode.casefold() == "dilute":
+			self.yM = 0.1
+			self.yA = 1.0 * (1 - self.yM)
+			self.yWv = 0.0 * (1 - self.yM)
+			# Set independent rho_inf
+			self.rho_inf = 1.0
+
+			self.p_inf = 1e-5
+			# Set dependent temperature (EOS, rootfinding)
+			self.T_inf = 3.871323826694466e-08
+			# Set dependent u_inf (ODE solution)
+			self.u = -0.13114667866665758
+			# Set shock speed (parameter U(eta = 1) = 20)
+			self.us = 0.01810697843081792
+			# Set dependent volume fraction (listed for convenience)
+			self.phi_inf = 0.99996294443518
+
+			# self.p_inf = 1e-4
+			# # Set dependent temperature (EOS, rootfinding)
+			# self.T_inf = 3.8713238266944657e-07
+			# # Set dependent u_inf (ODE solution)
+			# self.u = -0.4147218399437739
+			# # Set shock speed (parameter U(eta = 1) = 20)
+			# self.us = 0.05725924199527743
+			# # Set dependent volume fraction (listed for convenience)
+			# self.phi_inf = 0.999962944435181
+
+			# self.yM = 0.5
+			# self.yA = 0.2*(1 - self.yM)
+			# self.yWv = 0.8*(1 - self.yM)
+			# # Set dependent rho_inf (EOS)
+			# self.rho_inf = 1.5626543748561983
+			# # Set dependent u_inf (ODE solution)
+			# self.u = -16311.770958848027
+			# # Set shock speed (parameter U(eta = 1) = 20)
+			# self.us = -self.u / 20
+			# # Set dependent volume fraction (listed for convenience)
+			# self.phi_inf = 0.999710477694282
+			
+		elif mode.casefold() == "unspecified":
+			raise ValueError("To use NohProblemMixture, specify mode as "
+										   + "'dilute' or 'nondilute'. ")
+		else:
+			raise ValueError(f"Unknown mode '{mode}'. "
+											 + "To use NohProblemMixture, specify mode as "
+											 + "'dilute' or 'nondilute'. ")
+
+		# Set T interpolator
+		self.yVec = np.array([self.yA, self.yWv, self.yM])[np.newaxis, np.newaxis, :]
+		self.Gamma = None
+		# Arrays for storing T, rho along an isentrope; since physics is only known
+		# at call time, the interpolation is computed just-in-time
+		self.is_isentrope_ready = False
+		self.rho_isentrope = np.array([])
+		self.T_isentrope = np.array([])
+		self.interp_data_size = 100000
+
+	def get_state(self, physics, x, t):
+		# Initialize and get useful index names
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		if physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
+			irhov = slice(0,0)
+		elif physics.NDIMS == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
+		# Compute infinitely strong shock exterior density solution
+		rho = self.rho_inf * (1 - self.u * np.where(x[...,0:1] > 0, t / x[...,0:1], 1))
+		# Compute temperature
+		if not self.is_isentrope_ready:
+			# Compute mixture heat capacity ratio
+			Gamma = atomics.Gamma(self.yVec, physics)
+			# Set interpolation range
+			p_isentrope = np.geomspace(1e-9, 1e9, self.interp_data_size)[:, np.newaxis, np.newaxis]
+			# Compute dependent T (isentrope)
+			self.T_isentrope = self.T_inf * (p_isentrope / self.p_inf) ** ((Gamma - 1) / Gamma)
+			# Compute dependent rho (EOS)
+			self.rho_isentrope = 1.0 / atomics.mixture_spec_vol(self.yVec, p_isentrope,
+																													self.T_isentrope, physics)
+			self.is_isentrope_ready = True
+		# Interpolate temperature dependent on density
+		T = np.zeros_like(Uq[:, :, ie])
+		T.ravel()[:] = scipy.interpolate.CubicSpline(
+			self.rho_isentrope.ravel(), self.T_isentrope.ravel())(rho.ravel())
+		
+		# Flatten to (ne, nb)
+		rho = rho.squeeze(axis=-1)
+		# Map single-phase (air) problem to multiphase state variables
+		Uq[:, :, iarhoA]  = rho * self.yA
+		Uq[:, :, iarhoWv] = rho * self.yWv
+		Uq[:, :, iarhoM]  = rho * self.yM
+		Uq[:, :, irhou]   = rho * self.u
+		Uq[:, :, irhov]   = 0.0
+		Uq[:, :, ie]      = (atomics.c_v(Uq[..., 0:3], physics).squeeze(axis=-1) * T
+												 + 0.5 * rho * self.u * self.u) 
 		# Leave tracer quantities zero
 
 		return Uq # [ne, nq, ns]
@@ -750,17 +903,45 @@ class SlipWall(BCWeakPrescribed):
 	This class corresponds to a slip wall. See documentation for more
 	details.
 	'''
+	def __init__(self, use_stagnation_correction:bool=False, Q:float=10):
+		self.use_stagnation_correction = use_stagnation_correction
+		# Stagnation correction density limiting factor
+		self.Q = Q
+
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		smom = physics.get_momentum_slice()
+		UqB = UqI.copy()
 
 		# Unit normals
 		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
 
 		# Remove momentum contribution in normal direction from boundary
 		# state
-		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
-		UqB = UqI.copy()
 		UqB[:, :, smom] -= rhoveln * n_hat
+
+		if self.use_stagnation_correction:
+			# Compute dependent variables
+			arhoVec = UqI[:, :, 0:3]
+			T = atomics.temperature(arhoVec,
+				UqI[:, :, smom],
+				UqI[:, :, physics.get_state_slice("Energy")], physics)
+			phi = atomics.gas_volfrac(arhoVec, T, physics)
+			p = atomics.pressure(arhoVec, T, phi, physics)
+			rho = arhoVec.sum(axis=-1, keepdims=True)
+			y = arhoVec / rho
+			Gamma = atomics.Gamma(arhoVec, physics)
+			# rho^2 v_t^2
+			rhovelt2 = np.sum(UqI[:, :, smom] * UqI[:, :, smom], axis=2, keepdims=True) - rhoveln * rhoveln
+			# Energy, transverse kinetic
+			ekt = 0.5 * rhovelt2 /rho
+
+			# Compute stagnation state, conserving mass-specific energy
+			T_stag = (UqI[:, :, physics.get_state_slice("Energy")] - ekt) / atomics.c_v(arhoVec, physics)
+			p_stag = p * (T_stag / T) ** (Gamma/(Gamma-1))
+			rho_stag = atomics.mixture_density(y, p_stag, T_stag, physics)
+			# Apply limited density rescaling
+			UqB *= np.clip(rho_stag / rho, 1.0/self.Q, self.Q)
 
 		return UqB
 
@@ -3319,8 +3500,13 @@ class NohInlet(BCWeakRiemann):
 		e = 0.5 * rho * self.u0**2.0 + self.eps / (physics.Gas[0]["gamma"] - 1.0)
 
 		# Package boundary state
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
+		if physics.NDIMS == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			  physics.get_state_indices()
+		elif physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			  physics.get_state_indices()
+			irhov = slice(0,0)
 		UqB = UqI.copy()
 		UqB[:, :, iarhoA]  = rho
 		UqB[:, :, iarhoWv] = 0.0
@@ -3333,6 +3519,19 @@ class NohInlet(BCWeakRiemann):
 		UqB[:, :, iarhoFm]  = 0.0
 
 		return UqB
+
+
+class NohInletMixture(BCWeakRiemann):
+	'''
+	Inlet conditions for the exact Noh solution for a mixture.
+	'''
+
+	def __init__(self):
+		''' Delegator with no state. '''
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):		
+		''' Delegate to self-similar initial condition, evaluated at x, t '''
+		return physics.IC.get_state(physics, x, t)
 
 
 '''
@@ -3373,13 +3572,19 @@ class CylindricalGeometricSource(SourceBase):
 		# TODO: reduce redundant comps, use faster atomics. The fastest way is to
 		# re-use the computation of radial flux in the interior, and cache p to
 		# remove it from the source term.
-		F, (u2, v2, a) = physics.get_conv_flux_interior(Uq)
+		# Return is F, (u2, v2, a) in 2D
+		F, _ = physics.get_conv_flux_interior(Uq)
 		# Interpret first coordinate of flux as radial flux (does not copy F)
 		F_r = F[:, :, :, 0]
 		# Remove pressure contribution (isotropic tensor pI has no contribution to
 		# geometric source terms, unlike the momentum dyad)
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
+		if physics.NDIMS == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			  physics.get_state_indices()
+		elif physics.NDIMS == 1:
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			  physics.get_state_indices()
+			irhov = slice(0,0)
 		p = physics.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
 		F_r[:, :, irhou] -= p
 
@@ -3962,6 +4167,92 @@ class FragmentationTimescaleSource(SourceBase):
 			raise Exception("Unexpected physics num dimension in FragmentationTimescaleSource.")
 		return S # [ne, nq, ns]
 
+
+class FragmentationStrainRateSource(SourceBase):
+
+	def __init__(self, tau_f:float=1.0, G:float=1e9,
+               mu0:float=1e9, k:float=0.1, fragsmooth_scale:float=0.010,
+							 which_criterion:str="both", conduit_radius:float=50,
+							 shear_factor:float=1.0, **kwargs):
+		''' Important: __init__ does not fully initialize this object.
+		Requires self.solver to be filled in at some point.
+		This requires passing the top-level solver object to this object.
+		This requirement is due to the requirement for gradient computation,
+		which is mesh-dependent (and also boundary condition dependent), the
+		requirement for RHS sources to evaluate Dp/Dt  . '''
+		super().__init__(kwargs)
+		self.tau_f, self.G, self.mu0, self.k, self.fragsmooth_scale = \
+			 tau_f, G, mu0, k, fragsmooth_scale
+		self.do_not_recurse = True
+		# Check validity of criterion selection (string)
+		self.which_criterion:str = which_criterion.casefold()
+		self.valid_criteria = ["shear", "tensile", "both"]
+		self.conduit_radius = conduit_radius
+		self.shear_factor = shear_factor
+		if self.which_criterion not in self.valid_criteria:
+			raise ValueError(f"Used flag which_criterion={self.which_criterion}, but "
+										 		"the valid criteria are ['shear', 'tensile', 'both']. ")
+
+
+	def smoother(self, x, scale):
+		''' Returns one-sided smoothing u(x) of a step, such that
+			1. u(x < -scale) = 0
+			2. u(x >= 0) = 1.
+			3. u smoothly interpolates from 0 to 1 in between.
+		'''
+		# Shift, scale, and clip to [-1, 0] to prevent exp overflow
+		_x = np.clip(x / scale + 1, 0, 1)
+		f0 = np.exp(-1/np.where(_x == 0, 1, _x))
+		f1 = np.exp(-1/np.where(_x == 1, 1, 1-_x))
+		# Return piecewise evaluation
+		return np.where(_x >= 1, 1,
+						np.where(_x <= 0, 0, 
+							f0 / (f0 + f1)))
+
+	def get_source(self, _physics, _Uq, x, t):
+		''' 
+		Returns fragmentation rate based on strain rate.
+
+		Important note: this object bypasses Uq (value of state coefficients
+		at quadrature point) and use solver.state_coeffs (value of nodals).
+		This is needed to compute the trace. '''
+
+		# Check freshness (doesn't work, errorPlaceholder is passed instead of t sometimes)
+		# if t != self.solver.time:
+		# 	raise ValueError(f"Desync occurred in {self}: t is {t}, but solver.time is {self.solver.time}.")
+
+		S = np.zeros_like(_Uq)
+		if self.solver.physics.NDIMS == 1:
+			# Evaluate strain rate
+			if self.which_criterion == "shear":
+				u = _Uq[:, :, 3:4] / _Uq[:, :, 0:3].sum(axis=-1, keepdims=True)
+				strain_rate = 4.0 * self.shear_factor * u / self.conduit_radius
+			elif self.which_criterion == "tensile":
+				strain_rate = eval_divu.eval_strainrate(self.solver, self.solver.state_coeffs, x, t)
+			elif self.which_criterion == "both":
+				u = _Uq[:, :, 3:4] / _Uq[:, :, 0:3].sum(axis=-1, keepdims=True)
+				strain_rate = eval_divu.eval_strainrate(self.solver, self.solver.state_coeffs, x, t)
+				strain_rate = np.maximum(strain_rate, 4.0 * self.shear_factor * u / self.conduit_radius)
+			else:
+				raise ValueError("Unknown strain criterion.")
+			crit_strain_rate = self.k * self.G / self.mu0 # 0.25 arbitrary TODO: remove
+			# Extract variables
+			slarhoM = self.solver.physics.get_state_slice("pDensityM")
+			slarhoFm = self.solver.physics.get_state_slice("pDensityFm")
+			arhoM = _Uq[:, :, slarhoM]
+			arhoFm = _Uq[:, :, slarhoFm]
+			# Compute smoothing argument and smoothed 0-1
+			smoothed_0_1 = self.smoother(strain_rate / crit_strain_rate - 1.0,
+				self.fragsmooth_scale)
+			# Compute one-way reaction rate of current state
+			reaction_rate = (1.0/self.tau_f) * \
+				smoothed_0_1 * np.clip(arhoM - arhoFm, 0, None) # Proportional to non-fragmented mass
+			# Apply reaction rate to only fragmented magma (arhom = fragmented + unfragmented)
+			S[:, :, slarhoFm]  = reaction_rate
+		else:
+			raise Exception("Unexpected physics num dimension "
+				+ "in FragmentationTimescaleSourceSmoothed.")
+		return S # [ne, nq, ns]
 
 class WaterInflowSource(SourceBase):
 	'''
