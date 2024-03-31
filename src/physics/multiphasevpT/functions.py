@@ -53,6 +53,7 @@ class FcnType(Enum):
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
 	SteadyState = auto()
+	StaticPlug = auto()
 	NohProblem = auto()
 	UniformAir = auto()
 
@@ -102,6 +103,7 @@ class SourceType(Enum):
 	FragmentationTimescaleSourceSmoothed = auto()
 	WaterInflowSource = auto()
 	CylindricalGeometricSource = auto()
+	FragmentationStrainRateSource = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -387,6 +389,58 @@ class SteadyState(FcnBase):
 			# Remove lambdas for compatibility with pickle module
 			self.advection_map = None
 
+		return U_init
+
+class StaticPlug(FcnBase):
+	''' 1D steady state with zero velocity and an initial plug drag.
+	  Calls submodule compressible-conduit-steady
+		(https://github.com/fredriclam/compressible-conduit-steady).
+	'''
+	def __init__(self,
+							 traction_fn:callable, yWt_fn:callable, yC_fn:callable, T_fn:callable,
+							 x_global:np.array=None,
+							 p_chamber=40e6,
+							 yA=1e-7,
+							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
+							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
+							 neglect_edfm=True,
+							 enforce_p_vent=None):
+		'''
+		Interface to compressible_conduit_steady.StaticPlug.
+		'''
+		if x_global is None:
+			raise ValueError(
+				"x_global must be specified in the StaticPlug initial condition. " +
+				"x_global provides 1D mesh information across all partitions of " +
+				"the 1D domain.")
+		props = {
+				"yA": yA,
+				"c_v_magma": c_v_magma,
+				"rho0_magma": rho0_magma,
+				"K_magma": K_magma,
+				"p0_magma": p0_magma,
+				"solubility_k": solubility_k,
+				"solubility_n": solubility_n,
+				"neglect_edfm": neglect_edfm,
+		}
+		# Register StaticPlug object from steady state module
+		self.f:callable = plugin_steady_state.StaticPlug(x_global,
+																									 p_chamber,
+			traction_fn,
+			yWt_fn,
+			yC_fn,
+			T_fn,
+			override_properties=props,
+			enforce_p_vent=enforce_p_vent,
+		)
+		# Save argument values
+		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.p_chamber = p_chamber
+		self.enforce_p_vent = enforce_p_vent
+
+	def get_state(self, physics, x, t):
+		# Evaluate intial condition
+		U_init = self.f(x)
 		return U_init
 
 class UniformExsolutionTest(FcnBase):
@@ -4230,6 +4284,93 @@ class FragmentationTimescaleSource(SourceBase):
 			S[:, :, slarhoFm]  = reaction_rate
 		else:
 			raise Exception("Unexpected physics num dimension in FragmentationTimescaleSource.")
+		return S # [ne, nq, ns]
+
+
+class FragmentationStrainRateSource(SourceBase):
+
+	def __init__(self, tau_f:float=1.0, G:float=1e9,
+               mu0:float=1e9, k:float=0.1, fragsmooth_scale:float=0.010,
+							 which_criterion:str="both", conduit_radius:float=50,
+							 shear_factor:float=1.0, **kwargs):
+		''' Important: __init__ does not fully initialize this object.
+		Requires self.solver to be filled in at some point.
+		This requires passing the top-level solver object to this object.
+		This requirement is due to the requirement for gradient computation,
+		which is mesh-dependent (and also boundary condition dependent), the
+		requirement for RHS sources to evaluate Dp/Dt  . '''
+		super().__init__(kwargs)
+		self.tau_f, self.G, self.mu0, self.k, self.fragsmooth_scale = \
+			 tau_f, G, mu0, k, fragsmooth_scale
+		self.do_not_recurse = True
+		# Check validity of criterion selection (string)
+		self.which_criterion:str = which_criterion.casefold()
+		self.valid_criteria = ["shear", "tensile", "both"]
+		self.conduit_radius = conduit_radius
+		self.shear_factor = shear_factor
+		if self.which_criterion not in self.valid_criteria:
+			raise ValueError(f"Used flag which_criterion={self.which_criterion}, but "
+										 		"the valid criteria are ['shear', 'tensile', 'both']. ")
+
+
+	def smoother(self, x, scale):
+		''' Returns one-sided smoothing u(x) of a step, such that
+			1. u(x < -scale) = 0
+			2. u(x >= 0) = 1.
+			3. u smoothly interpolates from 0 to 1 in between.
+		'''
+		# Shift, scale, and clip to [-1, 0] to prevent exp overflow
+		_x = np.clip(x / scale + 1, 0, 1)
+		f0 = np.exp(-1/np.where(_x == 0, 1, _x))
+		f1 = np.exp(-1/np.where(_x == 1, 1, 1-_x))
+		# Return piecewise evaluation
+		return np.where(_x >= 1, 1,
+						np.where(_x <= 0, 0, 
+							f0 / (f0 + f1)))
+
+	def get_source(self, _physics, _Uq, x, t):
+		''' 
+		Returns fragmentation rate based on strain rate.
+
+		Important note: this object bypasses Uq (value of state coefficients
+		at quadrature point) and use solver.state_coeffs (value of nodals).
+		This is needed to compute the trace. '''
+
+		# Check freshness (doesn't work, errorPlaceholder is passed instead of t sometimes)
+		# if t != self.solver.time:
+		# 	raise ValueError(f"Desync occurred in {self}: t is {t}, but solver.time is {self.solver.time}.")
+
+		S = np.zeros_like(_Uq)
+		if self.solver.physics.NDIMS == 1:
+			# Evaluate strain rate
+			if self.which_criterion == "shear":
+				u = _Uq[:, :, 3:4] / _Uq[:, :, 0:3].sum(axis=-1, keepdims=True)
+				strain_rate = 4.0 * self.shear_factor * u / self.conduit_radius
+			elif self.which_criterion == "tensile":
+				strain_rate = eval_divu.eval_strainrate(self.solver, self.solver.state_coeffs, x, t)
+			elif self.which_criterion == "both":
+				u = _Uq[:, :, 3:4] / _Uq[:, :, 0:3].sum(axis=-1, keepdims=True)
+				strain_rate = eval_divu.eval_strainrate(self.solver, self.solver.state_coeffs, x, t)
+				strain_rate = np.maximum(strain_rate, 4.0 * self.shear_factor * u / self.conduit_radius)
+			else:
+				raise ValueError("Unknown strain criterion.")
+			crit_strain_rate = self.k * self.G / self.mu0 # 0.25 arbitrary TODO: remove
+			# Extract variables
+			slarhoM = self.solver.physics.get_state_slice("pDensityM")
+			slarhoFm = self.solver.physics.get_state_slice("pDensityFm")
+			arhoM = _Uq[:, :, slarhoM]
+			arhoFm = _Uq[:, :, slarhoFm]
+			# Compute smoothing argument and smoothed 0-1
+			smoothed_0_1 = self.smoother(strain_rate / crit_strain_rate - 1.0,
+				self.fragsmooth_scale)
+			# Compute one-way reaction rate of current state
+			reaction_rate = (1.0/self.tau_f) * \
+				smoothed_0_1 * np.clip(arhoM - arhoFm, 0, None) # Proportional to non-fragmented mass
+			# Apply reaction rate to only fragmented magma (arhom = fragmented + unfragmented)
+			S[:, :, slarhoFm]  = reaction_rate
+		else:
+			raise Exception("Unexpected physics num dimension "
+				+ "in FragmentationTimescaleSourceSmoothed.")
 		return S # [ne, nq, ns]
 
 
