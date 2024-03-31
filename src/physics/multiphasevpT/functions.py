@@ -53,8 +53,8 @@ class FcnType(Enum):
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
 	SteadyState = auto()
+	StaticPlug = auto()
 	NohProblem = auto()
-	UniformAir = auto()
 
 
 class BCType(Enum):
@@ -68,25 +68,20 @@ class BCType(Enum):
 	MultiphasevpT1D1D = auto()
 	MultiphasevpT2D1D = auto()
 	MultiphasevpT2D2D = auto()
-	MultiphasevpT2D1DCylindrical = auto()
-	MultiphasevpT2D2DCylindrical = auto()
 	NonReflective1D = auto()
 	PressureOutlet1D = auto()
-	PressureOutlet2D = auto()
 	MassFluxInlet1D = auto()
 	PressureStableLinearizedInlet1D = auto()
-	PressureStableLinearizedInlet1D_genericFunc = auto() # Filler
+	PressureStableLinearizedInlet1D_genericFunc = auto()
 	VelocityInlet1D = auto()
 	VelocityInlet1D_neutralSinusoid = auto()
 	VelocityInlet1D_gaussianPulse = auto()
 	LinearizedImpedance2D = auto()
-	# Not implemented (could use lumped magma chamber model for example)
-	EntropyTotalenthalpyInlet1D = auto()
-	EntropyPressureInlet1D = auto()
 	NohInlet = auto()
 	LinearizedIsothermalOutflow2D = auto()
-	ChokedInlet2D = auto()
-	OscillatingSphere = auto()
+	# Future planned content:
+	# EntropyTotalenthalpyInlet1D = auto()
+	# EntropyPressureInlet1D = auto()
 
 
 class SourceType(Enum):
@@ -309,7 +304,7 @@ class SteadyState(FcnBase):
 	''' 1D steady state. Calls submodule compressible-conduit-steady
 		(https://github.com/fredriclam/compressible-conduit-steady).
 	'''
-	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,.
+	def __init__(self, x_global:np.array=None, p_vent:float=1e5, inlet_input_val=1.0,
 		input_type="u", yC=0.01, yWt=0.03, yA=1e-7, yWvInletMin=1e-5, yCMin=1e-5,
 		crit_volfrac=0.7, tau_d=1.0, tau_f=1.0, conduit_radius=50,
 		T_chamber=800+273.15, c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
@@ -387,6 +382,58 @@ class SteadyState(FcnBase):
 			# Remove lambdas for compatibility with pickle module
 			self.advection_map = None
 
+		return U_init
+	
+class StaticPlug(FcnBase):
+	''' 1D steady state with zero velocity and an initial plug drag.
+	  Calls submodule compressible-conduit-steady
+		(https://github.com/fredriclam/compressible-conduit-steady).
+	'''
+	def __init__(self,
+							 traction_fn:callable, yWt_fn:callable, yC_fn:callable, T_fn:callable,
+							 x_global:np.array=None,
+							 p_chamber=40e6,
+							 yA=1e-7,
+							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
+							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
+							 neglect_edfm=True,
+							 enforce_p_vent=None):
+		'''
+		Interface to compressible_conduit_steady.StaticPlug.
+		'''
+		if x_global is None:
+			raise ValueError(
+				"x_global must be specified in the StaticPlug initial condition. " +
+				"x_global provides 1D mesh information across all partitions of " +
+				"the 1D domain.")
+		props = {
+				"yA": yA,
+				"c_v_magma": c_v_magma,
+				"rho0_magma": rho0_magma,
+				"K_magma": K_magma,
+				"p0_magma": p0_magma,
+				"solubility_k": solubility_k,
+				"solubility_n": solubility_n,
+				"neglect_edfm": neglect_edfm,
+		}
+		# Register StaticPlug object from steady state module
+		self.f:callable = plugin_steady_state.StaticPlug(x_global,
+																									 p_chamber,
+			traction_fn,
+			yWt_fn,
+			yC_fn,
+			T_fn,
+			override_properties=props,
+			enforce_p_vent=enforce_p_vent,
+		)
+		# Save argument values
+		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.p_chamber = p_chamber
+		self.enforce_p_vent = enforce_p_vent
+
+	def get_state(self, physics, x, t):
+		# Evaluate intial condition
+		U_init = self.f(x)
 		return U_init
 
 class UniformExsolutionTest(FcnBase):
@@ -613,44 +660,6 @@ class LinearAtmosphere(FcnBase):
 		return Uq # [ne, nq, ns]
 
 
-class UniformAir(FcnBase):
-	'''
-	Isothermal air atmosphere as an initial condition.
-	'''
-
-	def __init__(self, T:float=300., p:float=1e5, R:float=287, c_v:float=717.5000000000001):
-		''' Set atmosphere temperature, pressure, and location of pressure.
-		Pressure distribution is computed as hydrostatic profile with p = p_atm
-		at elevation h0.
-		'''
-		self.T = T
-		self.p = p
-		self.R = R
-		self.c_v = c_v
-
-	def get_state(self, physics, x, t):
-		''' Computes the pressure in an isothermal atmosphere for an ideal gas
-		mixture with air and water vapour. Trace amounts of magma phase are added
-		and the pressure profile is iteratively corrected. '''
-
-		# Unpack
-		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		if physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
-				physics.get_state_indices()
-		elif physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
-					physics.get_state_indices() 
-		else:
-			raise ValueError(f"Unexpected ndims {physics.NDIMS}")
-		
-		rho = self.p / (self.R * self.T)
-		Uq[:,:,iarhoA] = rho
-		Uq[:,:,ie] = rho * self.c_v * self.T
-
-		return Uq
-
-
 class NohProblem(FcnBase):
 	'''
 	Noh problem for axisymmetric testing in the (r,z) view. This is a shock
@@ -738,59 +747,29 @@ above.
 
 class SlipWall(BCWeakPrescribed):
 	'''
-	This class corresponds to a slip wall.
-	Optionally, a stagnation correction is applied where the specific energy,
-	entropy are conserved. This is specific to the multiphasevpT physics model.
-	Q is the maximum density ratio between the numerical state and the boundary
-	state. The stagnation density is limited to (1/Q, Q) times the interior
-	density.
+	This class corresponds to a slip wall. See documentation for more
+	details.
 	'''
-	def __init__(self, use_stagnation_correction:bool=False, Q:float=10):
-		self.use_stagnation_correction = use_stagnation_correction
-		# Stagnation correction density limiting factor
-		self.Q = Q
-
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		smom = physics.get_momentum_slice()
-		UqB = UqI.copy()
 
 		# Unit normals
 		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
 
 		# Remove momentum contribution in normal direction from boundary
 		# state
+		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
+		UqB = UqI.copy()
 		UqB[:, :, smom] -= rhoveln * n_hat
-
-		if self.use_stagnation_correction:
-			# Compute dependent variables
-			arhoVec = UqI[:, :, 0:3]
-			T = atomics.temperature(arhoVec,
-				UqI[:, :, smom],
-				UqI[:, :, physics.get_state_slice("Energy")], physics)
-			phi = atomics.gas_volfrac(arhoVec, T, physics)
-			p = atomics.pressure(arhoVec, T, phi, physics)
-			rho = arhoVec.sum(axis=-1, keepdims=True)
-			y = arhoVec / rho
-			Gamma = atomics.Gamma(arhoVec, physics)
-			# rho^2 v_t^2
-			rhovelt2 = np.sum(UqI[:, :, smom] * UqI[:, :, smom], axis=2, keepdims=True) - rhoveln * rhoveln
-			# Energy, transverse kinetic
-			ekt = 0.5 * rhovelt2 /rho
-
-			# Compute stagnation state, conserving mass-specific energy
-			# This approximates the enthalpy calculation for dilute (low particle vol frac), Gamma ~ 1 mixtures
-			T_stag = (UqI[:, :, physics.get_state_slice("Energy")] - ekt) / atomics.c_v(arhoVec, physics)
-			p_stag = p * (T_stag / T) ** (Gamma/(Gamma-1))
-			rho_stag = atomics.mixture_density(y, p_stag, T_stag, physics)
-			# Apply limited density rescaling to non-momentum variables
-			UqB[:,:,[0,1,2,5,6,7,8]] *= np.clip(rho_stag / rho, 1.0/self.Q, self.Q)
 
 		return UqB
 
 
 class PressureOutlet(BCWeakPrescribed):
 	'''
+	Use of this class is discouraged. Use PressureOutlet1D in 1D instead.
+	This outlet treatment uses numerical quadrature along the acoustic
+	eigenvector to compute the rarefaction boundary.
 	This class corresponds to an outflow boundary condition with static
 	pressure prescribed.
 	The boundary state is computed by connecting the initial state to the state
@@ -1174,7 +1153,7 @@ class Inlet(BCWeakPrescribed):
 class CustomInlet(BCWeakPrescribed):
 	'''
 	This class corresponds to an inflow boundary condition that specifies mass
-	and momentum flux over the boundary.
+	and momentum flux over the boundary, treated as a porous flow boundary.
 
 	Requires physics class to have a vent_physics(VentPhysics) object.
 
@@ -1486,9 +1465,12 @@ class BCWeakLLF(BCBase):
 		else:
 			return F, None
 
+
 class CouplingBC(BCWeakLLF):
 	'''
 	This class corresponds to an coupled boundary that allows inflow or outflow.
+	This boundary class is inherited by specific coupling boundary conditions,
+	such as MultiphasevpT2D1D.
 
 	Attributes:
 	-----------
@@ -1497,7 +1479,6 @@ class CouplingBC(BCWeakLLF):
 	bstate (CouplingBC.LocalState): Local state data object
 	'''
 
-	# @dataclass
 	class LocalState:
 		''' Data namespace for states at a point in the boundary sequence'''
 		U: np.array     = np.array([])   # State in native domain
@@ -1531,10 +1512,6 @@ class CouplingBC(BCWeakLLF):
 				t == self.t.
 		'''
 		self.bstate = CouplingBC.LocalState()
-		# Unpack
-		# srho = physics.get_state_slice("Density")
-		# srhoE = physics.get_state_slice("Energy")
-		# smom = physics.get_momentum_slice()
 		# Compute unit normals
 		self.bstate.n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
 		self.bstate.U = UqI
@@ -1554,9 +1531,6 @@ class CouplingBC(BCWeakLLF):
 	@abstractmethod
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		pass
-		# ''' Called when computing states at shared boundaries. '''
-		# raise NotImplementedError("Abstract CouplingBC class was instantiated. " +
-		# 													" Implement get_boundary_state.")
 
 
 class MultiphasevpT2D1D(CouplingBC):
@@ -1621,34 +1595,24 @@ class MultiphasevpT2D1D(CouplingBC):
 		return self.bstate
 		
 	def compute_roe_flux(self, physics2D, UqSelf, UqAdj):
-		''' Roe flux computation copied from class Roe1D, adapted to normal inputs '''
-		# (see physics.conv_flux_fcn.compute_flux)
-		# N.B. the coordinate system is pre-rotated to the normal coordinates
-		# N.B. UqAdj has its own normal coordinates (here we take negative)
+		''' Roe flux computation copied from class Roe1D, adapted to normal inputs
+		  (see physics.conv_flux_fcn.compute_flux). This is intended only for
+			the ideal gas endmember test case.
+		  N.B. the coordinate system is pre-rotated to the normal coordinates
+		  N.B. UqAdj has its own normal coordinates (here we take negative) '''
 
 		# Unpack
 		srho = physics2D.get_state_slice("Density")
 		smom = physics2D.get_momentum_slice()
 		gamma = physics2D.gamma
 
-		# # Unit normals
-		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-
 		# Allocate memory for boundary flux function
 		self.bdry_flux_fcn = Roe2D(UqSelf)
-		# self.bdry_flux_fcn.R = 0.0*UqSelf
-		# self.bdry_flux_fcn.alphas = 0.0*UqSelf
-		# self.bdry_flux_fcn.alphas = 0.0*UqSelf
-
-		# Get velL, velR -- essentially normal
 		# Rebind Uq
 		UqAdj = UqAdj.copy()
 		UqSelf = UqSelf.copy()
 		# Account for opposite unit normal and opposite tangent orientation
 		UqAdj[:,:,smom] *= -1.0
-
-		# UqAdj[:,:,2] = 0.0
-		# UqSelf[:,:,2] = 0.0
 
 		velL = UqSelf[:,:,smom] / UqSelf[:,:,srho]
 		velR = UqAdj[:,:,smom] / UqAdj[:,:,srho]
@@ -1690,194 +1654,13 @@ class MultiphasevpT2D1D(CouplingBC):
 		data_net_key = physics.edge_to_key(
 										 physics.domain_edges[physics.domain_id][self.bkey],
 										 adjacent_domain_id)
-		# Get shared state
-		# Flat manager-dict model
+		# Get shared state from the flat manager-dict model
 		adjacent_bstate = copy.deepcopy(physics.bdry_data_net[data_net_key])
-		# Nested manager-dict model
-		# adjacent_bstate = copy.deepcopy(
-		# 	physics.bdry_data_net[physics.domain_id][self.bkey] \
-		# 	[adjacent_domain_id]["payload"])
 
-		#
 		if get_average:
 			return adjacent_bstate["bdry_face_state_averaged"]
 		else:
 			return adjacent_bstate["bdry_face_state"].Ulift
-
-		# Prep useful parameters
-		gamma = physics.gamma
-		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-
-		# DEPRECATE:
-		adjacent_physics_NDIMS = 3 - physics.NDIMS
-
-		if physics.NDIMS < adjacent_physics_NDIMS: # from 1D side
-			# TODO: replace with proper integration
-			adjacentUCast = np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)
-			# Remove tangential and return
-			adjacentUCast = np.concatenate((adjacentUCast[:,:,0:2], adjacentUCast[:,:,3:4]), axis=2)
-			# print(physics.compute_variable("Pressure", adjacentUCast))
-			# Convert from n-t representation to x-y
-			# Correct for opposite orientation
-			adjacentUCast[:,:,1] *= -1.0
-			return adjacentUCast
-			return np.mean(adjacent_bstate.Ucast, axis=(0,1), keepdims=True)[0,1]
-		elif physics.NDIMS > adjacent_physics_NDIMS: # from 2D side
-			adjacentUCast = np.tile(adjacent_bstate.Ucast, (self.bstate.Ucast.shape[0],self.bstate.Ucast.shape[1],1))
-			# adjacentUCast[:,:,1] *= 1.0
-
-			# Convert from n-t representation to x-y
-			# TODO: save t_hat as state in network payload
-			rotation_cw = np.array([ [0, 1], [-1, 0], ])
-			t_hat = np.einsum('ijk, mk', self.bstate.n_hat, rotation_cw)	
-			n_hat = -self.bstate.n_hat
-			rhovel_n = adjacentUCast[:,:,1:2]
-			rhovel_t = adjacentUCast[:,:,2:3]
-			rhovel_n_repr = np.einsum('ijk, ijn -> ijk', n_hat, rhovel_n)
-			rhovel_t_repr = np.einsum('ijk, ijn -> ijk', t_hat, rhovel_t)
-			adjacentUCast[:,:,1:3] = rhovel_n_repr + rhovel_t_repr
-			return adjacentUCast
-
-
-		# Perform dimension matching
-		dim_match = lambda data : data
-		if physics.NDIMS < adjacent_physics_NDIMS:
-			# TODO: replace with proper integration
-			dim_match = lambda data : np.expand_dims(
-				np.expand_dims(np.array([np.mean(data)]), axis=1), axis=2)
-		elif physics.NDIMS > adjacent_physics_NDIMS:
-			# Manual broadcast
-			dim_match = lambda data : data.squeeze() * np.ones(self.bstate.c.shape)
-
-		# Assume uniform 1D and broadcast to copy
-		bcasted_shape = 0.0*(self.bstate.Ucast + adjacent_bstate.Ucast)
-		selfUcast = bcasted_shape + self.bstate.Ucast
-		adjacentUcast = bcasted_shape + adjacent_bstate.Ucast
-
-		# TODO: Generalize to all variables, separate code for 2D
-		# Opposite orientation at boundary
-		if adjacent_bstate.x.size > 1 and x.size > 1:
-			adjacentUcast = np.flip(adjacentUcast, axis=(0,1))
-			assert(np.linalg.norm(np.flip(adjacent_bstate.x, axis=(0,1)) - x) < 1e-4)
-		else: # 2D1D
-			# TODO: Should we delete tangentials?
-			# selfUcast[:,:,2:3] = 0.0
-			# adjacentUcast[:,:,2:3] = 0.0
-			pass
-
-		return adjacentUcast
-
-		# Compute Roe state as boundary state
-		if physics.NDIMS == 2:
-			URoe = self.compute_roe_flux(physics, selfUcast,
-				adjacentUcast)
-		else:
-			from physics.euler.euler import Euler2D
-			# Trick Euler2D constructor into thinking this is a real domain
-			# TODO: use better workaround
-			class Fake:
-				pass
-			fake_mesh = Fake()
-			fake_mesh.boundary_groups = {}
-			fake_mesh.ndims = 2
-			fake_physics2D = Euler2D(fake_mesh)
-			fake_physics2D.gamma = physics.gamma
-			fake_physics2D.R = physics.R
-			URoe = self.compute_roe_flux(fake_physics2D, selfUcast,
-				adjacentUcast)
-		
-		def compute_bdry_case(Mn):
-			# Compute out-supersonic case
-			JOut = self.bstate.veln + 2.0 / (gamma - 1.0) * self.bstate.c
-			J0 = self.bstate.p / np.power(self.bstate.rho, gamma)
-			JIn = self.bstate.veln - 2.0 / (gamma - 1.0) * self.bstate.c
-
-			# Replace invariants with corresponding exterior state
-			np.putmask(
-				JIn,
-				Mn < 1,
-				dim_match(
-					(-adjacent_bstate.veln) - 2.0 / (gamma - 1.0) * adjacent_bstate.c
-			))
-			np.putmask(
-				J0,
-				Mn < 0,
-				dim_match(
-					adjacent_bstate.p / np.power(adjacent_bstate.rho, gamma)
-			))
-			np.putmask(
-				JOut,
-				Mn <= -1,
-				dim_match(
-					(-adjacent_bstate.veln) + 2.0 / (gamma - 1.0) * adjacent_bstate.c
-			))
-
-			# Compute states based on invariants
-			veln = 0.5 * (JIn + JOut)
-			c = 0.25 * (gamma - 1)  * (JOut - JIn)
-			rho = np.power(np.power(c, 2.0) / (gamma * J0), 1.0/(gamma - 1.0))
-			p = rho * np.power(c, 2.0) / gamma
-			vel = veln * self.bstate.n_hat + self.bstate.velt
-
-			return veln, c, rho, p, vel
-
-		# (veln, c, rho, p, vel) =  compute_bdry_case(self.bstate.Mn)
-
-		# print(f"Mn1={np.mean(veln/c)};")
-		# # Update
-		# (veln, c, rho, p, vel) =  compute_bdry_case(veln / c)
-		# print(f"Mn2={np.mean(veln/c)};")
-
-		
-		if physics.NDIMS == 1:
-			# Dimension down by deleting tangential velocity and taking mean
-			# TODO: mean needs be replaced with integration
-			UqB = np.mean(np.delete(URoe, 2, axis=2),axis=(0,1), keepdims=True)
-			# Adjust for boundary sign
-			UqB[:,:,1:2] *= n_hat
-		else:
-			# Rotate
-			UqB = URoe.copy()
-			# Setting zero tangential velocity may be needed for a well-posed
-			# Euler-Euler coupling, else unstable in the tangential direction (?)
-			# UqB[:,:,1] = URoe[:,:,1] * n_hat[:,:,0] + self.bstate.velt[:,:,0]
-			# UqB[:,:,2] = URoe[:,:,1] * n_hat[:,:,1] + self.bstate.velt[:,:,1]
-			rotation_cw = np.array([ [0, 1], [-1, 0], ])
-			t_hat = np.einsum('ijk, mk', self.bstate.n_hat, rotation_cw)
-			UqB[:,:,1] = URoe[:,:,1] * n_hat[:,:,0] + URoe[:,:,2] * t_hat[:,:,0]
-			UqB[:,:,2] = URoe[:,:,1] * n_hat[:,:,1] + URoe[:,:,2] * t_hat[:,:,1]
-		
-		# Try y-filter
-		# May be needed for well-posed coupling condition, else unstable in the tangential direction (?)
-		# UqB[:,:,1] = 0
-
-		# Set boundary states	
-		
-		# UqB = UqI.copy()
-		# kineticB = 0.5*rho*np.sum(np.power(vel, 2.0),
-		# 																	 axis=2, keepdims=True)
-		# UqB[:, :, physics.get_state_slice("Density")] = rho
-		# UqB[:, :, physics.get_momentum_slice()] = rho * vel
-		# UqB[:, :, physics.get_state_slice("Energy")] = p / (gamma - 1.) + kineticB
-
-		assert(not np.any(np.isnan(UqB)))
-		assert(UqB.shape == UqI.shape)
-
-		return UqB
-
-
-class MultiphasevpT2D1DCylindrical():
-	''' TODO: inherit MultiphasevpT2D1D, replacing the boundary integration of
-	int (f) dx with the radially weighted int (f * 2r/a) dr, where a is the
-	conduit radius. This is equivalent to replacing int (f) dx / int dx with
-	int (f) 2 pi r dr / int 2 pi r dr. The factor of 2 in 2r/a can be seen from
-	computing the average value of the function f = 1, which involves integration
-	of r -> r^2/2. '''
-	pass
-
-
-class MultiphasevpT2D2DCylindrical():
-	pass
 
 
 class Euler2D2D(BCWeakRiemann):
@@ -1918,8 +1701,6 @@ class Euler2D2D(BCWeakRiemann):
 class MultiphasevpT1D1D(BCWeakRiemann):
 	'''
 	This class implements a 1D-1D coupling boundary condition.
-	TODO: The numerical flux for the artifical viscosity diffusion integral
-	need to be dealt with.
 
 	Attributes:
 	-----------
@@ -1954,8 +1735,6 @@ class MultiphasevpT1D1D(BCWeakRiemann):
 class MultiphasevpT2D2D(BCWeakRiemann):
 	'''
 	This class implements a 2D-2D coupling boundary condition.
-	TODO: The numerical flux for the artifical viscosity diffusion integral
-	need to be dealt with.
 
 	Attributes:
 	-----------
@@ -1991,7 +1770,6 @@ class NonReflective1D(BCWeakPrescribed):
 	'''
 	This class corresponds to a nonreflective outflow boundary condition.
 	The boundary state is computed using acoustic Riemann invariants in 1D.
-	Work in progress: linearized radiation/impedance boundary condition.
 
 	Attributes:
 	-----------
@@ -2007,24 +1785,16 @@ class NonReflective1D(BCWeakPrescribed):
 
 		UqB = UqI.copy()
 
-		# Short-circuiting
-		# return UqB
-
 		''' Compute normal velocity. '''
-		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-		# rhoI = UqI[:, :, physics.get_mass_slice()].sum(axis=2, keepdims=True)
 		arhoVec = UqI[:,:,physics.get_mass_slice()]
 		rhoI = atomics.rho(arhoVec)
 		
 		''' Inflow handling '''
-		# if np.any(velI < 0.): # TODO:
-			# print("Incoming flow at outlet")
 		''' Record first pressure encountered at boundary. '''
 		if not self.initialized:
 			self.p = physics.compute_variable("Pressure", UqI)
 			self.initialized = True
 		''' Compute interior pressure. '''
-		# pI = physics.compute_variable("Pressure", UqI)
 		# Linearized computation of outgoing stuff
 		pGrid = physics.compute_variable("Pressure", UqI)
 		ZGrid = physics.compute_variable("SoundSpeed", UqI) * atomics.rho(UqI[...,0:3])
@@ -2039,13 +1809,6 @@ class NonReflective1D(BCWeakPrescribed):
 
 		if np.any(pHat < 0.):
 			raise errors.NotPhysicalError
-		''' Short-circuit function for sonic exit based on interior '''
-		# cI = physics.compute_variable("SoundSpeed", UqI)		
-		# cI = atomics.sound_speed(atomics.Gamma(arhoVec, physics),
-		# 	pI, rhoI, gas_volfrac, physics)
-		# if np.any(velI >= cI):
-		# 	return UqB
-
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
@@ -2240,8 +2003,9 @@ class PressureOutlet1D(BCWeakRiemann):
 		if np.any(velI >= cI):
 			return UqB
 		elif np.any(velI < 0):
-			raise ValueError("Inflow. Check fragmentation state (front too close?) " +
-				"and stability with respect to timestepper.")
+			pass
+			# raise ValueError("Inflow. Check fragmentation state (front too close?) " +
+			# 	"and stability with respect to timestepper.")
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to ingoing acoustic waves) of the interior
@@ -2319,10 +2083,6 @@ class PressureOutlet1D(BCWeakRiemann):
 		return UqB
 
 
-class PressureOutlet2D(BCWeakPrescribed):
-	pass
-
-
 class LinearizedImpedance2D(BCWeakPrescribed):
 	'''
 	Impedance boundary condition linearized about the initial pressure
@@ -2339,61 +2099,68 @@ class LinearizedImpedance2D(BCWeakPrescribed):
 		''' Computes the boundary state that satisfies the pressure BC strongly. '''
 
 		UqB = UqI.copy()
-		
+		''' Compute normal velocity. '''
+		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		# rhoI = UqI[:, :, physics.get_mass_slice()].sum(axis=2, keepdims=True)
 		arhoVec = UqI[:,:,physics.get_mass_slice()]
-		yI = atomics.massfrac(arhoVec)		
-		Gamma = atomics.Gamma(UqI[...,0:3], physics)
 		rhoI = atomics.rho(arhoVec)
-		# Velocity vector
-		velI = UqI[:, :, physics.get_momentum_slice()] / rhoI
-		# Normal vector
-		n_hat = normals / np.linalg.norm(normals, axis=2, keepdims=True)
+		velI = UqI[:, :, physics.get_momentum_slice()]/rhoI
 		# Normal velocity scalar
 		veln = np.sum(velI * n_hat, axis=2, keepdims=True)
 		# Normal velocity vector
-		velvec_n = veln * n_hat
-		# Tangent velocity vector
+		velvec_n = np.einsum("...i, ...i -> ...i", veln, n_hat)
 		velvec_t = velI - velvec_n
-
-		# Record first pressure encountered at boundary.
+		''' Inflow handling '''
+		# if np.any(veln < 0.):
+			# print("Incoming flow at outlet")
+		''' Inflow handling '''
+		# if np.any(velI < 0.): # TODO:
+			# print("Incoming flow at outlet")
+		''' Record first pressure encountered at boundary. '''
 		if not self.initialized:
 			self.p = physics.compute_variable("Pressure", UqI)
 			self.initialized = True
-
-		TI = atomics.temperature(arhoVec, UqI[:, :, physics.get_momentum_slice()],
-											UqI[:,:,physics.get_state_slice("Energy")], physics)
-		gas_volfrac = atomics.gas_volfrac(arhoVec, TI, physics)
-		pI = atomics.pressure(arhoVec, TI, gas_volfrac, physics)
-		cI = atomics.sound_speed(Gamma, pI, rhoI, gas_volfrac, physics)
-		ZI = cI * rhoI
-		# Compute target (u, p) from removing ingoing linear acoustic waves
-		psiPlus = veln + (pI - self.p) / ZI
+		''' Compute interior pressure. '''
+		# pI = physics.compute_variable("Pressure", UqI)
+		# Linearized computation of outgoing stuff
+		pGrid = physics.compute_variable("Pressure", UqI)
+		ZGrid = physics.compute_variable("SoundSpeed", UqI) * atomics.rho(UqI[...,0:3])
+		uGrid = veln
+		TGrid = physics.compute_variable("Temperature", UqI)
+		psiPlus = uGrid + (pGrid-self.p) / ZGrid
 		uHat = 0.5 * psiPlus
-		pHat = self.p + ZI * (0.5 * psiPlus)
+		pHat = self.p + ZGrid * (0.5 * psiPlus)
+		# Isentropic temp change
+		Gamma = atomics.Gamma(UqI[...,0:3], physics)
+		THat = TGrid * (pHat/pGrid)**((Gamma-1)/Gamma)
+
 		if np.any(pHat < 0.):
 			raise errors.NotPhysicalError
-		# Compute temperature through isentropic temp change
-		THat = TI * (pHat/pI)**((Gamma-1)/Gamma)
-		rho_target = atomics.mixture_density(yI, pHat, THat, physics)
-		velvec_target =  uHat * n_hat + velvec_t
 
-		# Map to conservative variables
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to ingoing acoustic waves) of the interior
+		solution. '''
+		# Compute mass fractions of interior solution
+		yI = atomics.massfrac(arhoVec)
+		rho_target = atomics.mixture_density(yI, pHat, THat, physics)
+		velvec_target = np.einsum("...i, ...i -> ...i", uHat, n_hat) \
+			+ velvec_t
+		''' Map to conservative variables '''
 		UqB[:,:,physics.get_mass_slice()] = rho_target * yI
-		UqB[:,:,physics.get_momentum_slice()] = rho_target * velvec_target
+		UqB[:,:,physics.get_momentum_slice()] = rho_target * uHat
 		UqB[:,:,physics.get_state_slice("Energy")] = \
-			rho_target * atomics.c_v(yI, physics) * THat \
+			atomics.c_v(rho_target * yI, physics) * THat \
 			+ (rho_target * yI[:,:,2:3]) * physics.Liquid["E_m0"] \
 			+ 0.5 * rho_target * np.sum(velvec_target*velvec_target, axis=2, keepdims=True)
-		# Update adiabatically compressed/expanded tracer partial densities
-		# UqB[:,:,[physics.get_state_index("pDensityWt"),
-		# 			 	 physics.get_state_index("pDensityC"),
-		# 				 physics.get_state_index("pDensityF")]] *= rho_target / rhoI
+		''' Update adiabatically compressed/expanded tracer partial densities '''
+		UqB[:,:,[physics.get_state_index("pDensityWt"),
+						 physics.get_state_index("pDensityC")]] *= rho_target / rhoI
+
+		''' Post-computation validity check '''
+		if np.any(THat < 0.):
+			raise errors.NotPhysicalError
 
 		return UqB
-
-
-class PressureStableLinearizedInlet1D_genericFunc(BCWeakPrescribed):
-	pass
 
 
 class PressureStableLinearizedInlet1D(BCWeakPrescribed):
@@ -2433,20 +2200,195 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	'''
 	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=1e-6,
 			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
-			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0):
+			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0,
+			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5):
 		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
 		# Water concentration
 		self.chi_water = chi_water
+		_water_conc_per_liquid = chi_water / (1.0 - cVFav)
+		self.yWt = _water_conc_per_liquid / (1.0 + _water_conc_per_liquid)
 		# Crystal volume fraction average and perturbation amplitude
 		self.cVFav, self.cVFamp = cVFav, cVFamp
+		self.yC = cVFav
 		# Gaussian pulse if true (else sinusoidal)
 		self.is_gaussian:bool = is_gaussian
 		# Frequency for sinusodial (used if not is_gaussian)
 		self.cos_freq = cos_freq
 		# Gaussian properties (used if is_gaussian)
 		self.gaussian_tpulse, self.gaussian_sig = gaussian_tpulse, gaussian_sig
+		# Set flag for approximating mass fractions
+		self.approx_mass_fracs:bool = approx_mass_fracs
+		# Solubility law
+		self.solubility_k = solubility_k
+		self.solubility_n = solubility_n
+
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Compute a boundary state by replacing Riemann problem with acoustic
+		waves, and then approximating the acoustic wave. '''
+		UqB = UqI.copy()
+		''' Check validity of flow state, check number of boundary points. '''
+		if UqI.shape[0] * UqI.shape[1] > 1:
+			raise NotImplementedError('''Not implemented: for-loop over more than one
+				inflow boundary point in 1D.''')
+
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to outgoing acoustic waves) of the interior
+		solution. '''
+		# Extract data from node values
+		arhoVecI = UqI[:,:,physics.get_mass_slice()]
+		momxI = UqI[...,physics.get_momentum_slice()]
+		eI = UqI[...,physics.get_state_slice("Energy")]
+		# Extract specified mass flux and prescribed chamber/reservoir values
+		p_chamber, T_chamber = self.p_chamber, self.T_chamber
+		# Extract material properties
+		K, rho0, p0 = \
+			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
+		
+		# Compute grid primitives
+		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
+		gas_volfrac = atomics.gas_volfrac(arhoVecI, TGrid, physics)
+		pGrid = atomics.pressure(arhoVecI, TGrid, gas_volfrac, physics)
+		rhoGrid = atomics.rho(arhoVecI)
+		GammaGrid = atomics.Gamma(arhoVecI, physics)
+		cGrid = atomics.sound_speed(GammaGrid, pGrid, rhoGrid, gas_volfrac, physics)
+		uGrid = momxI / rhoGrid
+		# Compute chamber mass properties
+		arhoVecChamber = arhoVecI.copy()
+		if self.approx_mass_fracs:
+			arhoVecChamber[...,0] = self.trace_arho # Small amount of air to preserve positivity
+			arhoVecChamber[...,1] = self.trace_arho # Small amount of water to preserve positivity
+			# Approximate partial density of magma by density
+			arhoVecChamber[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+		else:
+			yL = 1.0 - (self.yC + self.yWt)
+			yWd_eq = np.clip(yL * self.solubility_k * p_chamber ** self.solubility_n,
+										   1e-7, 
+											 self.yWt - 1e-7)
+			# Exsolved water vapour
+			yWv = self.yWt - yWd_eq
+			yA = 1e-7
+			yM = 1.0 - (yA + yWv)
+			rho = atomics.mixture_density(np.array([yA, yWv, yM]), p_chamber, T_chamber, physics)
+			arhoVecChamber[...,0] = rho * yA
+			arhoVecChamber[...,1] = rho * yWv
+			arhoVecChamber[...,2] = rho * yM
+		rhoChamber = atomics.rho(arhoVecChamber)
+		GammaChamber = atomics.Gamma(arhoVecChamber, physics)
+		cChamber = atomics.sound_speed(GammaChamber, p_chamber, rhoChamber,
+			atomics.gas_volfrac(arhoVecChamber, T_chamber, physics), physics)
+
+		# Compute composition-based properties
+		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
+			# Outflow
+			Gamma = GammaGrid
+			y = atomics.massfrac(arhoVecI)
+			S = TGrid / pGrid**((Gamma-1)/Gamma)
+		else:
+			# Inflow
+			Gamma = GammaChamber
+			y = atomics.massfrac(arhoVecChamber)
+			S = T_chamber / p_chamber**((Gamma-1)/Gamma)
+
+		# Compute acoustic impedances Z and admittances Y = 1/Z
+		ZGrid = rhoGrid * cGrid
+		ZChamber = rhoChamber * cChamber
+		YGrid = 1.0 / ZGrid
+		YChamber = 1.0 / ZChamber
+		# Approximate pressure as Y-weighted average
+		p = (YGrid * pGrid + YChamber * p_chamber) / (YGrid + YChamber)
+		# Approximate corresponding velocity in x-direction TODO: generalize with face normal
+		u = uGrid + (p_chamber - pGrid) / (ZChamber + ZGrid)
+
+		# Evaluate temperature from isentropic outgoing wave
+		T = S * p**((Gamma-1)/Gamma)
+		rho = atomics.mixture_density(y, p, T, physics)
+
+		''' Check positivity of computed state. '''
+		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
+			raise errors.NotPhysicalError
+
+		''' Map to conservative variables '''
+		UqB[:,:,physics.get_mass_slice()] = rho * y
+		UqB[:,:,physics.get_momentum_slice()] = rho * u
+		UqB[:,:,physics.get_state_slice("Energy")] = \
+			atomics.c_v(rho * y, physics) * T \
+			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
+			+ 0.5 * rho * u * u
+		# Update adiabatically compressed/expanded tracer partial densities
+		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+
+		# crystal vol / suspension vol
+		ta = 5
+		tb = 5 + (1 / (2 * self.cos_freq)) if self.cos_freq != 0 else +np.inf
+		if self.is_gaussian:
+			phi_crys = self.cVFav + self.cVFamp \
+				* np.exp(-((t - self.gaussian_tpulse)/ self.gaussian_sig) **2 / 2)
+		else:
+			if t < ta:
+				phi_crys = self.cVFav
+			elif t < tb:
+				phi_crys = self.cVFav * (1 + self.cVFamp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
+			else:
+				phi_crys = self.cVFav * (1 - self.cVFamp * np.cos(2 * np.pi * self.cos_freq * (t - tb)))
+		chi_water = self.chi_water
+		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
+		UqB[:,:,6] = rho * phi_crys
+		# Fragmented state
+		UqB[:,:,7] = 0.0
+	
+		return UqB
+
+class PressureStableLinearizedInlet1D_genericFunc(BCWeakPrescribed):
+	'''
+	Takes in generic functional form for crystal volume fraction variation
+	
+	Linearized inlet conditions that solve a linearized version of the Riemann
+	problem with uL == uR. The Riemann problem consists of a jump in the state
+	variables at the boundary between the designated (inlet) values and the
+	numerical trace from the interior of the numerical domain. The constraints
+	for the problem are:
+		1. Entropy and mass fractions are given by the inlet values
+		2. Particle velocity is continuous (uL == uR)
+		3. Pressure of the inlet is used in the Riemann problem (pL) but is not
+		     necessarily the pressure used at the boundary.
+	The entering shock is linearized as an acoustic (expansion) wave, resulting
+	in a three-wave structure.
+
+	Asymptotically, the pressure at the boundary becomes that of the inlet (pL),
+	motivating the name "PressureStable".
+	Also, by construction, the entropy and mass fractions at the boundary are
+	those of the inlet.
+	There is no asymptotic statement about the velocity at the boundary, since
+	this in general depends on the interior solution.
+
+	The problem linearized on both sides of the contact wave has solution
+	  p = (YL * pL + YR * pR) / (YL + YR) + (uL - uR) / (YL + YR)
+	and the assumption of continuous particle velocity drops the latter term.
+
+	Usage:
+	  cVFav sets the averages crystal volume fraction.
+	  For a constant state boundary, set is_gaussian=False, cos_freq=0.0.
+	  For a sinusoidal boundary, set is_gaussian=False, cos_freq > 0. The
+		  amplitude is controlled by cVFamp, with average cVFav.
+		For a gaussian boundary, set is_gaussian=True. cos_freq is ignored.
+		  The gaussian is controlled by gaussian_tpulse, gaussian_sig, and
+		  cVFamp, with background value cVFav.
+	Water content is specified as a concentration per dry magma mass (chi_water).
+	'''
+	def __init__(self, cVFfunc, p_chamber:float=100e6, T_chamber:float=1e3, 
+			trace_arho:float=1e-6, chi_water:float=0.03, cVFav:float=0.4):
+		# Arguments for chamber properties
+		self.p_chamber, self.T_chamber, self.trace_arho = \
+			p_chamber, T_chamber, trace_arho
+		# Water concentration
+		self.chi_water = chi_water
+		# Crystal volume fraction average
+		self.cVFav = cVFav
+		# Crystal volume fraction variation function
+		self.cVFfunc = cVFfunc
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
@@ -2530,19 +2472,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
 
 		# crystal vol / suspension vol
-		ta = 5
-		tb = 5 + (1 / (2 * self.cos_freq)) if self.cos_freq != 0 else +np.inf
-		if self.is_gaussian:
-			phi_crys = self.cVFav + self.cVFamp \
-				* np.exp(-((t - self.gaussian_tpulse)/ self.gaussian_sig) **2 / 2)
-		else:
-			if t < ta:
-				phi_crys = self.cVFav
-			elif t < tb:
-				halfAmp = self.cVFamp / 2
-				phi_crys = self.cVFav * ((1-halfAmp) + halfAmp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
-			else:
-				phi_crys = self.cVFav * (1 - self.cVFamp * np.cos(2 * np.pi * self.cos_freq * (t - tb)))
+		phi_crys = self.cVFav + self.cVFfunc(t)
 		chi_water = self.chi_water
 		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
 		UqB[:,:,6] = rho * phi_crys
@@ -2553,17 +2483,31 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 
 class VelocityInlet1D(BCWeakPrescribed):
 	'''
-	Blah blah blah TODO: copy from MassFluxInlet1D
+	Inlet boundary condition with constant incoming particle velocity, for a
+	fixed chamber/reservoir pressure and temperature. The boundary state is
+	computed using acoustic Riemann invariants in 1D.
+	
+	The state of the fluid (pressure, gas volume fraction) may be non-unique.
+	Attributes:
+	-----------
+	u:                particle velocity
+	p_chamber:        pressure of chamber, const (not necessarily bdry value)
+	T_chamber:        temperature of chamber, const (not necessarily bdry value)
+	trace_arho:       positive partial density to use for air
+	yWt:              total water mass fraction
+	yC:               crystal mass fraction
+	use_linearized:   whether to use linear approximation (default True)
+	newton_tol:       absolute tolerance in residual equation (units of velocity)
+	newton_iter_max:  max number of newton iterations to take
 	'''
-	def __init__(self, u:float=1.0, p_chamber:float=100e6,
-			T_chamber:float=1e3, trace_arho:float=1e-6, freq:float=0.25, # 1/36
-			yWt:float=0.04, yC:float=0.1,
-			use_linearized:bool=True, newton_tol:float=1e-7, newton_iter_max=20):
+	def __init__(self, u:float=1.0, p_chamber:float=100e6, T_chamber:float=1e3,
+							trace_arho:float=1e-6, yWt:float=0.04, yC:float=0.1,
+							use_linearized:bool=True, newton_tol:float=1e-7,
+							newton_iter_max:float=20):
 		# Ingest args
 		self.u, self.p_chamber, self.T_chamber, self.trace_arho = \
 			u, p_chamber, T_chamber, trace_arho
 		# Angular frequency of variation
-		self.freq = freq
 		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max = \
 			yWt, yC, use_linearized, newton_tol, newton_iter_max
 
@@ -2738,197 +2682,32 @@ class VelocityInlet1D(BCWeakPrescribed):
 		return UqB
 
 
-class VelocityInlet1D_gaussianPulse(BCWeakPrescribed):
-	'''
-	injection of gaussian pulse of different crystal content
-	Blah blah blah TODO: copy from MassFluxInlet1D
-	'''
-	def __init__(self, u:float=1.0, p_chamber:float=100e6,
-			T_chamber:float=1e3, trace_arho:float=1e-6, sig:float=4, # 1/36
-			yWt:float=0.04, yC:float=0.1, cVFav:float=0.4, 
-			cVFamp:float=0.1, tpulse:float=20,
-			use_linearized:bool=True, newton_tol:float=1e-7, newton_iter_max=20):
-		# Ingest args
-		self.u, self.p_chamber, self.T_chamber, self.trace_arho = \
-			u, p_chamber, T_chamber, trace_arho
-		# Angular frequency of variation
-		self.sig, self.cVFav, self.cVFamp, self.tpulse = sig, cVFav, cVFamp, tpulse
-		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max = \
-			yWt, yC, use_linearized, newton_tol, newton_iter_max
-
-	def get_linearized_boundary_state(self, physics, UqI, normals, x, t):
-		''' Compute a boundary state by replacing Riemann problem with acoustic
-		waves, and then approximating the acoustic wave. '''
-		UqB = UqI.copy()
-		''' Check validity of flow state, check number of boundary points. '''
-		if UqI.shape[0] * UqI.shape[1] > 1:
-			raise NotImplementedError('''Not implemented: for-loop over more than one
-				inflow boundary point.''')
-
-		''' Compute boundary-satisfying primitive state that preserves Riemann
-		invariants (corresponding to outgoing acoustic waves) of the interior
-		solution. '''
-		# Extract data from node values
-		arhoVecI = UqI[:,:,physics.get_mass_slice()]
-		momxI = UqI[...,physics.get_momentum_slice()]
-		eI = UqI[...,physics.get_state_slice("Energy")]
-		# Extract specified mass flux and prescribed chamber/reservoir values
-		p_chamber, T_chamber = self.p_chamber, self.T_chamber
-		# Extract material properties
-		K, rho0, p0 = \
-			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
-		# Approximate desired mass flux
-		u = self.u
-		
-		# Compute grid primitives
-		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
-		gas_volfrac = atomics.gas_volfrac(arhoVecI, TGrid, physics)
-		pGrid = atomics.pressure(arhoVecI, TGrid, gas_volfrac, physics)
-		rhoGrid = atomics.rho(arhoVecI)
-		GammaGrid = atomics.Gamma(arhoVecI, physics)
-		cGrid = atomics.sound_speed(GammaGrid, pGrid, rhoGrid, gas_volfrac, physics)
-		uGrid = momxI / rhoGrid
-		# Compute composition-based properties
-		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
-			# Outflow
-			Gamma = atomics.Gamma(arhoVecI, physics)
-			y = atomics.massfrac(arhoVecI)
-			S = TGrid / pGrid**((Gamma-1)/Gamma)
-		else:
-			# Inflow
-			arhoVecB = arhoVecI.copy()
-			arhoVecB[...,0] = self.trace_arho # Small amount of air to preserve positivity
-			arhoVecB[...,1] = self.trace_arho # Small amount of water to preserve positivity
-			# Approximate partial density of magma by density
-			arhoVecB[...,2] = rho0 * (1 + (p_chamber - p0) / K)
-			Gamma = atomics.Gamma(arhoVecB, physics)
-			y = atomics.massfrac(arhoVecB)
-			S = T_chamber / p_chamber**((Gamma-1)/Gamma)
-
-		# Specific gas constant for R
-		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
-		# Evaluate primitive variables for boundary state
-		p = pGrid - (rhoGrid * cGrid) * (uGrid - u)
-		T = S * p**((Gamma-1)/Gamma)
-		rho = atomics.mixture_density(y, p, T, physics)
-
-		''' Check positivity of computed state. '''
-		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
-			raise errors.NotPhysicalError
-
-		''' Map to conservative variables '''
-		UqB[:,:,physics.get_mass_slice()] = rho * y
-		UqB[:,:,physics.get_momentum_slice()] = rho * u
-		UqB[:,:,physics.get_state_slice("Energy")] = \
-			atomics.c_v(rho * y, physics) * T \
-			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
-			+ 0.5 * rho * u * u
-
-		# TODO: self.yWt, self.yC are not used
-
-		# Update adiabatically compressed/expanded tracer partial densities
-		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
-		# crystal vol / suspension vol
-		phi_crys = self.cVFav + self.cVFamp * np.exp(-((t - self.tpulse)/ self.sig) **2 / 2)
-		chi_water = 0.03
-		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
-		UqB[:,:,6] = rho * phi_crys
-	
-		# Fragmented state
-		UqB[:,:,7] = 0.0
-
-		return UqB
-
-	def get_boundary_state(self, physics, UqI, normals, x, t):
-		''' Computes the boundary state that satisfies the pressure BC strongly. '''
-
-		if self.use_linearized:
-			# Delegate to linearized
-			return self.get_linearized_boundary_state(physics, UqI, normals, x, t)
-		UqB = UqI.copy()
-		''' Check validity of flow state, check number of boundary points. '''
-		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
-			# TODO: improve out flow and sonic handling
-			print("Attempting to outflow into an inlet")
-		if UqI.shape[0] * UqI.shape[1] > 1:
-			raise NotImplementedError('''Not implemented: for-loop over more than one
-				inflow boundary point.''')
-
-		''' Compute boundary-satisfying primitive state that preserves Riemann
-		invariants (corresponding to outgoing acoustic waves) of the interior
-		solution. '''
-		# Extract data from input and prescribed chamber/reservoir values
-		arhoVecI = UqI[:,:,physics.get_mass_slice()]
-		momxI = UqI[...,physics.get_momentum_slice()]
-		eI = UqI[...,physics.get_state_slice("Energy")]
-		j, p_chamber, T_chamber = self.mass_flux, self.p_chamber, self.T_chamber
-		K, rho0, p0 = \
-			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
-		# Compute intermediates
-		Gamma = atomics.Gamma(arhoVecI, physics)
-		y = atomics.massfrac(arhoVecI)
-		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
-		# Compute chamber entropy as ratio T/p^(..)
-		S_r = T_chamber / p_chamber**((Gamma-1)/Gamma)
-		# Compute grid primitives
-		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
-		pGrid = atomics.pressure(arhoVecI, TGrid,
-			atomics.gas_volfrac(arhoVecI, TGrid, physics), physics)
-
-		def eval_fun_dfun(p):
-			''' Evaluate function G and its derivative dG/dp. '''
-			# Define reusable groups
-			g1 = yRGas * p**(-1/Gamma) * S_r
-			g2 = y[...,2] * K / (rho0*(p + K - p0))
-			# Integration of 1/impedance
-			# Note that the output p, T are not used, since entropy is not taken from grid
-			_, uTarget, _ = atomics.velocity_RI_fixed_p_quadrature(p, UqI, physics, normals,
-				is_adaptive=True, tol=1e-1, rtol=1e-5)
-			# Evaluate integrand
-			f = atomics.acousticRI_integrand_scalar(np.array(p), TGrid, pGrid, y, Gamma, physics)
-			# Evaluate returns
-			G = j * (g1 + g2) + normals * uTarget
-			dGdp = -j * (g1 * (1/Gamma) / p + g2 / (p+K-p0)) - f
-			return G, dGdp, (p, uTarget)
-
-		# Perform Newton iteration to compute boundary p
-		p = pGrid.copy()
-		for i in range(self.newton_iter_max):
-			G, dGdp, _ = eval_fun_dfun(p)
-			p -= G / dGdp
-			if np.abs(G) < self.newton_tol:
-				break
-		# TODO: set logging if max iter is reached
-		# Evaluate primitive variables for boundary state
-		_, _, (p, u) = eval_fun_dfun(p)
-		T = S_r * p**((Gamma-1)/Gamma)
-		rho = atomics.mixture_density(y, p, T, physics)
-
-		''' Check positivity of computed state. '''
-		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
-			raise errors.NotPhysicalError
-
-		''' Map to conservative variables '''
-		UqB[:,:,physics.get_mass_slice()] = rho * y
-		UqB[:,:,physics.get_momentum_slice()] = j
-		UqB[:,:,physics.get_state_slice("Energy")] = \
-			atomics.c_v(rho * y, physics) * T \
-			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
-			+ 0.5 * j * u
-		# Update adiabatically compressed/expanded tracer partial densities
-		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
-		#phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * 0.25 * t)) # crystal vol / suspension vol
-		#chi_water = 0.05055
-		#UqB[:,:,5] = rho * (1 - phi_crys) / (1 + chi_water)
-		#UqB[:,:,6] = rho * phi_crys
-
-		return UqB
-
 class VelocityInlet1D_neutralSinusoid(BCWeakPrescribed):
 	'''
-	sinusoidal crystal content injection where average remains constant (mostly copied from VelocityInlet1D)
-	Blah blah blah TODO: copy from MassFluxInlet1D
+	Inlet boundary condition with constant incoming particle velocity, for a
+	fixed chamber/reservoir pressure and temperature. The boundary state is
+	computed using acoustic Riemann invariants in 1D.
+	
+	Crystal content injected is sinusoidal + constant:
+    cVFav (1 - 0.25 * cos(2 * pi * freq * t ))
+	Dissolved water concentration in the melt is constant (0.03 kg/kg). The
+	crystal content at t = 0 is constant, with the sinusoidal pattern kicking
+	in between t = 5, t = 5 + 1/(2freq).
+	
+	The state of the fluid (pressure, gas volume fraction) may be non-unique.
+	Attributes:
+	-----------
+	u:                particle velocity
+	p_chamber:        pressure of chamber, const (not necessarily bdry value)
+	T_chamber:        temperature of chamber, const (not necessarily bdry value)
+	trace_arho:       positive partial density to use for air
+	freq:             frequency of crystal content variation
+	yWt:              total water mass fraction
+	yC:               crystal mass fraction
+	cVFav:            time-averaged crystal mass fraction
+	use_linearized:   whether to use linear approximation (default True)
+	newton_tol:       absolute tolerance in residual equation (units of velocity)
+	newton_iter_max:  max number of newton iterations to take
 	'''
 	def __init__(self, u:float=1.0, p_chamber:float=100e6,
 			T_chamber:float=1e3, trace_arho:float=1e-6, freq:float=0.25, # 1/36
@@ -3119,20 +2898,234 @@ class VelocityInlet1D_neutralSinusoid(BCWeakPrescribed):
 
 		return UqB
 
+
+class VelocityInlet1D_gaussianPulse(BCWeakPrescribed):
+	'''
+	Inlet boundary condition with constant incoming particle velocity, for a
+	fixed chamber/reservoir pressure and temperature. The boundary state is
+	computed using acoustic Riemann invariants in 1D.
+	
+	Crystal content injected is sinusoidal + constant:
+    cVFav (1 - 0.25 * cos(2 * pi * freq * t ))
+	Dissolved water concentration in the melt is constant (0.03 kg/kg). The
+	crystal content at t = 0 is constant, with the sinusoidal pattern kicking
+	in between t = 5, t = 5 + 1/(2freq).
+	
+	The state of the fluid (pressure, gas volume fraction) may be non-unique.
+	Attributes:
+	-----------
+	u:                particle velocity
+	p_chamber:        pressure of chamber, const (not necessarily bdry value)
+	T_chamber:        temperature of chamber, const (not necessarily bdry value)
+	trace_arho:       positive partial density to use for air
+	sig:              sigma
+	yWt:              total water mass fraction (unused)
+	yC:               crystal mass fraction (unused)
+	cVFav:            time-averaged crystal mass fraction
+	cVFamp:           amplitude of cV variation
+	tpulse:           Gaussian pusle time
+	use_linearized:   whether to use linear approximation (default True)
+	newton_tol:       absolute tolerance in residual equation (units of velocity)
+	newton_iter_max:  max number of newton iterations to take
+	'''
+	def __init__(self, u:float=1.0, p_chamber:float=100e6,
+			T_chamber:float=1e3, trace_arho:float=1e-6, sig:float=4, # 1/36
+			yWt:float=0.04, yC:float=0.1, cVFav:float=0.4, 
+			cVFamp:float=0.1, tpulse:float=20,
+			use_linearized:bool=True, newton_tol:float=1e-7, newton_iter_max=20):
+		# Ingest args
+		self.u, self.p_chamber, self.T_chamber, self.trace_arho = \
+			u, p_chamber, T_chamber, trace_arho
+		# Angular frequency of variation
+		self.sig, self.cVFav, self.cVFamp, self.tpulse = sig, cVFav, cVFamp, tpulse
+		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max = \
+			yWt, yC, use_linearized, newton_tol, newton_iter_max
+
+	def get_linearized_boundary_state(self, physics, UqI, normals, x, t):
+		''' Compute a boundary state by replacing Riemann problem with acoustic
+		waves, and then approximating the acoustic wave. '''
+		UqB = UqI.copy()
+		''' Check validity of flow state, check number of boundary points. '''
+		if UqI.shape[0] * UqI.shape[1] > 1:
+			raise NotImplementedError('''Not implemented: for-loop over more than one
+				inflow boundary point.''')
+
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to outgoing acoustic waves) of the interior
+		solution. '''
+		# Extract data from node values
+		arhoVecI = UqI[:,:,physics.get_mass_slice()]
+		momxI = UqI[...,physics.get_momentum_slice()]
+		eI = UqI[...,physics.get_state_slice("Energy")]
+		# Extract specified mass flux and prescribed chamber/reservoir values
+		p_chamber, T_chamber = self.p_chamber, self.T_chamber
+		# Extract material properties
+		K, rho0, p0 = \
+			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
+		# Approximate desired mass flux
+		u = self.u
+		
+		# Compute grid primitives
+		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
+		gas_volfrac = atomics.gas_volfrac(arhoVecI, TGrid, physics)
+		pGrid = atomics.pressure(arhoVecI, TGrid, gas_volfrac, physics)
+		rhoGrid = atomics.rho(arhoVecI)
+		GammaGrid = atomics.Gamma(arhoVecI, physics)
+		cGrid = atomics.sound_speed(GammaGrid, pGrid, rhoGrid, gas_volfrac, physics)
+		uGrid = momxI / rhoGrid
+		# Compute composition-based properties
+		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
+			# Outflow
+			Gamma = atomics.Gamma(arhoVecI, physics)
+			y = atomics.massfrac(arhoVecI)
+			S = TGrid / pGrid**((Gamma-1)/Gamma)
+		else:
+			# Inflow
+			arhoVecB = arhoVecI.copy()
+			arhoVecB[...,0] = self.trace_arho # Small amount of air to preserve positivity
+			arhoVecB[...,1] = self.trace_arho # Small amount of water to preserve positivity
+			# Approximate partial density of magma by density
+			arhoVecB[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+			Gamma = atomics.Gamma(arhoVecB, physics)
+			y = atomics.massfrac(arhoVecB)
+			S = T_chamber / p_chamber**((Gamma-1)/Gamma)
+
+		# Specific gas constant for R
+		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
+		# Evaluate primitive variables for boundary state
+		p = pGrid - (rhoGrid * cGrid) * (uGrid - u)
+		T = S * p**((Gamma-1)/Gamma)
+		rho = atomics.mixture_density(y, p, T, physics)
+
+		''' Check positivity of computed state. '''
+		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
+			raise errors.NotPhysicalError
+
+		''' Map to conservative variables '''
+		UqB[:,:,physics.get_mass_slice()] = rho * y
+		UqB[:,:,physics.get_momentum_slice()] = rho * u
+		UqB[:,:,physics.get_state_slice("Energy")] = \
+			atomics.c_v(rho * y, physics) * T \
+			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
+			+ 0.5 * rho * u * u
+
+		# Update adiabatically compressed/expanded tracer partial densities
+		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+		# crystal vol / suspension vol
+		phi_crys = self.cVFav + self.cVFamp * np.exp(-((t - self.tpulse)/ self.sig) **2 / 2)
+		chi_water = 0.03
+		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
+		UqB[:,:,6] = rho * phi_crys
+	
+		# Fragmented state
+		UqB[:,:,7] = 0.0
+
+		return UqB
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		''' Computes the boundary state that satisfies the pressure BC strongly. '''
+
+		if self.use_linearized:
+			# Delegate to linearized
+			return self.get_linearized_boundary_state(physics, UqI, normals, x, t)
+		UqB = UqI.copy()
+		''' Check validity of flow state, check number of boundary points. '''
+		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
+			# TODO: improve out flow and sonic handling
+			print("Attempting to outflow into an inlet")
+		if UqI.shape[0] * UqI.shape[1] > 1:
+			raise NotImplementedError('''Not implemented: for-loop over more than one
+				inflow boundary point.''')
+
+		''' Compute boundary-satisfying primitive state that preserves Riemann
+		invariants (corresponding to outgoing acoustic waves) of the interior
+		solution. '''
+		# Extract data from input and prescribed chamber/reservoir values
+		arhoVecI = UqI[:,:,physics.get_mass_slice()]
+		momxI = UqI[...,physics.get_momentum_slice()]
+		eI = UqI[...,physics.get_state_slice("Energy")]
+		j, p_chamber, T_chamber = self.mass_flux, self.p_chamber, self.T_chamber
+		K, rho0, p0 = \
+			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
+		# Compute intermediates
+		Gamma = atomics.Gamma(arhoVecI, physics)
+		y = atomics.massfrac(arhoVecI)
+		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
+		# Compute chamber entropy as ratio T/p^(..)
+		S_r = T_chamber / p_chamber**((Gamma-1)/Gamma)
+		# Compute grid primitives
+		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
+		pGrid = atomics.pressure(arhoVecI, TGrid,
+			atomics.gas_volfrac(arhoVecI, TGrid, physics), physics)
+
+		def eval_fun_dfun(p):
+			''' Evaluate function G and its derivative dG/dp. '''
+			# Define reusable groups
+			g1 = yRGas * p**(-1/Gamma) * S_r
+			g2 = y[...,2] * K / (rho0*(p + K - p0))
+			# Integration of 1/impedance
+			# Note that the output p, T are not used, since entropy is not taken from grid
+			_, uTarget, _ = atomics.velocity_RI_fixed_p_quadrature(p, UqI, physics, normals,
+				is_adaptive=True, tol=1e-1, rtol=1e-5)
+			# Evaluate integrand
+			f = atomics.acousticRI_integrand_scalar(np.array(p), TGrid, pGrid, y, Gamma, physics)
+			# Evaluate returns
+			G = j * (g1 + g2) + normals * uTarget
+			dGdp = -j * (g1 * (1/Gamma) / p + g2 / (p+K-p0)) - f
+			return G, dGdp, (p, uTarget)
+
+		# Perform Newton iteration to compute boundary p
+		p = pGrid.copy()
+		for i in range(self.newton_iter_max):
+			G, dGdp, _ = eval_fun_dfun(p)
+			p -= G / dGdp
+			if np.abs(G) < self.newton_tol:
+				break
+		# TODO: set logging if max iter is reached
+		# Evaluate primitive variables for boundary state
+		_, _, (p, u) = eval_fun_dfun(p)
+		T = S_r * p**((Gamma-1)/Gamma)
+		rho = atomics.mixture_density(y, p, T, physics)
+
+		''' Check positivity of computed state. '''
+		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
+			raise errors.NotPhysicalError
+
+		''' Map to conservative variables '''
+		UqB[:,:,physics.get_mass_slice()] = rho * y
+		UqB[:,:,physics.get_momentum_slice()] = j
+		UqB[:,:,physics.get_state_slice("Energy")] = \
+			atomics.c_v(rho * y, physics) * T \
+			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
+			+ 0.5 * j * u
+		# Update adiabatically compressed/expanded tracer partial densities
+		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+		#phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * 0.25 * t)) # crystal vol / suspension vol
+		#chi_water = 0.05055
+		#UqB[:,:,5] = rho * (1 - phi_crys) / (1 + chi_water)
+		#UqB[:,:,6] = rho * phi_crys
+
+		return UqB
+
 class MassFluxInlet1D(BCWeakPrescribed):
 	'''
-	This class corresponds to an outflow boundary condition with static
-	incoming mass flux, for a fixed chamber/reservoir pressure and temperature.
+	Inlet boundary condition with constant incoming mass flux (density *
+	velocity), for a fixed chamber/reservoir pressure and temperature.
 	The boundary state is computed using acoustic Riemann invariants in 1D.
 	Attributes:
 	-----------
 	mass_flux:        mass flux at boundary, const
 	p_chamber:        pressure of chamber, const (not necessarily bdry value)
 	T_chamber:        temperature of chamber, const (not necessarily bdry value)
+	trace_arho:       positive partial density to use for air
+	yWt:              total water mass fraction
+	yC:               crystal mass fraction
+	use_linearized:   whether to use linear approximation (default True)
 	newton_tol:       absolute tolerance in residual equation (units of velocity)
 	newton_iter_max:  max number of newton iterations to take
-
 	'''
+
 	def __init__(self, mass_flux:float=20e3, p_chamber:float=100e6,
 			T_chamber:float=1e3, trace_arho:float=1e-6, yWt:float=0.04, yC:float=0.1,
 			use_linearized:bool=True, newton_tol:float=1e-7, newton_iter_max=20):
@@ -3342,79 +3335,6 @@ class NohInlet(BCWeakRiemann):
 		return UqB
 
 
-class ChokedInlet2D(BCWeakPrescribed):
-	'''
-	Inlet conditions for exactly sonic flow.
-	'''
-
-	def __init__(self, p_in=1e5, T_in=1000, yWv=0.03, yA=1e-7, yWt=0.04,
-							yF=1-1e-7, yC=1-1e-7, M_in=1.0):
-		self.p_in = p_in
-		self.T_in = T_in
-		self.yWv = yWv
-		self.yA = yA
-		self.yM = 1.0 - (self.yWv + self.yA)
-		self.yWt = yWt
-		self.yF = yF
-		self.yC = yC
-		self.M_in = M_in
-
-	def get_boundary_state(self, physics, UqI, normals, x, t):		
-		# Package boundary state
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
-		UqB = np.empty_like(UqI)
-		# Store mass fractions
-		UqB[:,:,0] = self.yA
-		UqB[:,:,1] = self.yWv
-		UqB[:,:,2] = self.yM
-		# Compute intermediates
-		p = self.p_in*np.ones_like(UqB[:,:,3:4])
-		T = self.T_in*np.ones_like(UqB[:,:,3:4])
-		rho = 1.0 / atomics.mixture_spec_vol(UqB[:,:,0:3], p, T, physics)
-		# Update mass fractions to partial densities
-		UqB[:,:,0:3] *= rho
-		# Compute intermediates
-		phi = atomics.gas_volfrac(UqB[:,:,0:3], T, physics)
-		Gamma = atomics.Gamma(UqB[:,:,0:3], physics)
-		c = atomics.sound_speed(Gamma, p, rho, phi, physics)
-		rho_c_v = atomics.c_v(UqB[:,:,0:3], physics)
-		vel_y = self.M_in*c
-		# Fill in conserved variables
-		UqB[:, :, 3:4] = 0.0
-		UqB[:, :, 4:5] = rho * vel_y # Vertical momentum only
-		UqB[:, :, 5:6] = rho_c_v * T + 0.5 * rho * vel_y * vel_y
-		UqB[:, :, 6:7] = self.yWt * rho
-		UqB[:, :, 7:8] = self.yC * rho
-		UqB[:, :, 8:9] = self.yF * rho
-
-		return UqB
-
-
-class OscillatingSphere(BCWeakPrescribed):
-	''' Oscillating sphere with prescribed sinusoidal velocity in the
-	negative z-direction. '''
-	def __init__(self, linear_freq:float=20.0, u_amplitude:float=1.0):
-		self.linear_freq = linear_freq
-		self.u_amplitude = u_amplitude
-
-	def get_boundary_state(self, physics, UqI, normals, x, t):
-		smom = physics.get_momentum_slice()
-		UqB = UqI.copy()
-		# Unit normals
-		n_hat = normals / np.linalg.norm(normals, axis=2, keepdims=True)
-		# Compute component rhoveln
-		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
-		# Extract density
-		rho = UqI[:,:,0:3].sum(axis=2, keepdims=True)
-		# Compute sphere velocity v(t)
-		v_sphere = self.u_amplitude * np.sin(2 * np.pi * self.linear_freq * t)
-		# Remove component (rho * u.n + rho * u_sphere * e_y.n) n
-		# where + sign comes from n being the domain normal, negative of the
-		# sphere normal
-		UqB[:, :, smom] -= (rhoveln + v_sphere * rho * n_hat[...,1:2]) * n_hat
-		return UqB
-
 '''
 ---------------------
 Source term functions
@@ -3588,65 +3508,6 @@ class FrictionVolFracVariableMu(SourceBase):
 		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u * u
 		return S
 
-	def get_phi_gradient():
-		''' Compute gradient of total gas volume fraction with respect to state
-		vector.
-
-		The gradient of total gas volume fraction (appearing as a negative) is
-		needed in gradients of friction terms with volume fraction fragmentation
-		criteria, e.g., friction source terms that contain smoothed indicators of
-		magma volume fraction. Here magma volume fraction is 1 - phi, and phi is the
-		sum of volume fractions of all exsolved gas components.
-		'''
-		pass
-
-	def get_jacobian(self, physics, Uq, x, t):
-		''' Computes the Jacobian of the source vector f_i = s_i I(phi(U)), where I
-		is a smoothed indicator dependent on the complete state U. Using the product
-		rule, we write
-				d_j(f_i) = I * d_j(s_i) + I' * s_i * d_j(phi),
-		where d_j is the j-th partial and I' is the ordinary derivative of I.
-
-		Evaluation and inversions of jacobians are likely to be a comp. bottleneck
-		(repeated construction for implicit source steps, followed by inversion).
-		'''
-		raise NotImplementedError(f"Gradient not implemented for variable viscosity.")
-
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
-
-		phi = physics.compute_additional_variable("phi", Uq, True)
-
-		''' Compute Jacobian of physical expression for friction, times I '''
-		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
-		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
-		mu = self.compute_viscosity(Uq, physics)
-		fric_coeff = 8.0 * mu / self.conduit_radius**2.0		
-		friction_jacobian = np.zeros(
-			[Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
-		# friction_jacobian[:, :, imom, physics.get_mass_slice()] = u / rho
-		# friction_jacobian[:, :, imom, imom] = -1.0 / rho
-		# friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2*u**2.0 / rho
-		# friction_jacobian[:, :, ie, ie] = -2.0 * u / rho
-		# Broadcasted multiplication
-		# friction_jacobian *= fric_coeff * self.compute_indicator( \
-		# 	physics.compute_additional_variable("phi", Uq, True))
-		''' Optimized construction '''
-		coeffinvrho = fric_coeff / rho * self.compute_indicator(phi)
-		coeffuinvrho = u * coeffinvrho
-		friction_jacobian[:, :, imom, physics.get_mass_slice()] = coeffuinvrho
-		friction_jacobian[:, :, imom, physics.get_momentum_slice()] = -coeffinvrho
-		friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2.0 * u * coeffuinvrho
-		friction_jacobian[:, :, ie, physics.get_momentum_slice()] = -2.0 * coeffuinvrho		
-
-		''' Compute Jacobian of indicator, times max amount of friction '''
-		friction_vec = self.get_source(physics, Uq, x, t)
-		indicator_jacobian = self.get_indicator_deriv(phi) \
-			* physics.compute_phi_sgradient(Uq)
-
-		''' Return product derivative '''
-		return friction_jacobian + np.einsum('lmi, lmj -> lmij',
-			friction_vec, indicator_jacobian)
 
 class FrictionVolFracVariableMu_SHARP(SourceBase):
 	'''
@@ -3762,65 +3623,6 @@ class FrictionVolFracVariableMu_SHARP(SourceBase):
 		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u**2.0
 		return S
 
-	def get_phi_gradient():
-		''' Compute gradient of total gas volume fraction with respect to state
-		vector.
-
-		The gradient of total gas volume fraction (appearing as a negative) is
-		needed in gradients of friction terms with volume fraction fragmentation
-		criteria, e.g., friction source terms that contain smoothed indicators of
-		magma volume fraction. Here magma volume fraction is 1 - phi, and phi is the
-		sum of volume fractions of all exsolved gas components.
-		'''
-		pass
-
-	def get_jacobian(self, physics, Uq, x, t):
-		''' Computes the Jacobian of the source vector f_i = s_i I(phi(U)), where I
-		is a smoothed indicator dependent on the complete state U. Using the product
-		rule, we write
-				d_j(f_i) = I * d_j(s_i) + I' * s_i * d_j(phi),
-		where d_j is the j-th partial and I' is the ordinary derivative of I.
-
-		Evaluation and inversions of jacobians are likely to be a comp. bottleneck
-		(repeated construction for implicit source steps, followed by inversion).
-		'''
-		raise NotImplementedError(f"Gradient not implemented for variable viscosity.")
-
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
-
-		phi = physics.compute_additional_variable("phi", Uq, True)
-
-		''' Compute Jacobian of physical expression for friction, times I '''
-		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
-		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
-		mu = self.compute_viscosity(Uq, physics)
-		fric_coeff = 8.0 * mu / self.conduit_radius**2.0		
-		friction_jacobian = np.zeros(
-			[Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
-		# friction_jacobian[:, :, imom, physics.get_mass_slice()] = u / rho
-		# friction_jacobian[:, :, imom, imom] = -1.0 / rho
-		# friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2*u**2.0 / rho
-		# friction_jacobian[:, :, ie, ie] = -2.0 * u / rho
-		# Broadcasted multiplication
-		# friction_jacobian *= fric_coeff * self.compute_indicator( \
-		# 	physics.compute_additional_variable("phi", Uq, True))
-		''' Optimized construction '''
-		coeffinvrho = fric_coeff / rho * self.compute_indicator(phi)
-		coeffuinvrho = u * coeffinvrho
-		friction_jacobian[:, :, imom, physics.get_mass_slice()] = coeffuinvrho
-		friction_jacobian[:, :, imom, physics.get_momentum_slice()] = -coeffinvrho
-		friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2.0 * u * coeffuinvrho
-		friction_jacobian[:, :, ie, physics.get_momentum_slice()] = -2.0 * coeffuinvrho		
-
-		''' Compute Jacobian of indicator, times max amount of friction '''
-		friction_vec = self.get_source(physics, Uq, x, t)
-		indicator_jacobian = self.get_indicator_deriv(phi) \
-			* physics.compute_phi_sgradient(Uq)
-
-		''' Return product derivative '''
-		return friction_jacobian + np.einsum('lmi, lmj -> lmij',
-			friction_vec, indicator_jacobian)
 
 class FrictionVolFracConstMu(SourceBase):
 	'''
@@ -3914,13 +3716,7 @@ class FrictionVolFracConstMu(SourceBase):
 		fric_coeff = 8.0 * self.mu / self.conduit_radius**2.0		
 		friction_jacobian = np.zeros(
 			[Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
-		# friction_jacobian[:, :, imom, physics.get_mass_slice()] = u / rho
-		# friction_jacobian[:, :, imom, imom] = -1.0 / rho
-		# friction_jacobian[:, :, ie, physics.get_mass_slice()] = 2*u**2.0 / rho
-		# friction_jacobian[:, :, ie, ie] = -2.0 * u / rho
-		# Broadcasted multiplication
-		# friction_jacobian *= fric_coeff * self.compute_indicator( \
-		# 	physics.compute_additional_variable("phi", Uq, True))
+		
 		''' Optimized construction '''
 		coeffinvrho = fric_coeff / rho * self.compute_indicator(phi)
 		coeffuinvrho = u * coeffinvrho
@@ -4042,29 +3838,12 @@ class ExsolutionSource(SourceBase):
 				yWvTarget - arhoWv/rho
 			)
 
-			# # Legacy 
-			# eq_conc = ExsolutionSource.get_eq_conc(physics, p)
-			# S_scalar = (1.0/self.tau_d) * (
-			# 	(1.0+eq_conc) * arhoWt 
-			# 	- (1.0+eq_conc) * arhoWv
-			# 	- eq_conc * (arhoM-arhoC)) # arhoM - arhoC: melt with dissolved water
-
 			# Replace limiting value for absent magma and absent water
 			S_scalar[np.where(np.logical_and(
 				arhoWt-arhoWv <= general.eps,
 				arhoM <= general.eps
 			))] = 0.0
 			
-			# # Legacy
-			# # Switch-off of source term for zero exsolved water
-			# # Set epsilon below which the source term is quadratic in arhoWv. Must be
-			# # large enough to limit stiff sources.
-			# quadr_eps = 1e-1
-			# # Compute rate factor <= 1 that smoothly goes to zero when arhoWv goes to
-			# # zero, but is 1 when arhoWv > quadr_eps
-			# rateFactor = np.minimum(arhoWv, quadr_eps) / quadr_eps 
-			# S_scalar *= rateFactor**2.0
-
 			S[:, :, slarhoWv] =  S_scalar
 			S[:, :, slarhoM]  = -S_scalar
 		else:
@@ -4082,55 +3861,6 @@ class ExsolutionSource(SourceBase):
 		else:
 			raise Exception("Unexpected physics num dimension in GravitySource.")
 		return jac
-
-	def compute_exsolution_source_sgradient(self, physics, Uq):
-		'''
-		Compute the state-gradient of the exsolution scalar source function.
-
-		Inputs:
-		-------
-			Uq: solution in each element evaluated at quadrature points [ne, nq, ns]
-
-		Outputs:
-		--------
-			array: state-gradient of the scalar source function [ne, nq, ns]
-		'''
-		if physics.NDIMS != 1:
-			raise NotImplementedError(f"compute_exsolution_source_sgradient called for" +
-																f"NDIMS=={self.NDIMS}, which is not 1.")
-		raise NotImplementedError(f"Gradient does not account for cystal content. If" +
-			" this is fine, remove the raise in compute_exsolution_source_sgradient. This" +
-			" gradient is used typically for implicit source timestepping.")
-		
-		# Extract variables
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-			physics.get_state_indices()
-		slarhoWv = physics.get_state_slice("pDensityWv")
-		slarhoM = physics.get_state_slice("pDensityM")
-		slarhoWt = physics.get_state_slice("pDensityWt")
-		arhoWv = Uq[:, :, slarhoWv]
-		arhoM = Uq[:, :, slarhoM]
-		arhoWt = Uq[:, :, slarhoWt]
-		p = physics.compute_additional_variable("Pressure", Uq, True)
-
-		# Compute source gradient
-		dSdU = np.zeros_like(Uq)
-		# Change in source term due to pressure-related solubility change
-		dSdU = (arhoM - arhoWt + arhoWv) \
-			* ExsolutionSource.get_eq_conc_deriv(physics, p) \
-			* physics.compute_pressure_sgradient(Uq)
-		# Chemical potential change
-		dSdU[:, :, slarhoWv] += (1.0+ExsolutionSource.get_eq_conc(physics, p))
-		dSdU[:, :, slarhoM] += ExsolutionSource.get_eq_conc(physics, p)
-		# Apply tau_d
-		dSdU /= -self.tau_d
-		# Remove vacuum-related spurious values at quadrature points
-		dSdU[np.where(np.logical_and(
-			arhoWt-arhoWv <= general.eps,
-			arhoM <= general.eps
-			))] = 0.0
-
-		return dSdU
 
 
 class FragmentationTimescaleSourceSmoothed(SourceBase):
@@ -4302,6 +4032,7 @@ and methods. Information specific to the corresponding child classes can
 be found below. These classes should correspond to the ConvNumFluxType 
 or DiffNumFluxType enum members above.
 '''
+
 class LaxFriedrichs1D(ConvNumFluxBase):
 	'''
 	Local Lax-Friedrichs flux function.
@@ -4352,407 +4083,11 @@ class LaxFriedrichs2D(ConvNumFluxBase):
 		# Jump
 		dUq = UqR - UqL
 
-		# Compute max wave speeds at each point
-		if len(u2L.shape) != len(FqL.shape):
-			# Legacy shape matching (multiphasevpT)
-			wL = np.empty(u2L.shape + (1,))
-			wR = np.empty(u2R.shape + (1,))
-			wL[:, :, 0] = np.sqrt(u2L + v2L) + aL
-			wR[:, :, 0] = np.sqrt(u2R + v2R) + aR
-		else:
-			# Same number of axes during construction (multiphaseWLMA)
-			wL = np.sqrt(u2L + v2L) + aL
-			wR = np.sqrt(u2R + v2R) + aR
-
-		# Overestimate sound speed using a global wave speed
-		# if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
-		# 	w_global = np.maximum(np.sqrt(u2L + v2L),np.sqrt(u2R + v2R)) + 1800
-		# 	return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR, w_global)*dUq)
+		# Max wave speeds at each point
+		wL = np.empty(u2L.shape + (1,))
+		wR = np.empty(u2R.shape + (1,))
+		wL[:, :, 0] = np.sqrt(u2L + v2L) + aL
+		wR[:, :, 0] = np.sqrt(u2R + v2R) + aR
 
 		# Put together
 		return 0.5 * n_mag * (FqL + FqR - np.maximum(wL, wR)*dUq)
-
-
-class Roe1D(ConvNumFluxBase):
-	'''
-	1D Roe numerical flux. References:
-		[1] P. L. Roe, "Approximate Riemann solvers, parameter vectors, and
-		difference schemes," Journal of Computational Physics,
-		43(2):357–372, 1981.
-		[2] J. S. Hesthaven, T. Warburton, "Nodal discontinuous Galerkin
-		methods: algorithms, analysis, and applications," Springer Science
-		& Business Media, 2007.
-
-	Attributes:
-	-----------
-	UqL: numpy array
-		helper array for left state [nf, nq, ns]
-	UqR: numpy array
-		helper array for right state [nf, nq, ns]
-	vel: numpy array
-		helper array for velocity [nf, nq, ndims]
-	alphas: numpy array
-		helper array: left eigenvectors multipled by dU [nf, nq, ns]
-	evals: numpy array
-		helper array for eigenvalues [nf, nq, ns]
-	R: numpy array
-		helper array for right eigenvectors [nf, nq, ns, ns]
-	'''
-	def __init__(self, Uq=None):
-		'''
-		This method initializes the attributes.
-
-		Inputs:
-		-------
-			Uq: values of the state variables (typically at the quadrature
-				points) [nf, nq, ns]; used to allocate helper arrays; if None,
-				then empty arrays allocated
-
-		Outputs:
-		--------
-				self: attributes initialized
-		'''
-		raise NotImplementedError("Roe flux not implemented for multiphase.")
-		if Uq is not None:
-			n = Uq.shape[0]
-			nq = Uq.shape[1]
-			ns = Uq.shape[-1]
-			ndims = ns - 2
-		else:
-			n = nq = ns = ndims = 0
-
-		self.UqL = np.zeros_like(Uq)
-		self.UqR = np.zeros_like(Uq)
-		self.vel = np.zeros([n, nq, ndims])
-		self.alphas = np.zeros_like(Uq)
-		self.evals = np.zeros_like(Uq)
-		self.R = np.zeros([n, nq, ns, ns])
-
-	def rotate_coord_sys(self, smom, Uq, n):
-		'''
-		This method expresses the momentum vector in the rotated coordinate
-		system, which is aligned with the face normal and tangent.
-
-		Inputs:
-		-------
-			smom: momentum slice
-			Uq: values of the state variable (typically at the quadrature
-				points) [nf, nq, ns]
-			n: normals (typically at the quadrature points) [nf, nq, ndims]
-
-		Outputs:
-		--------
-				Uq: momentum terms modified
-		'''
-		Uq[:, :, smom] *= n
-
-		return Uq
-
-	def undo_rotate_coord_sys(self, smom, Uq, n):
-		'''
-		This method expresses the momentum vector in the standard coordinate
-		system. It "undoes" the rotation above.
-
-		Inputs:
-		-------
-			smom: momentum slice
-			Uq: values of the state variable (typically at the quadrature
-				points) [nf, nq, ns]
-			n: normals (typically at the quadrature points) [nf, nq, ndims]
-
-		Outputs:
-		--------
-				Uq: momentum terms modified
-		'''
-		Uq[:, :, smom] /= n
-
-		return Uq
-
-	def roe_average_state(self, physics, srho, velL, velR, UqL, UqR):
-		'''
-		This method computes the Roe-averaged variables.
-
-		Inputs:
-		-------
-			physics: physics object
-			srho: density slice
-			velL: left velocity (typically evaluated at the quadrature
-				points) [nf, nq, ndims]
-			velR: right velocity (typically evaluated at the quadrature
-				points) [nf, nq, ndims]
-			UqL: left state (typically evaluated at the quadrature
-				points) [nf, nq, ns]
-			UqR: right state (typically evaluated at the quadrature
-				points) [nf, nq, ns]
-
-		Outputs:
-		--------
-				rhoRoe: Roe-averaged density [nf, nq, 1]
-				velRoe: Roe-averaged velocity [nf, nq, ndims]
-				HRoe: Roe-averaged total enthalpy [nf, nq, 1]
-		'''
-		rhoL_sqrt = np.sqrt(UqL[:, :, srho])
-		rhoR_sqrt = np.sqrt(UqR[:, :, srho])
-		HL = physics.compute_variable("TotalEnthalpy", UqL)
-		HR = physics.compute_variable("TotalEnthalpy", UqR)
-
-		velRoe = (rhoL_sqrt*velL + rhoR_sqrt*velR)/(rhoL_sqrt+rhoR_sqrt)
-		HRoe = (rhoL_sqrt*HL + rhoR_sqrt*HR)/(rhoL_sqrt+rhoR_sqrt)
-		rhoRoe = rhoL_sqrt*rhoR_sqrt
-
-		return rhoRoe, velRoe, HRoe
-
-	def get_differences(self, physics, srho, velL, velR, UqL, UqR):
-		'''
-		This method computes velocity, density, and pressure jumps.
-
-		Inputs:
-		-------
-			physics: physics object
-			srho: density slice
-			velL: left velocity (typically evaluated at the quadrature
-				points) [nf, nq, ndims]
-			velR: right velocity (typically evaluated at the quadrature
-				points) [nf, nq, ndims]
-			UqL: left state (typically evaluated at the quadrature
-				points) [nf, nq, ns]
-			UqR: right state (typically evaluated at the quadrature
-				points) [nf, nq, ns]
-
-		Outputs:
-		--------
-				drho: density jump [nf, nq, 1]
-				dvel: velocity jump [nf, nq, ndims]
-				dp: pressure jump [nf, nq, 1]
-		'''
-		dvel = velR - velL
-		drho = UqR[:, :, srho] - UqL[:, :, srho]
-		dp = physics.compute_variable("Pressure", UqR) - \
-				physics.compute_variable("Pressure", UqL)
-
-		return drho, dvel, dp
-
-	def get_alphas(self, c, c2, dp, dvel, drho, rhoRoe):
-		'''
-		This method computes alpha_i = ith left eigenvector * dU.
-
-		Inputs:
-		-------
-			c: speed of sound [nf, nq, 1]
-			c2: speed of sound squared [nf, nq, 1]
-			dp: pressure jump [nf, nq, 1]
-			dvel: velocity jump [nf, nq, ndims]
-			drho: density jump [nf, nq, 1]
-			rhoRoe: Roe-averaged density [nf, nq, 1]
-
-		Outputs:
-		--------
-				alphas: left eigenvectors multipled by dU [nf, nq, ns]
-		'''
-		alphas = self.alphas
-
-		alphas[:, :, 0:1] = 0.5/c2*(dp - c*rhoRoe*dvel[:, :, 0:1])
-		alphas[:, :, 1:2] = drho - dp/c2
-		alphas[:, :, -1:] = 0.5/c2*(dp + c*rhoRoe*dvel[:, :, 0:1])
-
-		return alphas
-
-	def get_eigenvalues(self, velRoe, c):
-		'''
-		This method computes the eigenvalues.
-
-		Inputs:
-		-------
-			velRoe: Roe-averaged velocity [nf, nq, ndims]
-			c: speed of sound [nf, nq, 1]
-
-		Outputs:
-		--------
-				evals: eigenvalues [nf, nq, ns]
-		'''
-		evals = self.evals
-
-		evals[:, :, 0:1] = velRoe[:, :, 0:1] - c
-		evals[:, :, 1:2] = velRoe[:, :, 0:1]
-		evals[:, :, -1:] = velRoe[:, :, 0:1] + c
-
-		return evals
-
-	def get_right_eigenvectors(self, c, evals, velRoe, HRoe):
-		'''
-		This method computes the right eigenvectors.
-
-		Inputs:
-		-------
-			c: speed of sound [nf, nq, 1]
-			evals: eigenvalues [nf, nq, ns]
-			velRoe: Roe-averaged velocity [nf, nq, ndims]
-			HRoe: Roe-averaged total enthalpy [nf, nq, 1]
-
-		Outputs:
-		--------
-				R: right eigenvectors [nf, nq, ns, ns]
-		'''
-		R = self.R
-
-		# first row
-		R[:, :, 0, 0:2] = 1.; R[:, :, 0, -1] = 1.
-		# second row
-		R[:, :, 1, 0] = evals[:, :, 0]; R[:, :, 1, 1] = velRoe[:, :, 0]
-		R[:, :, 1, -1] = evals[:, :, -1]
-		# last row
-		R[:, :, -1, 0:1] = HRoe - velRoe[:, :, 0:1]*c;
-		R[:, :, -1, 1:2] = 0.5*np.sum(velRoe*velRoe, axis=2, keepdims=True)
-		R[:, :, -1, -1:] = HRoe + velRoe[:, :, 0:1]*c
-
-		return R
-
-	def compute_flux(self, physics, UqL_std, UqR_std, normals):
-		# Reshape arrays
-		n = UqL_std.shape[0]
-		nq = UqL_std.shape[1]
-		ns = UqL_std.shape[2]
-		ndims = ns - 2
-		self.UqL_stdL = np.zeros_like(UqL_std)
-		self.UqL_stdR = np.zeros_like(UqL_std)
-		self.vel = np.zeros([n, nq, ndims])
-		self.alphas = np.zeros_like(UqL_std)
-		self.evals = np.zeros_like(UqL_std)
-		self.R = np.zeros([n, nq, ns, ns])
-
-		# Unpack
-		srho = physics.get_state_slice("Density")
-		smom = physics.get_momentum_slice()
-		gamma = physics.gamma
-
-		# Unit normals
-		n_mag = np.linalg.norm(normals, axis=2, keepdims=True)
-		n_hat = normals/n_mag
-
-		# Copy values from standard coordinate system before rotating
-		UqL = UqL_std.copy()
-		UqR = UqR_std.copy()
-
-		# Rotated coordinate system
-		UqL = self.rotate_coord_sys(smom, UqL, n_hat)
-		UqR = self.rotate_coord_sys(smom, UqR, n_hat)
-
-		# Velocities
-		velL = UqL[:, :, smom]/UqL[:, :, srho]
-		velR = UqR[:, :, smom]/UqR[:, :, srho]
-
-		# Roe-averaged state
-		rhoRoe, velRoe, HRoe = self.roe_average_state(physics, srho, velL,
-				velR, UqL, UqR)
-
-		# Speed of sound from Roe-averaged state
-		c2 = (gamma - 1.)*(HRoe - 0.5*np.sum(velRoe*velRoe, axis=2,
-				keepdims=True))
-		if np.any(c2 <= 0.):
-			# Non-physical state
-			raise errors.NotPhysicalError
-		c = np.sqrt(c2)
-
-		# Jumps
-		drho, dvel, dp = self.get_differences(physics, srho, velL, velR,
-				UqL, UqR)
-
-		# alphas (left eigenvectors multiplied by dU)
-		alphas = self.get_alphas(c, c2, dp, dvel, drho, rhoRoe)
-
-		# Eigenvalues
-		evals = self.get_eigenvalues(velRoe, c)
-		
-		# Entropy fix (currently commented as we have yet to decide
-		# if this is needed long term)
-		# eps = np.zeros_like(evals)
-		# eps[:, :, :] = (1e-2 * c)
-		# fix = np.argwhere(np.logical_and(evals < eps, evals > -eps))
-		# fix_shape = fix[:, 0], fix[:, 1], fix[:, 2]
-		# evals[fix_shape] = 0.5 * (eps[fix_shape] + evals[fix_shape]* \
-		# 	evals[fix_shape] / eps[fix_shape])
-		
-		# Right eigenvector matrix
-		R = self.get_right_eigenvectors(c, evals, velRoe, HRoe)
-
-		# Form flux Jacobian matrix multiplied by dU
-		FRoe = np.einsum('ijkl, ijl -> ijk', R, np.abs(evals)*alphas)
-
-		# Undo rotation
-		FRoe = self.undo_rotate_coord_sys(smom, FRoe, n_hat)
-
-		# Left flux
-		FL, _ = physics.get_conv_flux_projected(UqL_std, n_hat)
-
-		# Right flux
-		FR, _ = physics.get_conv_flux_projected(UqR_std, n_hat)
-
-		return .5*n_mag*(FL + FR - FRoe) # [nf, nq, ns]
-
-
-class Roe2D(Roe1D):
-	'''
-	2D Roe numerical flux. This class inherits from the Roe1D class.
-	See Roe1D for detailed comments on the attributes and methods.
-	In this class, several methods are updated to account for the extra
-	dimension.
-	'''
-	def rotate_coord_sys(self, smom, Uq, n):
-		vel = self.vel
-		vel[:] = Uq[:, :, smom]
-
-		vel[:, :, 0] = np.sum(Uq[:, :, smom]*n, axis=2)
-		vel[:, :, 1] = np.sum(Uq[:, :, smom]*n[:, :, ::-1]*np.array([[-1.,
-				1.]]), axis=2)
-
-		Uq[:, :, smom] = vel
-
-		return Uq
-
-	def undo_rotate_coord_sys(self, smom, Uq, n):
-		vel = self.vel
-		vel[:] = Uq[:, :, smom]
-
-		vel[:, :, 0] = np.sum(Uq[:, :, smom]*n*np.array([[1., -1.]]), axis=2)
-		vel[:, :, 1] = np.sum(Uq[:, :, smom]*n[:, :, ::-1], axis=2)
-
-		Uq[:, :, smom] = vel
-
-		return Uq
-
-	def get_alphas(self, c, c2, dp, dvel, drho, rhoRoe):
-		alphas = self.alphas
-
-		alphas = super().get_alphas(c, c2, dp, dvel, drho, rhoRoe)
-
-		alphas[:, :, 2:3] = rhoRoe*dvel[:, :, -1:]
-
-		return alphas
-
-	def get_eigenvalues(self, velRoe, c):
-		evals = self.evals
-
-		evals = super().get_eigenvalues(velRoe, c)
-
-		evals[:, :, 2:3] = velRoe[:, :, 0:1]
-
-		return evals
-
-	def get_right_eigenvectors(self, c, evals, velRoe, HRoe):
-		R = self.R
-
-		R = super().get_right_eigenvectors(c, evals, velRoe, HRoe)
-
-		i = 2
-
-		# First row
-		R[:, :, 0, i] = 0.
-		#  Second row
-		R[:, :, 1, i] = 0.
-		#  Last (fourth) row
-		R[:, :, -1, i] = velRoe[:, :, -1]
-		#  Third row
-		R[:, :, i, 0] = velRoe[:, :, -1];  R[:, :, i, 1] = velRoe[:, :, -1]
-		R[:, :, i, -1] = velRoe[:, :, -1]; R[:, :, i, i] = 1.
-
-		return R
