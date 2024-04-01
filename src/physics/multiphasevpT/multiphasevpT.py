@@ -482,6 +482,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 			FcnType.SteadyState: mpvpT_fcns.SteadyState,
+			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -496,6 +497,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			SourceType.ExsolutionSource: mpvpT_fcns.ExsolutionSource,
 			SourceType.FragmentationTimescaleSource: mpvpT_fcns.FragmentationTimescaleSource,
 			SourceType.FragmentationTimescaleSourceSmoothed: mpvpT_fcns.FragmentationTimescaleSourceSmoothed,
+			SourceType.FragmentationStrainRateSource: mpvpT_fcns.FragmentationStrainRateSource,
 			SourceType.WaterInflowSource: mpvpT_fcns.WaterInflowSource,
 		})
 

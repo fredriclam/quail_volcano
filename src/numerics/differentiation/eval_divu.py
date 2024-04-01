@@ -78,7 +78,8 @@ def eval_strainrate(solver, U:np.array, x, t) -> np.array:
 
   # Compute source contribution
   sources = [source.get_source(physics, Uq, x, t)
-                          for source in physics.source_terms]
+                          for source in physics.source_terms
+                          if not hasattr(source, "do_not_recurse")]
   if len(sources) == 0:
     sources = [np.zeros_like(x)]
   source_sum = np.stack(sources, axis=-1).sum(axis=-1)
