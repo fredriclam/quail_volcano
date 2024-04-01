@@ -1,27 +1,21 @@
 import numpy as np
-from physics.multiphasevpT.hydrostatic1D import GlobalDG
+import run_globals
 
 Numerics = {
-    "SolutionOrder" : 1,
+    "SolutionOrder" : run_globals.ElementOrder,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
-    # "ApplyLimiters" : ["WENO", "PositivityPreservingMultiphasevpT"],
-    # "ApplyLimiters" : ["WENO"],
-    # "ShockIndicator": "MinMod", "TVBParameter": 0.2,
-    # "NodeType" : "Equidistant",
     "ElementQuadrature" : "GaussLegendre",
     "FaceQuadrature" : "GaussLegendre",
-        # Flag to use artificial viscosity
-		# If true, artificial visocity will be added
     "ArtificialViscosity" : True,
-	"AVParameter" : 30, # 150 ~ 500 is ok for this commit #150, #50, #1e-5, #1e3, 5e3,
-    'L2InitialCondition': False, # Use interpolation instead of L2 projection of Riemann data
+	"AVParameter" : 30,
+    'L2InitialCondition': False,
 }
 
 Output = {
-	"Prefix" : "refblast_calibration",
-	"WriteInterval" : 100,
+	"Prefix" : f"{run_globals.file_prefix}_cond",
+	"WriteInterval" : run_globals.write_interval,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -29,9 +23,9 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 120, #3*301, #151,#351, # Use even number if using p_jump IC
-    "xmin" : -1200.0-150, # With shift (-150 m)
-    "xmax" : 0.0-150,
+    "NumElemsX" : 800,
+    "xmin" : -2000.0 - 150, # With shift (-150 m)
+    "xmax" : 0.0 - 150,
 }
 
 Physics = {
@@ -39,46 +33,53 @@ Physics = {
     "ConvFluxNumerical" : "LaxFriedrichs",
 }
 
-# Location of jump (sync both initial condition to specify jump in fluid
-# composition, and in hydrostatic_solve to specify jump in pressure)
-x_jump = -550.0
+def smoother(x, scale):
+    # Shift, scale, and clip to [-1, 0] to prevent exp overflow
+    _x = np.clip(x / scale + 1, 0, 1)
+    f0 = np.exp(-1/np.where(_x == 0, 1, _x))
+    f1 = np.exp(-1/np.where(_x == 1, 1, 1-_x))
+    # Return piecewise evaluation
+    return np.where(_x >= 1, 1,
+                    np.where(_x <= 0, 0, 
+                        f0 / (f0 + f1)))
+
+def bump(x, a, b, scale):
+    ''' Smoothed bump function with exterior smoothing '''
+    return smoother(x - a, scale) * smoother(b - x, scale)
+
+p_chamber = 25e6
+T_chamber = 1100
+yWt = 0.03
+yC = 0.10
+
+def traction_fn(x):
+    return -bump(x, -550, -450, 20)
+def yWt_fn(x):
+    return 0.03 * np.ones_like(x)
+def yC_fn(x):
+    return 0.10 * np.ones_like(x)
+def T_fn(x):
+    return T_chamber * np.ones_like(x)
+
 
 InitialCondition = {
-	# "Function" : "UniformExsolutionTest",
-    "Function" : "StaticPlug",
-    "xd": x_jump,
-    # "rhoL": 12.5,
-    # "uL": 0.0,
-    # "pL": 10*1e5,
-    # "rhoR": 1.25,
-    # "uR": 0.0,
-    # "pR": 1e5,
-    # arhoAL=1., arhoWvL=1., arhoML=2e5, uL=0., TL=1000., 
-	            #  arhoAR=10., arhoWvR=0., arhoMR=0.125, uR=0., TR=300., xd=0.)
-    "arhoAL": 1e-3, # 4wt%, 5 MPa water design
-    "arhoWvL": 9.874849008229967e+00, # 9.474849008229967e+00,
-    "arhoML": 3.142648542057735e+02, # Near critical, plenty of initial exsolved
-	"TL": 1000.,
-    "arhoWtL": 1.694958812856014e+01, #1.294958812856014e+01,
+    "Function": "StaticPlug",
+    "traction_fn": traction_fn,
+    "yWt_fn": yWt_fn,
+    "yC_fn": yC_fn,
+    "T_fn": T_fn,
+    "x_global": np.linspace(Mesh["xmin"], Mesh["xmax"], Mesh["NumElemsX"]),
+    "p_chamber": p_chamber,
+    "yA": 1e-7,
+    "c_v_magma": 3e3,
+    "rho0_magma": 2.6e3,
+    "K_magma": 10e9,
+    "p0_magma": 5e6,
+    "solubility_k": 5e-6,
+    "solubility_n": 0.5,
+    "neglect_edfm": True,
+    "enforce_p_vent": 1e5,
 }
-
-# List of functions to inject in custom user function
-def hydrostatic_solve(solver, owner_domain=None):
-    GlobalDG(solver).set_initial_condition(
-        p_bdry=1e5,
-        is_jump_included=True,
-        owner_domain=owner_domain,
-        constr_key="YEq",
-        x_jump=x_jump,
-    )
-
-Inject = [
-    {
-        "Function": hydrostatic_solve,
-        "Initial": True,
-        "Postinitial": False,
-    }
-]
 
 SourceTerms = {
 	"source1": {
@@ -95,11 +96,6 @@ SourceTerms = {
         "Function": "ExsolutionSource",
         "source_treatment" : "Explicit",
     },
-    "source4": {
-        "Function": "FragmentationTimescaleSource",
-        "source_treatment": "Explicit",
-        "source_treatment": "Explicit",
-    },
     "source5": {
         "Function": "FragmentationStrainRateSource",
         "tau_f": 1.0,
@@ -115,36 +111,20 @@ SourceTerms = {
 # Fake exact solution
 ExactSolution = InitialCondition.copy()
 
-extend_conduit = False # TODO: change back
-if extend_conduit:
-    BoundaryConditions = {
-        "x1" : {
-            "BCType" : "MultiphasevpT1D1D",
-            "bkey": "interface_-1",
-        },
-        "x2" : { 
-            "BCType" : "MultiphasevpT2D1D", # TODO: implement r-weighted integration
-            "bkey": "vent",
-        },
-    }
-
-    LinkedSolvers = [
-        {
-            "DeckName": "conduit2.py",
-            "BoundaryName": "interface_-1",
-        },
-    ]
-else:
-    BoundaryConditions = {
-        "x1" : {
-            "BCType" : "SlipWall",
-        },
-        # "x2" : { 
-        #     "BCType" : "SlipWall", # TODO: implement r-weighted integration (check)
-        #     # "bkey": "vent",
-        # },
-        "x2" : { 
-            "BCType" : "MultiphasevpT2D1D", # TODO: implement r-weighted integration
-            "bkey": "vent",
-        },
-    }
+chi_water = yWt / (1 - (yC + yWt))
+BoundaryConditions = {
+    "x1" : {
+        "BCType" : "PressureStableLinearizedInlet1D",
+        "p_chamber": p_chamber,
+        "T_chamber": T_chamber,
+        "trace_arho": 1e-6,
+        "chi_water": chi_water,
+        "cVFav": yC,
+        "cVFamp": 0.0,
+        "is_gaussian": True,
+    },
+    "x2" : { 
+        "BCType" : "MultiphasevpT2D1D",
+        "bkey": "x2",
+    },
+}

@@ -36,6 +36,7 @@ from physics.base.data import (BCBase, FcnBase, BCWeakRiemann, BCWeakPrescribed,
 import physics.multiphasevpT.atomics as atomics
 import compressible_conduit_steady.steady_state as plugin_steady_state
 from compressible_conduit_steady.advection_map import advection_map
+import numerics.differentiation.eval_divu as eval_divu
 
 from dataclasses import dataclass
 import copy

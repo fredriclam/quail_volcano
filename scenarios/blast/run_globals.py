@@ -1,5 +1,5 @@
 # Globals for synchronizing input files 
-ElementOrder = 2
+ElementOrder = 1
 InitialCondition = {
 	"Function" : "IsothermalAtmosphere",
   "h0": -5000, # TODO: fix -4439
@@ -13,7 +13,7 @@ SlipWallQ = {
   "Q": 2.0,
 }
 # Output file prefix (no trailing underscore)
-file_prefix = "jetP2_conicalB_test1"
+file_prefix = "refblastA"
 write_interval = 100
 # Mesh file prefix (no trailing underscore) with parts 1-9
 mesh_prefix = "conicalB"

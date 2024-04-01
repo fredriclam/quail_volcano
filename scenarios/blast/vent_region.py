@@ -4,7 +4,7 @@ import run_globals
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 60*1,
-	"NumTimeSteps" : 60*8000, # P1: 60*1000, # 60*6000
+	"NumTimeSteps" : 60*4000, # 1800 for 1D @ 10 m
 	"TimeStepper" : "RK3SR",
 }
 
@@ -24,7 +24,7 @@ Mesh = {
 
 Output = {
 	"Prefix" : f"{run_globals.file_prefix}_atm1",
-	"WriteInterval" : run_globals.write_interval // 2,
+	"WriteInterval" : run_globals.write_interval,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -57,22 +57,19 @@ BoundaryConditions = {
 	"flare" : run_globals.SlipWallQ,
 	"pipewall" : run_globals.SlipWallQ,
   "x2" : {
-		"BCType" : "ChokedInlet2D",
-    "p_in": 1e5,
-    "T_in": 1000,
-    "yWv": 0.03,
-    "yA": 1e-4,
-    "yWt": 0.04,
-		"yF": 1-1e-7,
-		"yC": 1-1e-7,
+		"BCType" : "MultiphasevpT2D1D",
+    "bkey": "x2",
 	},
 	"symmetry" : run_globals.SlipWallQ,
 }
 
-BoundaryConditions["r1"] = run_globals.SlipWallQ
-# LinkedSolvers = [
-# 	{
-# 		"DeckName": "r1r2.py",
-# 		"BoundaryName": "r1",
-# 	},
-# ]
+LinkedSolvers = [
+  {
+		"DeckName": "conduit.py",
+		"BoundaryName": "x2",
+	},
+	{
+		"DeckName": "r1r2.py",
+		"BoundaryName": "r1",
+	},
+]

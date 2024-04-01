@@ -17,7 +17,7 @@ Mesh = {
 
 Output = {
 	"Prefix" : f"{run_globals.file_prefix}_atm2",
-	"WriteInterval" : run_globals.write_interval // 2,
+	"WriteInterval" : run_globals.write_interval,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
