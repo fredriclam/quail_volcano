@@ -538,8 +538,35 @@ class IsothermalAtmosphere(FcnBase):
 		self.nWv = nWv
 		self.Gas = physics.Gas
 		self.Liquid = physics.Liquid
-		# Compute scale height (constant)
-		hs = R*self.T/self.gravity
+
+		if self.gravity == 0:
+			# Uniform pressure
+			p = self.p_atm * np.ones_like(x[...,1])
+			rho = atomics.mixture_density(self.y, p, self.T, physics)
+			phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk", rho, self.y),
+				self.T, physics)[:,:,0]
+			# Compute partial densities
+			arhoA = (phi * nA) * p / (physics.Gas[0]["R"] * self.T)
+			arhoWv = (phi * nWv) * p / (physics.Gas[1]["R"] * self.T)
+			arhoM = (1.0 - phi) * physics.Liquid["rho0"] \
+				* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"])
+			# Compute volumetric energy
+			e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
+				arhoWv * physics.Gas[1]["c_v"] * self.T + 
+				arhoM * (physics.Liquid["c_m"] * self.T + physics.Liquid["E_m0"]))
+			# Assemble conservative state vector		
+			Uq[:, :, iarhoA] = arhoA
+			Uq[:, :, iarhoWv] = arhoWv
+			Uq[:, :, iarhoM] = arhoM
+			Uq[:, :, irhou] = 0.0
+			Uq[:, :, irhov] = 0.0
+			Uq[:, :, ie] = e
+			# Tracer quantities
+			Uq[:, :, iarhoWt] = arhoWv + self.tracer_frac * arhoM
+			Uq[:, :, iarhoC] = self.tracer_frac * arhoM
+			Uq[:, :, iarhoFm] = (1.0 - self.tracer_frac) * arhoM
+
+			return Uq # [ne, nq, ns]
 
 		''' Compute hydrostatic pressure as initial value problem (IVP) '''
 		# Compare this to
@@ -3534,11 +3561,12 @@ class FrictionVolFracVariableMu(SourceBase):
 	logistic_scale: scale of logistic function (-)
 	'''
 	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
-							 logistic_scale:float=0.004,**kwargs):
+							 logistic_scale:float=0.004, viscosity_factor=1.0, **kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius
 		self.crit_volfrac = crit_volfrac
 		self.logistic_scale = logistic_scale
+		self.viscosity_factor = viscosity_factor
 
 	def compute_indicator(self, phi):
 		''' Defines smoothed indicator for turning on friction. Takes value 1
@@ -3607,7 +3635,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		crysVisc = num * denom
 		
 		#viscosity = 4.386e5 * crysVisc
-		viscosity = meltVisc * crysVisc
+		viscosity = self.viscosity_factor * meltVisc * crysVisc
 		#viscosity[(1 - phiM) > self.crit_volfrac] = 0
 		
 		#fix = np.max(viscosity)
@@ -4341,6 +4369,12 @@ class FragmentationStrainRateSource(SourceBase):
 		# if t != self.solver.time:
 		# 	raise ValueError(f"Desync occurred in {self}: t is {t}, but solver.time is {self.solver.time}.")
 
+		# Extract viscosity model
+		friction_model = [source
+										for source in self.solver.physics.source_terms
+										if "Friction" in source.__class__.__name__][0]
+		mu = friction_model.compute_viscosity(_Uq, self.solver.physics)
+
 		S = np.zeros_like(_Uq)
 		if self.solver.physics.NDIMS == 1:
 			# Evaluate strain rate
@@ -4355,7 +4389,7 @@ class FragmentationStrainRateSource(SourceBase):
 				strain_rate = np.maximum(strain_rate, 4.0 * self.shear_factor * u / self.conduit_radius)
 			else:
 				raise ValueError("Unknown strain criterion.")
-			crit_strain_rate = self.k * self.G / self.mu0 # 0.25 arbitrary TODO: remove
+			crit_strain_rate = self.k * self.G / mu
 			# Extract variables
 			slarhoM = self.solver.physics.get_state_slice("pDensityM")
 			slarhoFm = self.solver.physics.get_state_slice("pDensityFm")

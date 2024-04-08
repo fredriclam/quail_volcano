@@ -13,7 +13,7 @@ SlipWallQ = {
   "Q": 2.0,
 }
 # Output file prefix (no trailing underscore)
-file_prefix = "refblastA"
+file_prefix = "refblastB"
 write_interval = 100
 # Mesh file prefix (no trailing underscore) with parts 1-9
 mesh_prefix = "conicalB"
