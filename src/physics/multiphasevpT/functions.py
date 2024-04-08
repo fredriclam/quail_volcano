@@ -3424,7 +3424,7 @@ class NohInlet(BCWeakRiemann):
 		return UqB
 
 
-class ChokedInlet2D(BCWeakPrescribed):
+class ChokedInlet2D(BCWeakRiemann):
 	'''
 	Inlet conditions for exactly sonic flow.
 	'''
