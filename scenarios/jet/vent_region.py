@@ -69,9 +69,10 @@ BoundaryConditions = {
 	"symmetry" : run_globals.SlipWallQ,
 }
 
-LinkedSolvers = [
-	{
-		"DeckName": "r1r2.py",
-		"BoundaryName": "r1",
-	},
-]
+BoundaryConditions["r1"] = run_globals.SlipWallQ
+# LinkedSolvers = [
+# 	{
+# 		"DeckName": "r1r2.py",
+# 		"BoundaryName": "r1",
+# 	},
+# ]

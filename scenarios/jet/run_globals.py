@@ -13,7 +13,7 @@ SlipWallQ = {
   "Q": 2.0,
 }
 # Output file prefix (no trailing underscore)
-file_prefix = "jetP2_conical3_test1"
+file_prefix = "jetP2_conicalB_test1"
 write_interval = 100
 # Mesh file prefix (no trailing underscore) with parts 1-9
-mesh_prefix = "conical3"
+mesh_prefix = "conicalB"

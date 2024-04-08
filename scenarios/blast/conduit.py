@@ -47,17 +47,17 @@ def bump(x, a, b, scale):
     ''' Smoothed bump function with exterior smoothing '''
     return smoother(x - a, scale) * smoother(b - x, scale)
 
-p_chamber = 25e6
-T_chamber = 1100
-yWt = 0.03
-yC = 0.10
+p_chamber = 45e6
+T_chamber = 1273.15
+yWt = 0.02
+yC = 0.15
 
 def traction_fn(x):
     return -bump(x, -550, -450, 20)
 def yWt_fn(x):
-    return 0.03 * np.ones_like(x)
+    return yWt * np.ones_like(x)
 def yC_fn(x):
-    return 0.10 * np.ones_like(x)
+    return yC * np.ones_like(x)
 def T_fn(x):
     return T_chamber * np.ones_like(x)
 
@@ -72,7 +72,7 @@ InitialCondition = {
     "p_chamber": p_chamber,
     "yA": 1e-7,
     "c_v_magma": 3e3,
-    "rho0_magma": 2.6e3,
+    "rho0_magma": 2.7e3,
     "K_magma": 10e9,
     "p0_magma": 5e6,
     "solubility_k": 5e-6,
@@ -88,9 +88,10 @@ SourceTerms = {
         "source_treatment" : "Explicit",
 	},
     "source2": {
-        "Function": "FrictionVolFracConstMu",
+        "Function": "FrictionVolFracVariableMu",
         "source_treatment" : "Explicit",
-        "crit_volfrac": 0.6,
+        "viscosity_factor": 1.0,
+        "conduit_radius": 50.0,
     },
     "source3": {
         "Function": "ExsolutionSource",
@@ -98,10 +99,10 @@ SourceTerms = {
     },
     "source5": {
         "Function": "FragmentationStrainRateSource",
-        "tau_f": 1.0,
+        "tau_f": 0.005,
         "G": 1e9,
         "mu0": 1e9,
-        "k": 0.1,
+        "k": 0.001,
         "fragsmooth_scale": 0.010,
         "which_criterion": "both",
         "conduit_radius": 50,
