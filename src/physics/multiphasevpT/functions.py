@@ -538,6 +538,8 @@ class IsothermalAtmosphere(FcnBase):
 		self.nWv = nWv
 		self.Gas = physics.Gas
 		self.Liquid = physics.Liquid
+		self.y = np.array([1.0-self.massFracWv-self.massFracM,
+			self.massFracWv, self.massFracM])
 
 		if self.gravity == 0:
 			# Uniform pressure
@@ -573,15 +575,13 @@ class IsothermalAtmosphere(FcnBase):
 		#   plt.plot(np.unique(x[...,1]),
 		#     np.exp(-(np.unique(x[...,1])-x[...,1].min())/hs)*1e5, '-')
 		# Compute (nearly exponential) pressure p as a function of y
-		self.y = np.array([1.0-self.massFracWv-self.massFracM,
-			self.massFracWv, self.massFracM])
 		eval_pts = np.unique(x[:,:,1:2])
 		# Evaluate IVP solution
 		soln = scipy.integrate.solve_ivp(
 			lambda height, p:
 				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
 			[self.h0, self.hmax],
-			[1e5],
+			[self.p_atm],
 			t_eval=eval_pts,
 			dense_output=True)
 		# Cache the pressure interpolant
@@ -3424,7 +3424,7 @@ class NohInlet(BCWeakRiemann):
 		return UqB
 
 
-class ChokedInlet2D(BCWeakPrescribed):
+class ChokedInlet2D(BCWeakRiemann):
 	'''
 	Inlet conditions for exactly sonic flow.
 	'''
