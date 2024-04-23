@@ -404,7 +404,8 @@ class StaticPlug(FcnBase):
 							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
 							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
 							 neglect_edfm=True,
-							 enforce_p_vent=None):
+							 enforce_p_vent=None,
+							 is_solve_direction_downward=False):
 		'''
 		Interface to compressible_conduit_steady.StaticPlug.
 		'''
@@ -434,14 +435,55 @@ class StaticPlug(FcnBase):
 			enforce_p_vent=enforce_p_vent,
 		)
 		# Save argument values
+		self.is_solve_direction_downward = is_solve_direction_downward
 		self.x_global = np.expand_dims(x_global,axis=(1,2))
 		self.p_chamber = p_chamber
 		self.enforce_p_vent = enforce_p_vent
 
 	def get_state(self, physics, x, t):
-		# Evaluate intial condition
-		U_init = self.f(x)
-		return U_init
+		# Pseudo-1D partition
+		x_conduit = x[np.where(np.all(x <= 0, axis=(1,2)))[0],...]
+		x_atm = x[np.where(~np.all(x <= 0, axis=(1,2)))[0],...]
+		# Evaluate initial condition
+		U_init = self.f(x_conduit,
+									  is_solve_direction_downward=self.is_solve_direction_downward)
+		# yF replacement: optionally seed magma with fragmented zone
+		# U_init[...,7:8] = np.where(x_conduit > 0,#-600,
+		# 												 U_init[...,2:3],
+		# 												 U_init[...,7:8])
+
+		# Initial condition, atmosphere part
+		U_atm = np.zeros((x_atm.shape[0], *U_init.shape[1:]))
+
+		# Set isothermal atmosphere
+		T_atm = 300
+		g = 9.8
+		scale_height = physics.Gas[0]["R"] * T_atm / g
+		h0 = 0.0 # Height at which pressure is equal to p0
+		p0 = 1e5
+		# Compute exponential atmosphere pressure
+		p = p0 * np.exp(-(x_atm-h0) / scale_height)
+		U_atm[...,0:1] = p / (physics.Gas[0]["R"] * T_atm)
+		U_atm[...,1] = 1e-4 * U_atm[...,0]
+		U_atm[...,2] = 2e-5 * U_atm[...,0]
+		U_atm[...,3] = 0.0
+		U_atm[...,4] = U_atm[...,0] * physics.Gas[0]["c_v"] * T_atm \
+										+ U_atm[...,1] * physics.Gas[1]["c_v"] * T_atm \
+										+ U_atm[...,2] * physics.Liquid["c_m"] * T_atm
+		U_atm[...,5] = 1.1 * U_atm[...,1] # Total water, trace amounts
+		U_atm[...,6] = 0.1 * U_atm[...,2]  # Crystal, trace amounts
+		U_atm[...,7] = (1 - 1e-5) * U_atm[...,2] # Fragmented magma, trace amts
+
+		U_full = np.zeros((x.shape[0], *U_init.shape[1:]))
+		U_full[np.where(np.all(x <= 0, axis=(1,2)))[0],...] = U_init
+		U_full[np.where(~np.all(x <= 0, axis=(1,2)))[0],...] = U_atm
+
+		# Extrapolate pressure to bottom boundary
+		# _p = physics.compute_variable("Pressure", U_full)
+		# _dpdx = (_p.ravel()[1] - _p.ravel()[0])/(x.ravel()[1] - x.ravel()[0])
+		# _p_bdry = _p.ravel()[0] + _dpdx * (-5000 - x.ravel()[0])
+
+		return U_full
 
 class UniformExsolutionTest(FcnBase):
 	'''
@@ -3813,6 +3855,133 @@ class FrictionVolFracVariableMu(SourceBase):
 		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u * u
 		return S
 
+	def get_jacobian(self, physics, Uq, x, t):
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
+		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+		# Simulate heat capacity load
+		c_v = np.array([
+			physics.Gas[0]["c_v"], physics.Gas[1]["c_v"], physics.Liquid["c_m"]])
+
+		arhoA  = Uq[:, :, 0:1]
+		arhoWv = Uq[:, :, 1:2]
+		arhoM  = Uq[:, :, 2:3]
+		rhou   = Uq[:, :, 3:4]
+		E      = Uq[:, :, 4:5]
+		arhoWt = Uq[:, :, 5:6]
+		arhoC  = Uq[:, :, 6:7]
+		arhoF  = Uq[:, :, 7:8]
+		arhoWd = arhoWt - arhoWv
+		# Mixture density
+		rho = arhoA + arhoWv + arhoM
+		# Partial density of pure liquid melt
+		arhoL = rho - (arhoA + arhoWt + arhoC)
+		# Compute depedendent variables
+		rho = Uq[...,0:3].sum(axis=-1, keepdims=True)
+		u = Uq[...,3:4] / rho
+
+		# Unit vectors for vector assembly
+		earhoA = np.zeros_like(Uq)
+		earhoA[:, :, 0:1] = 1.0
+		earhoWv = np.zeros_like(Uq)
+		earhoWv[:, :, 1:2] = 1.0
+		earhoM = np.zeros_like(Uq)
+		earhoM[:, :, 2:3] = 1.0
+		erhou = np.zeros_like(Uq)
+		erhou[:, :, 3:4] = 1.0
+		eE = np.zeros_like(Uq)
+		eE[:, :, 4:5] = 1.0
+		earhoWt = np.zeros_like(Uq)
+		earhoWt[:, :, 5:6] = 1.0
+		earhoC = np.zeros_like(Uq)
+		earhoC[:, :, 6:7] = 1.0
+		earhoF = np.zeros_like(Uq)
+		earhoF[:, :, 7:8] = 1.0
+		erho = earhoA + earhoWv + earhoM
+
+		# Mixture heat capacity per mass
+		rhoc_v = arhoA * c_v[0] + arhoWv * c_v[1] + arhoM * c_v[2]
+
+		''' VFT type equation with dissolved water dependence (Hess and Dingwell) '''
+		T = (E - 0.5 * rho * u * u) / rhoc_v
+		# Concentration of dissolved water (H2O wt / liquid melt wt)
+		mfWd = arhoWd / arhoL
+		log_mfWd = np.log(mfWd*100)
+		# Empirical parameters for VFT-type equation
+		# Coefficients with _prime represent the dissolved water dependence of parameters A, B, C
+		A = -3.545
+		Aprime = 0.833
+		B = 9601
+		Bprime = 2368
+		C = 195.7
+		Cprime = 32.25
+		log10_vis = A + Aprime * log_mfWd + (B - Bprime * log_mfWd) / (T - (C + Cprime * log_mfWd))
+		# Cap viscosity exponent for overlow
+		log10_vis = np.where(log10_vis > 300, 300, log10_vis)
+		# Compute melt viscosity, dimensional
+		meltVisc = 10**log10_vis
+		# Gradient of mfWd divided by mfWd (i.e., gradient of log mfWd)
+		grad_log_mfWd = ((earhoWt - earhoWv) / (arhoL)
+										- arhoWd / (arhoL * arhoL) * (earhoWv + earhoM - earhoWt - earhoC)
+										) / mfWd
+		# Gradient of temperature (not log T)
+		gradT = 1 / (rhoc_v) * (eE - u * erhou + 0.5 * u * u * erho - T * (c_v[0] * earhoA + c_v[1] * earhoWv + c_v[2] * earhoM))
+		# Gradient of log melt viscosity (grad melt viscosity divided by melt viscosity)
+		grad_melt_visc = np.log(10) * (
+			Aprime * grad_log_mfWd
+			+ (-Bprime * grad_log_mfWd) / (T - (C + Cprime * log_mfWd))
+			- (B - Bprime * log_mfWd) / (T - (C + Cprime * log_mfWd))**2
+				* (gradT - Cprime * grad_log_mfWd))
+
+		''' Crystal enhancement factor (Costa 2005), assuming crystal density is same as melt '''
+		alpha = 0.999916
+		phi_cr = 0.673
+		gamma = 3.98937
+		delta = 16.9386
+		B2 = 2.5
+		# Compute crystal vol frac of magma assuming crystal density == magma density
+		crysVolFrac_suspension = arhoC / arhoM
+		# Crystal fraction relative to critical crystal fraction
+		phi_ratio = crysVolFrac_suspension / phi_cr
+		# erf normalization factor
+		AA = np.sqrt(np.pi) / (2 * alpha)
+		# Argument in erf function for jamming
+		erf_arg = AA * phi_ratio * (1 + phi_ratio**gamma)
+		erf = sp.erf(erf_arg)
+		# Compute crystal viscosity enhancement factor
+		num = 1 + phi_ratio**delta
+		denom = (1 - alpha * erf)**(B2 * phi_cr)
+		crysVisc = num / denom
+		# Derivative of log crystal melt enhancement function shape, with respect to phi/phicr
+		dcrysdform = delta * phi_ratio ** (delta - 1) / num \
+			+ B2 * phi_cr * np.exp(-erf_arg * erf_arg) * (1 + (gamma + 1) * phi_ratio ** gamma) / (1 - alpha * erf)
+		# Compute gradient of phi/phicr (for chain rule) 
+		grad_phi_ratio = 1/phi_cr * (1 / arhoM * earhoC - arhoC / (arhoM * arhoM) * earhoM)
+		# Compute gradient of log crystal viscosity (grad crystal viscosity divided by crystal viscosity)
+		gradCrysVisc = dcrysdform * grad_phi_ratio
+		# Compute viscosity
+		mu = meltVisc * crysVisc * np.clip(1 - arhoF / arhoM, 0, 1)
+		# Dimensionless form (grad . / .), momentum component of friction source
+		dFrhou_dq = (grad_melt_visc
+			+ gradCrysVisc
+			+ (arhoF * earhoM - arhoM * earhoF) / (arhoM * arhoM) / np.clip(1 - arhoF / arhoM, 1e-7, 1)
+				* (1 - arhoF / arhoM > 0).astype(float) * (1 - arhoF / arhoM < 1).astype(float)
+			+ erhou / rhou - erho / rho)
+		# Dimensionless form (grad . / .), energy component of friction source
+		dFE_dq = (grad_melt_visc
+			+ gradCrysVisc
+			+ (arhoF * earhoM - arhoM * earhoF) / (arhoM * arhoM) / np.clip(1 - arhoF / arhoM, 1e-7, 1)
+				* (1 - arhoF / arhoM > 0).astype(float) * (1 - arhoF / arhoM < 1).astype(float)
+			+ 2 * erhou / rhou - 2 * erho / rho)
+
+		# Cap mu to prevent floating point overflow
+		mu_cap = mu # np.clip(mu, None, 1e20)
+
+		# Fill in Jacobian
+		jac[:,:,imom,:] = dFrhou_dq * 8 * mu_cap * u / (self.conduit_radius * self.conduit_radius)
+		jac[:,:,ie,:] = dFE_dq * -8 * mu_cap * u * u / (self.conduit_radius * self.conduit_radius)
+		return np.clip(jac, -1e300, 1e300)
+		
 
 class FrictionVolFracVariableMu_SHARP(SourceBase):
 	'''
@@ -4322,8 +4491,11 @@ class FragmentationStrainRateSource(SourceBase):
 		# 	raise ValueError(f"Desync occurred in {self}: t is {t}, but solver.time is {self.solver.time}.")
 
 		# Extract viscosity model
+		source_list = self.solver.physics.source_terms.copy()
+		if hasattr(self.solver.physics, "implicit_sources"):
+			source_list.extend(self.solver.physics.implicit_sources)
 		friction_model = [source
-										for source in self.solver.physics.source_terms
+										for source in source_list
 										if "Friction" in source.__class__.__name__][0]
 		if hasattr(friction_model, "compute_viscosity"):
 			mu = friction_model.compute_viscosity(_Uq, self.solver.physics)
@@ -4345,7 +4517,7 @@ class FragmentationStrainRateSource(SourceBase):
 				strain_rate = np.maximum(strain_rate, 4.0 * self.shear_factor * u / self.conduit_radius)
 			else:
 				raise ValueError("Unknown strain criterion.")
-			crit_strain_rate = self.k * self.G / mu
+			crit_strain_rate = self.k * self.G / np.clip(mu, 1e-8, None)
 			# Extract variables
 			slarhoM = self.solver.physics.get_state_slice("pDensityM")
 			slarhoFm = self.solver.physics.get_state_slice("pDensityFm")

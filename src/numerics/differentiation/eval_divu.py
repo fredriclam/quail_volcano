@@ -91,9 +91,14 @@ def eval_strainrate(solver, U:np.array, x, t) -> np.array:
 
   # Assemble non-advective terms for material derivative computation
   non_advective_terms = np.zeros(Uq.shape)
-  non_advective_terms[...,3:4] = dpdx_quad
-  non_advective_terms[...,4:5] = dpdy_quad
-  non_advective_terms[...,5:6] = divpu_quad
+  if solver.physics.NDIMS == 2:
+    non_advective_terms[...,3:4] = dpdx_quad
+    non_advective_terms[...,4:5] = dpdy_quad
+    non_advective_terms[...,5:6] = divpu_quad
+  elif solver.physics.NDIMS == 1:
+    non_advective_terms[...,3:4] = dpdx_quad
+    non_advective_terms[...,4:5] = divpu_quad
+    
   # Compute material derivative at quadrature points
   DUDt = source_sum - Uq * divu_quad - non_advective_terms
   # Compute pressure state-gradient
@@ -103,9 +108,12 @@ def eval_strainrate(solver, U:np.array, x, t) -> np.array:
 
   # Compute proportional volumetric dilation
   rho0, K = solver.physics.Liquid["rho0"], solver.physics.Liquid["K"]
-  rho = Uq[...,0:3].sum(axis=-1, keepdims=True)
-  # Return magma strain rate
-  return (-rho0 * rho0 / K) * DpDt / (rho*rho)
+  # rho = Uq[...,0:3].sum(axis=-1, keepdims=True)
+  p = solver.physics.compute_variable("Pressure", Uq)
+  rhom = rho0 * (1 + (p - solver.physics.Liquid["p0"]) / K)
+
+  # Return magma volumetric strain rate (use 1/3 for axial strain rate)
+  return (-rho0 * rho0 / K) * DpDt / (rhom * rhom)
 
 def eval_divu(solver, vector_field:callable, U:np.array) -> tuple:
   ''' Compute divergence of velocity at quadrature points.
