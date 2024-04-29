@@ -439,6 +439,8 @@ class StaticPlug(FcnBase):
 		self.x_global = np.expand_dims(x_global,axis=(1,2))
 		self.p_chamber = p_chamber
 		self.enforce_p_vent = enforce_p_vent
+		self.solubility_k = solubility_k
+		self.solubility_n = solubility_n
 
 	def get_state(self, physics, x, t):
 		# Pseudo-1D partition
@@ -448,9 +450,9 @@ class StaticPlug(FcnBase):
 		U_init = self.f(x_conduit,
 									  is_solve_direction_downward=self.is_solve_direction_downward)
 		# yF replacement: optionally seed magma with fragmented zone
-		# U_init[...,7:8] = np.where(x_conduit > 0,#-600,
-		# 												 U_init[...,2:3],
-		# 												 U_init[...,7:8])
+		U_init[...,7:8] = np.where((x_conduit > -600) & (x_conduit < -500),#-600,
+														 U_init[...,2:3],
+														 U_init[...,7:8])
 
 		# Initial condition, atmosphere part
 		U_atm = np.zeros((x_atm.shape[0], *U_init.shape[1:]))
@@ -470,9 +472,12 @@ class StaticPlug(FcnBase):
 		U_atm[...,4] = U_atm[...,0] * physics.Gas[0]["c_v"] * T_atm \
 										+ U_atm[...,1] * physics.Gas[1]["c_v"] * T_atm \
 										+ U_atm[...,2] * physics.Liquid["c_m"] * T_atm
-		U_atm[...,5] = 1.1 * U_atm[...,1] # Total water, trace amounts
-		U_atm[...,6] = 0.1 * U_atm[...,2]  # Crystal, trace amounts
-		U_atm[...,7] = (1 - 1e-5) * U_atm[...,2] # Fragmented magma, trace amts
+		U_atm[...,6] = 0.1 * U_atm[...,2]  # Crystal, trace amounts 
+		# Solubility, squeezing away axis 2
+		sol = (self.solubility_k * p ** self.solubility_n).squeeze(axis=2)
+		U_atm[...,5] = (U_atm[...,1] # Exsolved
+										+ sol / (1 + sol) * (U_atm[...,1] + U_atm[...,2] - U_atm[...,6])) # Dissolved
+		U_atm[...,7] = 1 * U_atm[...,2] # Fragmented magma, all of it
 
 		U_full = np.zeros((x.shape[0], *U_init.shape[1:]))
 		U_full[np.where(np.all(x <= 0, axis=(1,2)))[0],...] = U_init
@@ -3745,12 +3750,17 @@ class FrictionVolFracVariableMu(SourceBase):
 	logistic_scale: scale of logistic function (-)
 	'''
 	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
-							 logistic_scale:float=0.004, viscosity_factor=1.0, **kwargs):
+							 logistic_scale:float=0.004, viscosity_factor=1.0,
+							 min_arhoWd=1e-3, min_arhoL=1e-3, mfWd_min=1e-3, T_min=700, **kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius
 		self.crit_volfrac = crit_volfrac
 		self.logistic_scale = logistic_scale
 		self.viscosity_factor = viscosity_factor
+		self.min_arhoWd = min_arhoWd
+		self.min_arhoL = min_arhoL
+		self.T_min = T_min
+		self.mfWd_min = mfWd_min
 
 	def compute_indicator(self, phi):
 		''' Defines smoothed indicator for turning on friction. Takes value 1
@@ -3775,6 +3785,8 @@ class FrictionVolFracVariableMu(SourceBase):
 			Uq[..., physics.get_momentum_slice()],
 			Uq[..., physics.get_state_slice("Energy")],
 			physics)
+		# Temperature clipping (cold temps only for erupted product + air blend)
+		temp = np.clip(temp, self.T_min, None)
 		phi = atomics.gas_volfrac(Uq[..., physics.get_mass_slice()], temp, physics)
 		phiM = 1.0 - phi
 		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
@@ -3784,10 +3796,13 @@ class FrictionVolFracVariableMu(SourceBase):
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
 		arhoC  = Uq[:, :, iarhoC:iarhoC+1]
 		
-		arhoWd = arhoWt - arhoWv
-		arhoMelt = arhoM - arhoWd - arhoC # partical density of melt ONLY
-		mfWd = arhoWd / arhoMelt # mass concentration of dissolved water
+		arhoWd = np.clip(arhoWt - arhoWv, self.min_arhoWd, None)
+		arhoMelt = np.clip(arhoM - arhoWd - arhoC, self.min_arhoL, None) # partical density of melt ONLY
+		mfWd = np.clip(arhoWd / arhoMelt, self.mfWd_min, None) # mass concentration of dissolved water
 		log_mfWd = np.log(mfWd*100)
+
+		if np.any(np.isnan(log_mfWd)):
+			raise ValueError("Nan encountered in computing melt viscosity. Possible overflow.")
 		
 		log10_vis = -3.545 + 0.833 * log_mfWd
 		log10_vis += (9601 - 2368 * log_mfWd) / (temp - 195.7 - 32.25 * log_mfWd)
@@ -3820,11 +3835,12 @@ class FrictionVolFracVariableMu(SourceBase):
 		
 		#viscosity = 4.386e5 * crysVisc
 		viscosity = self.viscosity_factor * meltVisc * crysVisc
+
 		#viscosity[(1 - phiM) > self.crit_volfrac] = 0
 		
 		#fix = np.max(viscosity)
 		#viscosity[phi > self.crit_volfrac] = fix
-		return viscosity
+		return np.clip(viscosity, None, 1e8)
 
 	def get_source(self, physics, Uq, x, t):
 		'''
@@ -3904,8 +3920,12 @@ class FrictionVolFracVariableMu(SourceBase):
 
 		''' VFT type equation with dissolved water dependence (Hess and Dingwell) '''
 		T = (E - 0.5 * rho * u * u) / rhoc_v
+		# Temperature clipping (cold temps only for erupted product + air blend)
+		T = np.clip(T, self.T_min, None)
 		# Concentration of dissolved water (H2O wt / liquid melt wt)
-		mfWd = arhoWd / arhoL
+		arhoWd = np.clip(arhoWd, self.min_arhoWd, None)
+		mfWd = np.clip(arhoWd / arhoL, self.mfWd_min, None)
+		
 		log_mfWd = np.log(mfWd*100)
 		# Empirical parameters for VFT-type equation
 		# Coefficients with _prime represent the dissolved water dependence of parameters A, B, C
@@ -3932,6 +3952,10 @@ class FrictionVolFracVariableMu(SourceBase):
 			+ (-Bprime * grad_log_mfWd) / (T - (C + Cprime * log_mfWd))
 			- (B - Bprime * log_mfWd) / (T - (C + Cprime * log_mfWd))**2
 				* (gradT - Cprime * grad_log_mfWd))
+
+		# Check numerical validity of meltVisc
+		if np.any(np.isnan(meltVisc)):
+			raise ValueError("Nan encountered in computing melt viscosity. Possible overflow.")
 
 		''' Crystal enhancement factor (Costa 2005), assuming crystal density is same as melt '''
 		alpha = 0.999916
@@ -3975,12 +3999,12 @@ class FrictionVolFracVariableMu(SourceBase):
 			+ 2 * erhou / rhou - 2 * erho / rho)
 
 		# Cap mu to prevent floating point overflow
-		mu_cap = mu # np.clip(mu, None, 1e20)
+		mu_cap = np.clip(mu, None, 1e8)
 
 		# Fill in Jacobian
-		jac[:,:,imom,:] = dFrhou_dq * 8 * mu_cap * u / (self.conduit_radius * self.conduit_radius)
+		jac[:,:,imom,:] = dFrhou_dq * -8 * mu_cap * u / (self.conduit_radius * self.conduit_radius)
 		jac[:,:,ie,:] = dFE_dq * -8 * mu_cap * u * u / (self.conduit_radius * self.conduit_radius)
-		return np.clip(jac, -1e300, 1e300)
+		return np.clip(jac, -1e100, 1e100)
 		
 
 class FrictionVolFracVariableMu_SHARP(SourceBase):
@@ -4342,7 +4366,7 @@ class FragmentationTimescaleSourceSmoothed(SourceBase):
 	Fragmentation source term.
 	Converts unfragmented magma to fragmented magma over a timescale when
 	the fragmentation criterion is met.
-	Dynamic parameters (tau_f) are attributes of this class.
+	Dynamic parameters (tail) are attributes of this class.
 	'''
 	def __init__(self, tau_f:float=1.0, crit_volfrac:float=0.8,
 							 fragsmooth_scale:float=0.010, **kwargs):
