@@ -58,6 +58,9 @@ class FcnType(Enum):
 	NohProblem = auto()
 	NohProblemMixture = auto()
 
+	# Backward compatibility placeholder
+	UniformAir = auto()
+
 
 class BCType(Enum):
 	'''
@@ -85,6 +88,17 @@ class BCType(Enum):
 	# Future planned content:
 	# EntropyTotalenthalpyInlet1D = auto()
 	# EntropyPressureInlet1D = auto()
+
+	# Backward compatibility placeholder
+	MultiphasevpT2D1DCylindrical = auto()
+	MultiphasevpT2D2DCylindrical= auto()
+	PressureOutlet2D= auto()
+	ChokedInlet2D = auto()
+	Padding1 = auto()
+	Padding2= auto()
+	Padding3= auto()
+	Padding4= auto()
+	Padding5= auto()
 
 
 class SourceType(Enum):
@@ -553,7 +567,7 @@ class IsothermalAtmosphere(FcnBase):
 			lambda height, p:
 				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
 			[self.h0, self.hmax],
-			[1e5],
+			[self.p_atm], # TODO: fixed on branch feature/water
 			t_eval=eval_pts,
 			dense_output=True)
 		# Cache the pressure interpolant
@@ -728,8 +742,8 @@ class NohProblemMixture(FcnBase):
 		the unshocked solution, appropriate for the boundary condition at r = R
 		as long as t < x / (-self.u).
 
-		Use mode "dilute" for a dilute suspension (99.97% vol gas).
-		Use mode "nondilute" for a nondilute suspension (97.21% vol gas).
+		Use mode "dilute" for a dilute suspension (99.97% vol gas pre shoock, 99.75% post-shock).
+		Use mode "nondilute" for a nondilute suspension (99.96% vol gas post-shock, 5.97% post-shock).
 		The mode must be specified; the default raises an exception.
 
 		In the case of "nondilute", for the unit box, use t < 0.002417.
@@ -740,24 +754,25 @@ class NohProblemMixture(FcnBase):
 
 		if mode.casefold() == "nondilute":
 			# Set mass fractions
-			self.yM = 0.999
+			self.yM = 0.99
 			self.yA = 1.0 * (1 - self.yM)
 			self.yWv = 0.0 * (1 - self.yM)
 			# Set independent rho_inf
 			self.rho_inf = 1.0
 			self.p_inf = 1e-5
 			# Set dependent temperature (EOS, rootfinding)
-			self.T_inf = 3.483030713963251e-05
+			self.T_inf = 3.4830423341752147e-06 # 6.966187959123278e-07
 			# Set dependent u_inf (ODE solution)
-			self.u = -0.9109531213865723
-			# Set shock speed (parameter U(eta = 1) = 20)
-			self.us = 0.018219062427731445
+			self.u = -2.0541871570698404e-05 # -0.19349517214529735
+			# Set shock speed (U = -30)
+			self.us = 9.975496245401822e-06 # 0.0064498390715099115
 			# Set dependent volume fraction (listed for convenience)
-			self.phi_inf = 0.999629814907454
+			self.phi_inf = 0.9996331499082874
 		elif mode.casefold() == "dilute":
 			self.yM = 0.1
 			self.yA = 1.0 * (1 - self.yM)
 			self.yWv = 0.0 * (1 - self.yM)
+
 			# Set independent rho_inf
 			self.rho_inf = 1.0
 
@@ -766,7 +781,7 @@ class NohProblemMixture(FcnBase):
 			self.T_inf = 3.871323826694466e-08
 			# Set dependent u_inf (ODE solution)
 			self.u = -0.13114667866665758
-			# Set shock speed (parameter U(eta = 1) = 20)
+			# Set shock speed (parameter U(eta = 1) = 2/ (Gamma - 1) + 8e-2)
 			self.us = 0.01810697843081792
 			# Set dependent volume fraction (listed for convenience)
 			self.phi_inf = 0.99996294443518
@@ -809,7 +824,7 @@ class NohProblemMixture(FcnBase):
 		self.is_isentrope_ready = False
 		self.rho_isentrope = np.array([])
 		self.T_isentrope = np.array([])
-		self.interp_data_size = 100000
+		self.interp_data_size = 1_000_000
 
 	def get_state(self, physics, x, t):
 		# Initialize and get useful index names
@@ -900,17 +915,25 @@ above.
 
 class SlipWall(BCWeakPrescribed):
 	'''
-	This class corresponds to a slip wall. See documentation for more
-	details.
+	Modified slip wall treatment. Inherits BCBase, and implements its 
+	own method get_boundary_flux. This structure allows finer control
+	over the weak boundary enforcement, which is relevant for strong
+	normal shocks impinging on the wall.
+
 	'''
-	def __init__(self, use_stagnation_correction:bool=False, Q:float=10):
+	def __init__(self, use_stagnation_correction:bool=False, Q:float=10,
+							 num_newton_iters:int= 6):
 		self.use_stagnation_correction = use_stagnation_correction
-		# Stagnation correction density limiting factor
+		# Stagnation correction density limiting factor; deprecated
 		self.Q = Q
+		self.num_newton_iters = num_newton_iters
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		smom = physics.get_momentum_slice()
 		UqB = UqI.copy()
+		num_newton_iters = 6
+		# Legacy option for conserving specific stagnation energy (doesn't work
+		# for Gamma near 1)
 
 		# Unit normals
 		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
@@ -923,25 +946,192 @@ class SlipWall(BCWeakPrescribed):
 		if self.use_stagnation_correction:
 			# Compute dependent variables
 			arhoVec = UqI[:, :, 0:3]
-			T = atomics.temperature(arhoVec,
+			TI = atomics.temperature(arhoVec,
 				UqI[:, :, smom],
 				UqI[:, :, physics.get_state_slice("Energy")], physics)
-			phi = atomics.gas_volfrac(arhoVec, T, physics)
-			p = atomics.pressure(arhoVec, T, phi, physics)
-			rho = arhoVec.sum(axis=-1, keepdims=True)
-			y = arhoVec / rho
-			Gamma = atomics.Gamma(arhoVec, physics)
-			# rho^2 v_t^2
-			rhovelt2 = np.sum(UqI[:, :, smom] * UqI[:, :, smom], axis=2, keepdims=True) - rhoveln * rhoveln
-			# Energy, transverse kinetic
-			ekt = 0.5 * rhovelt2 /rho
+			phi = atomics.gas_volfrac(arhoVec, TI, physics)
+			pI = atomics.pressure(arhoVec, TI, phi, physics)
+			rhoI = arhoVec.sum(axis=-1, keepdims=True)
+			vI = 1.0 / rhoI
+			y = arhoVec / rhoI
+			yM = y[...,2:3]
+			c_v = atomics.c_v(y, physics)
+			pm0 = physics.Liquid["p0"]
+			vm0 = 1.0 / physics.Liquid["rho0"]
+			K = physics.Liquid["K"]
+			# Normal velocity
+			uI = rhoveln / rhoI
+			# Tangential velocity vector
+			velt = UqB[:, :, smom] / rhoI
+			# Mixture R			
+			yRGas = (y[...,0:1] * physics.Gas[0]["R"]
+						 + y[...,1:2] * physics.Gas[1]["R"])
+			# Initial guess
+			p = 1.1 * pI
+			# Newton's method to solve 1D equation
+			for _i in range(num_newton_iters):
+				# Compute T(p) from Hugoniot
+				T = TI + 0.5 * uI * uI / c_v * (p + pI) / (p - pI)
+				_denom = K - pm0 + p
+				# Compute v from EOS
+				v = yRGas / p * T + yM * K * vm0 / _denom
+				# Partial derivatives of specific volume
+				dvdT = yRGas / p
+				dvdp = -yRGas * T / (p * p) - yM * K * vm0 / (_denom * _denom)
+				# Dependence of T with respect to p from Hugoniot
+				dTdp = - uI * uI / c_v * pI / ((p - pI) * (p - pI))
+				# Root-finding equation == 0
+				f = (p - pI) * (vI - v) - uI * uI
+				# Newton slope
+				dfdp = vI - v - (p - pI) * (dvdp + dvdT * dTdp)
+				# Take full Newton step
+				p -= f / dfdp
+			# Filter pressure
+			p = np.where(np.isnan(p), 1.0, p)
+			# Clip pressure
+			# p = np.clip(p, 1.0 / self.Q, self.Q)
+			# Compute T(p) from Hugoniot
+			T = TI + 0.5 * uI * uI / c_v * (p + pI) / (p - pI)
+			# Compute target density for scaling
+			rho = 1.0 / atomics.mixture_spec_vol(y, p, T, physics)
 
-			# Compute stagnation state, conserving mass-specific energy
-			T_stag = (UqI[:, :, physics.get_state_slice("Energy")] - ekt) / atomics.c_v(arhoVec, physics)
-			p_stag = p * (T_stag / T) ** (Gamma/(Gamma-1))
-			rho_stag = atomics.mixture_density(y, p_stag, T_stag, physics)
-			# Apply limited density rescaling
-			UqB *= np.clip(rho_stag / rho, 1.0/self.Q, self.Q)
+			# Apply density rescaling for mass and tangential momentum variables
+			UqB *= rho / rhoI
+			# Replace energy
+			UqB[..., physics.get_state_slice("Energy")] = rho * (c_v * T
+				+ 0.5 * (velt * velt).sum(axis=-1, keepdims=True))
+
+		return UqB
+
+
+class SlipWallIsenthalpy(BCWeakRiemann):
+	'''
+	Modified slip wall treatment, computing the boundary state by conserving
+	{specific enthalpy plus kinetic energy} and entropy.
+	'''
+	def __init__(self, use_stagnation_correction:bool=False, Q:float=10):
+		self.use_stagnation_correction = use_stagnation_correction
+		# Stagnation correction density limiting factor
+		self.Q = Q
+
+	# def get_boundary_flux(self, physics, UqI, normals, x, t, gUq=None):
+	# 	''' Replaces inherited boundary flux '''
+	# 	UqB = self.get_boundary_state(physics, UqI, normals, x, t)
+	# 	# Weak Riemann
+	# 	F = physics.get_conv_flux_numerical(UqI, UqB, normals)
+	# 	# Weak Prescribed
+	# 	# F,_ = physics.get_conv_flux_projected(UqB, normals)
+
+	# 	# w_fn = lambda U: physics.compute_variable("Velocity", U) + physics.compute_variable("SoundSpeed", U)
+	# 	# w = np.maximum(w_fn(UqB), w_fn(UqI))
+	# 	# Incident plus penalty
+	# 	# F,_ = physics.get_conv_flux_projected(UqI, normals)
+	# 	# F += 0.5 * w * (UqI - UqB)
+
+	# 	# Compute diffusive boundary fluxes if needed
+	# 	if physics.diff_flux_fcn:
+	# 		Fv, FvB = physics.get_diff_boundary_flux_numerical(UqI, UqB, 
+	# 				gUq, normals) # [nf, nq, ns]
+	# 		F -= Fv
+	# 		return F, FvB # [nf, nq, ns], [nf, nq, ns, ndims]
+	# 	else:
+	# 		return F, None
+
+	def get_boundary_state(self, physics, UqI, normals, x, t):
+		smom = physics.get_momentum_slice()
+		UqB = UqI.copy()
+		num_newton_iters = 6
+		# Legacy option for conserving specific stagnation energy (doesn't work
+		# for Gamma near 1)
+		use_legacy_energy = False
+
+		# Unit normals
+		n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
+		rhoveln = np.sum(UqI[:, :, smom] * n_hat, axis=2, keepdims=True)
+
+		# Remove momentum contribution in normal direction from boundary
+		# state
+		UqB[:, :, smom] -= rhoveln * n_hat
+
+		if self.use_stagnation_correction:
+			# Compute dependent variables
+			arhoVec = UqI[:, :, 0:3]
+			TI = atomics.temperature(arhoVec,
+				UqI[:, :, smom],
+				UqI[:, :, physics.get_state_slice("Energy")], physics)
+			phi = atomics.gas_volfrac(arhoVec, TI, physics)
+			pI = atomics.pressure(arhoVec, TI, phi, physics)
+			rhoI = arhoVec.sum(axis=-1, keepdims=True)
+			y = arhoVec / rhoI
+			Gamma = atomics.Gamma(arhoVec, physics)
+			if use_legacy_energy:
+				# rho^2 v_t^2
+				rhovelt2 = np.sum(UqI[:, :, smom] * UqI[:, :, smom], axis=2, keepdims=True) - rhoveln * rhoveln
+				# Energy, transverse kinetic
+				ekt = 0.5 * rhovelt2 /rhoI
+				# Legacy: Compute stagnation state, conserving mass-specific energy
+				T_stag = (UqI[:, :, physics.get_state_slice("Energy")] - ekt) / atomics.c_v(arhoVec, physics)
+				p_stag = pI * (T_stag / TI) ** (Gamma/(Gamma-1))
+				rho_stag = atomics.mixture_density(y, p_stag, T_stag, physics)
+				# Apply limited density rescaling
+				UqB *= np.clip(rho_stag / rhoI, 1.0/self.Q, self.Q)
+			else:
+				velt = UqB[:, :, smom] / rhoI
+				# Relabeling quantities
+				pm0 = physics.Liquid["p0"]
+				K = physics.Liquid["K"]
+				# Normal velocity
+				uI = rhoveln / rhoI
+				c_v = atomics.c_v(y, physics)
+				c_p = atomics.c_p(y, physics)
+				yM = y[...,2:3]
+				w = yM * pI / (physics.Liquid["rho0"] * c_p * TI)
+				k = (Gamma-1)/Gamma
+				# Backtracking factor for kinetic energy removal
+				alpha = 1
+				for _i in range(10):
+					ke_removed = alpha * 0.5 * uI * uI
+					# Initial guess:
+					t = 1.0
+					for _j in range(num_newton_iters):
+						# Compute intermediate steps
+						_denom = K - pm0 + t * pI
+						_t_pow_k = t**k
+						# Root-finding equation == 0
+						_f = (_t_pow_k + w * t * K / _denom
+									- (1 / Gamma + (pI / rhoI + ke_removed) / (c_p * TI)))
+						# Root-finding equation derivative
+						_df = k * _t_pow_k / t + w * (K - pm0) * K / (_denom * _denom)
+						# Take full Newton step
+						t = t - _f / _df
+					# Filter pressure ratio
+					t = np.where(np.isnan(t), 1.0, t)
+					if t == np.clip(t, 1.0 / self.Q, self.Q):
+						break
+					alpha /= 2
+				else:
+					print(f"Q exceeded with alpha {alpha}")
+
+				# Compute target state along isentrope
+				p_stag = t * pI
+				T_stag = TI * (p_stag/pI) ** k
+				# Compute target density for scaling
+				rho_stag = 1.0 / atomics.mixture_spec_vol(y, p_stag, T_stag, physics)
+
+				# Enthalpy condition verification:
+				# Note that for the nondilute Noh problem, the floating point representation
+				# of volume fraction makes it impossible to get the pressure correct;
+				# the quadratic equation for pressure or gas volume fraction is particularly
+				# ill-conditioned that successive floats give oppositely signed residuals
+				# to the quadratic equation, but the residual has abs tol ~ 1e-7.
+				# h_stag = c_v * T_stag + p_stag / rho_stag
+				# hI = c_v * TI + pI / rhoI + ke_removed
+				# h_stag - hI
+				# Apply limited density rescaling for mass and tangential momentum variables
+				UqB *= rho_stag / rhoI # np.clip(rho_stag / rhoI, 1.0/self.Q, self.Q)
+				# Replace energy
+				UqB[..., physics.get_state_slice("Energy")] = rho_stag * (c_v * T_stag
+					+ 0.5 * (velt * velt).sum(axis=-1, keepdims=True))
 
 		return UqB
 
@@ -2343,6 +2533,19 @@ class LinearizedImpedance2D(BCWeakPrescribed):
 
 		return UqB
 
+
+class UniformAir():
+	''' Placeholder '''
+class MultiphasevpT2D1DCylindrical():
+	''' Placeholder '''
+class MultiphasevpT2D2DCylindrical():
+	''' Placeholder '''
+class PressureOutlet2D():
+	''' Placeholder '''
+class ChokedInlet2D():
+	''' Placeholder '''
+class OscillatingSphere():
+	''' Placeholder '''
 
 class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	'''
