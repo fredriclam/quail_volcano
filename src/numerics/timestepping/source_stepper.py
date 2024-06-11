@@ -65,6 +65,134 @@ class SourceSolvers():
 
 	class BDF1(SourceStepperBase):
 		'''
+		Re-implementation of 1st-order Backward Differencing (BDF1) aka
+		backward Euler.
+		Contains internal flags to optionally use second-order exponential-Euler,
+		though this is only implemented for solver order 0.
+		'''
+
+		def take_time_step(self, solver):
+			verbose:bool = False
+			use_exponential_euler:bool = False
+
+			mesh = solver.mesh
+			U = solver.state_coeffs.copy()
+			U0 = solver.state_coeffs.copy()
+
+			dt = solver.stepper.dt
+			physics = solver.physics
+			source_terms = physics.source_terms
+			elem_helpers = solver.elem_helpers
+			basis_val = elem_helpers.basis_val
+			quad_wts = elem_helpers.quad_wts
+			x_elems = elem_helpers.x_elems
+			djac_elems = elem_helpers.djac_elems
+			nq = quad_wts.shape[0]
+			ns = physics.NUM_STATE_VARS
+			nb = basis_val.shape[1]
+
+			error_history = []
+
+			if solver.order == 0 and use_exponential_euler:
+				# Compute residual vector using pre-allocated space
+				res = solver.get_residual(U, self.res)
+				# Evaluate rate vector for state coefficients with shape (ne, nq, ns)
+ 				# mult_inv_mass_matrix(mesh, solver, self.dt, res)
+				dU = dt * np.einsum('ijk, ikl -> ijl', solver.elem_helpers.iMM_elems, res)
+				# Map coefficients to quadrature values with shape (ne, nq, ns,)
+				Uq = helpers.evaluate_state(U, basis_val, skip_interp=solver.basis.skip_interp)
+				Sjac = np.zeros([mesh.num_elems, nq, ns, ns])
+				Sjac = physics.eval_source_term_jacobians(Uq, x_elems,
+						solver.time, Sjac)
+				
+				# Exponential Euler in comments here (for element order 0 only)
+				_A = np.einsum(
+					'elj, ij, ik, eimn, i, ei -> elkmn',
+					solver.elem_helpers.iMM_elems,
+					basis_val, # Symmetric basis values at quad points
+					basis_val, # Symmetric basis values at quad points
+					Sjac,      # Source jacobian
+					quad_wts.squeeze(axis=-1),
+					djac_elems.squeeze(axis=-1))
+				_b = np.swapaxes(dU/dt, 1, 2)[:,np.newaxis,np.newaxis,...]
+				# [A b]
+				# [0 0]
+				enhanced_matrix = np.concatenate((
+					np.concatenate((_A, _b,), axis=4),
+					np.zeros((*_A.shape[0:3], 1, _A.shape[-1]+1)),), axis=3)
+				# Compute phi_1(hJ) @ f
+				delta_U_exp = np.zeros_like(U)
+				for i in range(delta_U_exp.shape[0]):
+					delta_U_exp[i,0,:] = scipy.linalg.expm(dt * enhanced_matrix[i,0,0,:,:])[...,0:ns,-1]
+				U = U + dt * delta_U_exp
+			else: # Not exponential Euler
+				for i in range(1):
+					# Compute residual vector using pre-allocated space
+					res = solver.get_residual(U, self.res)
+					# Evaluate rate vector for state coefficients with shape (ne, nq, ns)
+					# mult_inv_mass_matrix(mesh, solver, self.dt, res)
+					dU = dt * np.einsum('ijk, ikl -> ijl', solver.elem_helpers.iMM_elems, res)
+					# Map coefficients to quadrature values with shape (ne, nq, ns,)
+					Uq = helpers.evaluate_state(U, basis_val, skip_interp=solver.basis.skip_interp)
+					# Evaluate source term Jacobian at qudarature points with shape (ne, nq, ns, ns,)
+					if False: # np.all([s.__class__.__name__ == "FrictionVolFracVariableMu" for s in source_terms]):
+						# Known sparsity pattern
+						# Define backward Euler evolution matrix with shape (ne, nq, nq, ns, ns)
+						A = np.eye(ns)[np.newaxis,np.newaxis,:,:] \
+								- dt * np.einsum(
+										'elj, ij, ik, eimn, i, ei -> elkmn',
+										solver.elem_helpers.iMM_elems,
+										basis_val, # Symmetric basis values at quad points
+										basis_val, # Symmetric basis values at quad points
+										Sjac,      # Source jacobian
+										quad_wts.squeeze(axis=-1),
+										djac_elems.squeeze(axis=-1))
+						# Invert along last two axes (ne, nq, nq, *ns*, *ns*)
+						iA = np.linalg.inv(A)
+					else:
+						Sjac = np.zeros([mesh.num_elems, nq, ns, ns])
+						Sjac = physics.eval_source_term_jacobians(Uq, x_elems,
+								solver.time, Sjac)
+						# Define backward Euler evolution matrix with shape (ne, nq, nq, ns, ns)
+						A = np.eye(ns)[np.newaxis,np.newaxis,:,:] \
+								- dt * np.einsum(
+										'elj, ij, ik, eimn, i, ei -> elkmn',
+										solver.elem_helpers.iMM_elems,
+										basis_val, # Symmetric basis values at quad points
+										basis_val, # Symmetric basis values at quad points
+										Sjac,      # Source jacobian
+										quad_wts.squeeze(axis=-1),
+										djac_elems.squeeze(axis=-1))
+						# Invert along last two axes (ne, nq, nq, *ns*, *ns*)
+						iA = np.linalg.inv(A)
+
+					# Newton iteration for residual vector
+					newton_residual = (U - U0 - dU)
+					U -= np.einsum("ijkmn, ikn -> ijm", iA, newton_residual)
+
+					# Error metric
+					error_state_weights = np.ones((ns))
+					error_state_weights[solver.physics.get_state_index("Energy")] = 1e-3
+					error_metric = np.linalg.norm(newton_residual * error_state_weights, axis=(1,2)).max(axis=0)
+					error_history.append(error_metric)
+
+					if error_metric < 1e-1:
+						break
+				else:
+					if verbose:
+						print("Implicit Euler failed to converge.")
+
+			# res = np.einsum('ijkll, ijl -> ikl', A, U) + dU
+			# U = np.einsum('ijkll, ijl -> ikl', iA, res)
+
+			solver.apply_limiter(U)
+			solver.state_coeffs = U
+
+			return res # [ne, nb, ns]
+
+
+	class BDF1_Original(SourceStepperBase):
+		'''
 		1st-order Backward Differencing (BDF1) method inherits attributes
 		from SourceStepperBase. See SourceStepperBase for detailed comments of methods and
 		attributes.
