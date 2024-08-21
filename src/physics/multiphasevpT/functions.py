@@ -412,6 +412,7 @@ class StaticPlug(FcnBase):
 	'''
 	def __init__(self,
 							 traction_fn:callable, yWt_fn:callable, yC_fn:callable, T_fn:callable,
+							 yF_fn:callable=None,
 							 x_global:np.array=None,
 							 p_chamber=40e6,
 							 yA=1e-7,
@@ -445,6 +446,7 @@ class StaticPlug(FcnBase):
 			yWt_fn,
 			yC_fn,
 			T_fn,
+			yF_fn=yF_fn,
 			override_properties=props,
 			enforce_p_vent=enforce_p_vent,
 		)
@@ -463,11 +465,6 @@ class StaticPlug(FcnBase):
 		# Evaluate initial condition
 		U_init = self.f(x_conduit,
 									  is_solve_direction_downward=self.is_solve_direction_downward)
-		# yF replacement: optionally seed magma with fragmented zone
-		U_init[...,7:8] = np.where((x_conduit > -600) & (x_conduit < -500),#-600,
-														 U_init[...,2:3],
-														 U_init[...,7:8])
-
 		# Initial condition, atmosphere part
 		U_atm = np.zeros((x_atm.shape[0], *U_init.shape[1:]))
 
@@ -491,7 +488,7 @@ class StaticPlug(FcnBase):
 		sol = (self.solubility_k * p ** self.solubility_n).squeeze(axis=2)
 		U_atm[...,5] = (U_atm[...,1] # Exsolved
 										+ sol / (1 + sol) * (U_atm[...,1] + U_atm[...,2] - U_atm[...,6])) # Dissolved
-		U_atm[...,7] = 1 * U_atm[...,2] # Fragmented magma, all of it
+		U_atm[...,7] = 1 * U_atm[...,2] # All fragmented in 1D atmosphere (x > 0)
 
 		U_full = np.zeros((x.shape[0], *U_init.shape[1:]))
 		U_full[np.where(np.all(x <= 0, axis=(1,2)))[0],...] = U_init
