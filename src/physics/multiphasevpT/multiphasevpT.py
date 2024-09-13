@@ -103,7 +103,7 @@ class MultiphasevpT(base.PhysicsBase):
 													Gas1={"R": 287., "gamma": 1.4},
 													Gas2={"R": 8.314/18.02e-3, "c_p": 2.288e3}, 
 													Liquid={"K": 10e9, "rho0": 2.7e3, "p0": 5e6,
-																	"E_m0": 0, "c_m": 3e3},
+																	"E_m0": 0, "c_m": 1e3},
 													Solubility={"k": 5e-6, "n": 0.5},
 													Viscosity={"mu0": 3e5},
 													tau_d = 0.5):

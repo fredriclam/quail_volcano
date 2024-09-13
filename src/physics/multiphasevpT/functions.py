@@ -496,7 +496,7 @@ class IsothermalAtmosphere(FcnBase):
 	'''
 
 	def __init__(self,T:float=300., p_atm:float=1e5,
-		h0:float=-150.0, hmax:float=6000.0, gravity:float=9.8,
+		h0:float=-150.0, hmin:float=-10000.0, hmax:float=6000.0, gravity:float=9.8,
 		massFracWv:float=5e-3, massFracM:float=1e-7, tracer_frac:float=1e-7):
 		''' Set atmosphere temperature, pressure, and location of pressure.
 		Pressure distribution is computed as hydrostatic profile with p = p_atm
@@ -505,15 +505,20 @@ class IsothermalAtmosphere(FcnBase):
 		self.T = T
 		self.p_atm = p_atm
 		self.h0 = h0
+		self.hmin = hmin
 		self.hmax = hmax
 		self.gravity = gravity
 		self.massFracWv = massFracWv
 		self.massFracM = massFracM
 		# Allocate pressure interpolant (filled when self.get_state is called
 		# because physics object is required)
-		self.pressure_interpolant = None
+		# self.pressure_interpolant = None
 		# Set numerical fraction for essentially inert fields
 		self.tracer_frac = tracer_frac
+
+	def pressure_interpolant(self, x):
+		''' Returns p(x). Raises an exception if sol_up or sol_down is not initialized in self.get_state. '''
+		return np.where(x >= self.h0, self.sol_up(x), self.sol_down(x))
 
 	def get_state(self, physics, x, t):
 		''' Computes the pressure in an isothermal atmosphere for an ideal gas
@@ -576,16 +581,25 @@ class IsothermalAtmosphere(FcnBase):
 		#     np.exp(-(np.unique(x[...,1])-x[...,1].min())/hs)*1e5, '-')
 		# Compute (nearly exponential) pressure p as a function of y
 		eval_pts = np.unique(x[:,:,1:2])
+
+
 		# Evaluate IVP solution
-		soln = scipy.integrate.solve_ivp(
+		soln_up = scipy.integrate.solve_ivp(
 			lambda height, p:
 				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
 			[self.h0, self.hmax],
 			[self.p_atm],
-			t_eval=eval_pts,
 			dense_output=True)
-		# Cache the pressure interpolant
-		self.pressure_interpolant = soln.sol
+		soln_down = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
+			[self.h0, self.hmin],
+			[self.p_atm],
+			dense_output=True)
+		# Cache picklable solution callables
+		self.sol_up = soln_up.sol
+		self.sol_down = soln_down.sol
+
 		# Evaluate p using dense_output of solve_ivp (with shape magic)
 		p = np.reshape(self.pressure_interpolant(x[...,1].ravel()), x[...,1].shape)
 		rho = atomics.mixture_density(self.y, p, self.T, physics)
@@ -3581,7 +3595,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		return (1.0/self.logistic_scale) * self.compute_indicator(phi) \
 			* (self.compute_indicator(phi) - 1.0)
 	
-	def compute_viscosity(self, Uq, physics):
+	def compute_viscosity(self, Uq, physics, exclude_crystals=False):
 		''' calculates the viscosity at each depth point as function of dissolved
 		water and crystal content (assumes crystal phase is incompressible)
 		'''
@@ -3635,6 +3649,10 @@ class FrictionVolFracVariableMu(SourceBase):
 		crysVisc = num * denom
 		
 		#viscosity = 4.386e5 * crysVisc
+		if exclude_crystals:
+			return self.viscosity_factor * meltVisc
+
+
 		viscosity = self.viscosity_factor * meltVisc * crysVisc
 		#viscosity[(1 - phiM) > self.crit_volfrac] = 0
 		
@@ -4373,7 +4391,8 @@ class FragmentationStrainRateSource(SourceBase):
 		friction_model = [source
 										for source in self.solver.physics.source_terms
 										if "Friction" in source.__class__.__name__][0]
-		mu = friction_model.compute_viscosity(_Uq, self.solver.physics)
+		# Compute viscosity excluding crystal enhancement factor
+		mu = friction_model.compute_viscosity(_Uq, self.solver.physics, exclude_crystals=True)
 
 		S = np.zeros_like(_Uq)
 		if self.solver.physics.NDIMS == 1:
