@@ -28,7 +28,12 @@ import scipy.integrate
 import scipy.special as sp
 
 # Import submodule
-import physics.multiphaseWLMA.iapws95_light.mixtureWLMA as mixtureWLMA
+try:
+	import physics.multiphaseWLMA.iapws95_light.mixtureWLMA as mixtureWLMA
+except ModuleNotFoundError as e:
+	# Module guard for users of main branch
+	print("IAPWS95 water modules ignored. Error de-escalated to the following message: ")
+	print(e.msg)
 
 import errors
 import general
@@ -46,6 +51,9 @@ class FcnType(Enum):
 	IsothermalAtmosphere = auto()
 	OverOceanIsothermalAtmosphere = auto()
 	UnderwaterMagmaConduit = auto()
+	ThreeLayerModel = auto()
+	CraterInitialVelocity = auto()
+
 	# DebrisFlow = auto()
 	# IsothermalAtmosphere1D = auto()
 
@@ -59,8 +67,10 @@ class BCType(Enum):
 	pass
 	# SlipWall = auto()
 	LinearizedImpedance2D = auto()
+	PressureStableLinearizedInlet1D = auto()
 	# MultiphasevpT1D1D = auto()
 	# MultiphasevpT2D1D = auto()
+	# PressureOutlet1D = auto()
 	# MultiphasevpT2D2D = auto()
 	# MultiphasevpT2D1DCylindrical = auto()
 	# MultiphasevpT2D2DCylindrical = auto()
@@ -484,6 +494,8 @@ class OverOceanIsothermalAtmosphere(FcnBase):
 			1.0-2.0*self.tracer_frac,
 			self.tracer_frac]) if self.include_water_layer else self.y_overwater
 
+		# self.y_underwater = self.y_overwater ############################################################### DRY
+
 		def mixture_spec_vol(p:float, T:float, y:list) -> float:
 			''' Evaluate v(p,T,y), non-vectorized. '''
 			return y[0] * physics.Gas[0]["R"] * T / p \
@@ -559,13 +571,14 @@ class OverOceanIsothermalAtmosphere(FcnBase):
 			self.hsurf,
 			self.hmax, 
 			self.psurf)
-		Uq_flat[ind_ravel_under_water, :] = compute_isothermal_layer(
-			x[...,-1].ravel()[ind_ravel_under_water],
-			self.T,
-			self.y_underwater,
-			self.hsurf,
-			self.hmin, 
-			self.psurf)
+		if ind_ravel_under_water[0].size > 0:
+			Uq_flat[ind_ravel_under_water, :] = compute_isothermal_layer(
+				x[...,-1].ravel()[ind_ravel_under_water],
+				self.T,
+				self.y_underwater,
+				self.hsurf,
+				self.hmin, 
+				self.psurf)
 		Uq = np.reshape(Uq_flat, Uq.shape)
 
 		return Uq # [ne, nq, ns]
@@ -628,13 +641,17 @@ class UnderwaterMagmaConduit(FcnBase):
 		soln = scipy.integrate.solve_ivp(
 				lambda height, p:
 					-self.gravity / mixture_spec_vol(p, self.T_water, self.y_underwater),
-				[self.hsurf, self.hwm],
+				[0.0, -100+self.hwm],
+				# [self.hsurf, self.hwm],
 				[self.psurf],
-				t_eval=[-50, self.hwm])
+				# [self.psurf],
+				t_eval=[-100, -100+self.hwm], # Manual input for height 2D surface
+				# t_eval=[self.hwm],
+				)
 		# Compute pressure at top of 1D domain (water)
-		p_wtop = soln.y[0, -2]
+		p_wtop = soln.y[0,0]
 		# Compute pressure at water-magma interface
-		p_mtop = soln.y[0, -1] + self.delta_p
+		p_mtop = soln.y[0,1] + self.delta_p
 
 		def compute_isothermal_layer(z:np.array, T:float, y:list,
 															   h0:float, h1:float, p0:float) -> np.array:
@@ -772,6 +789,22 @@ class UnderwaterMagmaConduit(FcnBase):
 			-50,
 			self.hmin, # Overextend
 			p_wtop), Uq.shape)
+		
+		# Modify dissolved water in magma to saturation using one-step correction
+		# Extract p (redundant with compute_isothermal_layer but cheap)
+		soln = scipy.integrate.solve_ivp(
+						lambda height, p:
+							-self.gravity / mixture_spec_vol(p, self.T_water, self.y_underwater),
+						[-50, self.hmin],
+						[p_wtop],
+						dense_output=True)
+		_p = np.reshape(soln.sol(x.ravel()), Uq_water[...,0:1].shape)
+		_rho = Uq_water[...,0:3].sum(axis=-1, keepdims=True)
+		_spec_Uq_water = Uq_water / _rho
+		_yL = 1.0 - (_spec_Uq_water[...,5:6] + _spec_Uq_water[...,6:7])
+		yWd_corr = _yL * self.solubility_k * _p ** self.solubility_n
+		# Apply correction to total water content
+		Uq_water[...,5:6] = (_spec_Uq_water[...,1:2] + yWd_corr) * _rho
 
 		# Combine 1D water layer and 1D magma
 		Uq = np.reshape(np.where(x[...,-1].ravel()[...,np.newaxis] <= self.hwm,
@@ -779,6 +812,486 @@ class UnderwaterMagmaConduit(FcnBase):
 								np.reshape(Uq_water, (-1, physics.NUM_STATE_VARS))), Uq.shape)
 
 		return Uq # [ne, nq, ns]
+
+
+class CraterInitialVelocity(FcnBase):
+	'''
+	Initial upward velocity in an instantaneously excavated crater
+	'''
+
+	def __init__(self, p_inf:float=1.1e6, delta_p:float=0.0,
+							 T_magma:float=1300, T_inf:float=300,
+							 z_virtual:float=-10, tracer_frac:float=1e-5,
+							 launch_speed:float=0.0, crater_depth:float=5,
+							 solubility_k:float=5e-6, solubility_n:float=0.5):
+
+		self.p_inf = p_inf
+		self.delta_p = delta_p
+		self.T_magma = T_magma
+		self.T_inf = T_inf
+		self.z_virtual = z_virtual # Virtual apex of conical crater # -10
+		self.tracer_frac = tracer_frac
+		self.launch_speed = launch_speed
+		self.crater_depth = crater_depth
+
+		self.solubility_k = solubility_k
+		self.solubility_n = solubility_n
+
+		''' Compute additional confining pressure from water layer '''
+		self.y_magmatic = np.array([tracer_frac,
+															  tracer_frac,
+																1.0 - 2*tracer_frac])
+		self.y_water = np.array([tracer_frac,
+													 	 1.0 - 2*tracer_frac,
+													 	 tracer_frac])
+		
+	def get_state(self, physics, x, t):
+		''' Computes the pressure in an isothermal atmosphere for air. Trace
+		amounts of magma phase are added and the pressure profile is iteratively
+		corrected. '''
+
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		ndims = physics.NDIMS
+		if ndims == 1:
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
+		elif ndims == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
+		else:
+			raise ValueError(f"Unknown number of dimensions: {ndims}")
+
+		def mixture_spec_vol(p:float, T:float, y:list) -> float:
+			''' Evaluate v(p,T,y), non-vectorized. '''
+			return y[0] * physics.Gas[0]["R"] * T / p \
+				+ y[1] / mixtureWLMA.float_mix_functions.rho_l_pt(p, T) \
+				+ y[2] / (physics.Liquid["rho0"] 
+					* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"]))
+
+		v_ocean = mixture_spec_vol(self.p_inf, self.T_inf, self.y_water)
+		v_magma = mixture_spec_vol(self.p_inf + self.delta_p,
+														 self.T_magma,
+														 self.y_magmatic)
+		rho_ocean = 1.0 / v_ocean
+		rho_magma = 1.0 / v_magma
+		
+
+		# Compute velocity ray path
+		if ndims == 1:
+			raise NotImplementedError("Conical crater ray path not calculated for 1D.")
+		# Unit vector from virtual apex to location
+		direction = x.copy()
+		direction[...,1] -= self.z_virtual
+		direction /= np.linalg.norm(direction, axis=-1, keepdims=True)
+
+		# TODO: Add exsolved water
+		# def magma_spec_vol(p:float) -> float:
+		# 	''' Evaluate magma specific volume with equilibrium dissolution. '''
+		# 	# Compute dissolved (yWd) and exsolved (yWv) mass fractions
+		# 	yL = 1.0 - (self.yWt + self.yC)
+		# 	yWd_max =	yL * self.solubility_k * p ** self.solubility_n
+		# 	yWd = np.clip(yWd_max, self.tracer_frac, self.yWt - self.tracer_frac)
+		# 	yWv = self.yWt - yWd
+		# 	# Compute other mass fractions
+		# 	yA = self.tracer_frac
+		# 	yM = 1.0 - (yA + yWv)
+		# 	return mixture_spec_vol(p, self.T_magma, [yA, yWv, yM])
+		# Use rho, p, T to fill in conserved variables
+		# yL = 1.0 - (self.yWt + self.yC)
+		# yWd_max =	yL * self.solubility_k * p ** self.solubility_n
+		# yWd = np.clip(yWd_max, self.tracer_frac, self.yWt - self.tracer_frac)
+		# yWv = self.yWt - yWd
+		# # Compute other mass fractions, partial densities
+		# yA = self.tracer_frac
+		# yM = 1.0 - (yA + yWv)
+		# arhoA  = rho * yA
+		# arhoWv = rho * yWv
+		# arhoM  = rho * yM
+		# arhoWt = rho * self.yWt
+		# arhoC  = rho * self.yC
+		# arhoFm = self.tracer_frac * arhoM
+
+		# Compute specific energy for each phase
+		def e_mix(p, T, y):
+			e_a = physics.Gas[0]["c_v"] * T
+			e_m_mech = mixtureWLMA.float_mix_functions.magma_mech_energy(self.p_inf,
+				physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
+			e_m = physics.Liquid["c_m"] * T + e_m_mech
+			e_wv = mixtureWLMA.float_mix_functions.u(
+				mixtureWLMA.float_mix_functions.rho_l_pt(p, T), T)
+			return	y[0] * e_a + y[1] * e_wv + y[2] * e_m
+
+		# Mixture energy of water
+		e_water = e_mix(self.p_inf, self.T_inf, self.y_water)
+		# Assemble conservative state vector for ocean
+		Uq[..., iarhoA] = rho_ocean * self.y_water[0]
+		Uq[..., iarhoWv] = rho_ocean * self.y_water[1]
+		Uq[..., iarhoM] = rho_ocean * self.y_water[2]
+		Uq[..., irhou] = 0.0
+		if physics.NDIMS == 2:
+			Uq[..., irhov] = 0.0
+		Uq[..., ie] = rho_ocean * e_water
+		Uq[..., iarhoWt] = rho_ocean * self.y_water[1]
+		Uq[..., iarhoC] = 0.0
+		Uq[..., iarhoFm] = rho_ocean * self.y_water[2]
+
+		Uq_magma = Uq.copy()
+
+		# Mixture energy of magma
+		e_magmatic = e_mix(self.p_inf + self.delta_p, self.T_magma, self.y_magmatic)
+		# Assemble conservative state vector for static magma
+		Uq_magma[..., iarhoA] = rho_ocean * self.y_magmatic[0]
+		Uq_magma[..., iarhoWv] = rho_ocean * self.y_magmatic[1]
+		Uq_magma[..., iarhoM] = rho_ocean * self.y_magmatic[2]
+		Uq_magma[..., iarhoWt] = rho_ocean * self.y_magmatic[1]
+		Uq_magma[..., iarhoC] = 0.0
+		Uq_magma[..., iarhoFm] = rho_ocean * self.y_magmatic[2]
+		if physics.NDIMS == 1:
+			Uq_magma[..., irhou] = rho_magma * 0.0
+		elif physics.NDIMS == 2:
+			Uq_magma[..., irhou] = rho_magma * 0.0
+			Uq_magma[..., irhov] = rho_magma * 0.0
+		Uq_magma[..., ie] = rho_magma * e_magmatic
+
+		Uq_plug = Uq_magma.copy()
+		# Set launch velocity
+		u = self.launch_speed * direction[...,0]
+		v = self.launch_speed * direction[...,1]
+		if physics.NDIMS == 1:
+			Uq_plug[..., irhou] = rho_magma * v
+		elif physics.NDIMS == 2:
+			Uq_plug[..., irhou] = rho_magma * u
+			Uq_plug[..., irhov] = rho_magma * v
+		Uq_plug[..., ie] += 0.5 * rho_magma * (u * u + v * v)
+		
+		# Combine piecewise U according to last dimension
+		Uq = np.where(x[...,-1:] >= 0.0,
+			Uq,
+			np.where(x[...,-1:] >= -self.crater_depth,
+				Uq_plug,
+				Uq_magma)
+		)
+
+		return Uq # [ne, nq, ns]
+
+
+class ThreeLayerModel(FcnBase):
+	'''
+	Compute overpressurized magma state under water layer.
+
+	hwm: water-magma interface height
+	'''
+
+	def __init__(self,
+							 z_ocean_surface=50,
+							 delta_p=10e6,
+							 T_water=300,
+							 T_infiltrate=300,
+							 T_magma=1000,
+							 porosity=0.5,
+							 z_vent=-100,
+							 z_premix=-300,
+							 psurf=1e5,
+							 z_min:float=-2050,
+							 gravity:float=9.8,
+							 tracer_frac:float=1e-7,
+							 yC:float=1e-7,
+							 yWt:float=0.05,
+							 solubility_k:float=5e-6,
+							 solubility_n:float=0.5):
+		self.z_ocean_surface = z_ocean_surface
+		self.delta_p = delta_p
+		self.T_water = T_water
+		self.T_infiltrate = T_infiltrate
+		self.T_magma = T_magma
+		self.porosity = porosity
+		self.z_vent = z_vent
+		self.z_premix= z_premix
+		self.psurf = psurf
+		self.z_min = z_min
+		self.gravity = gravity
+		self.tracer_frac = tracer_frac     # numerical fraction for essentially inert fields
+		self.yC = yC
+		self.yWt = yWt
+		self.solubility_k = solubility_k
+		self.solubility_n = solubility_n
+
+	def get_state(self, physics, x, t):
+		''' Computes the pressure in an isothermal atmosphere for air. Trace
+		amounts of magma phase are added and the pressure profile is iteratively
+		corrected. '''
+
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		ndims = physics.NDIMS
+		if ndims == 1:
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
+		elif ndims == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+				physics.get_state_indices()
+		else:
+			raise ValueError(f"Unknown number of dimensions: {ndims}")
+
+		def mixture_spec_vol(p:float, T:float, y:list) -> float:
+			''' Evaluate v(p,T,y), non-vectorized. '''
+			return y[0] * physics.Gas[0]["R"] * T / p \
+				+ y[1] / mixtureWLMA.float_mix_functions.rho_l_pt(p, T) \
+				+ y[2] / (physics.Liquid["rho0"] 
+					* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"]))
+
+		def mixture_spec_vol_eq(p:float, T:float, yWt:float) -> float:
+			''' Evaluate v(p,T,y), non-vectorized. For magma with equilibrium solubility. '''
+			yWd = self.solubility_k * p ** self.solubility_n
+			return self.tracer_frac * physics.Gas[0]["R"] * T / p \
+				+ y[1] / mixtureWLMA.float_mix_functions.rho_l_pt(p, T) \
+				+ y[2] / (physics.Liquid["rho0"] 
+					* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"]))
+		
+		''' Compute additional confining pressure from water layer '''
+		# self.y_underwater = np.array([1.0-2e-4, # air replacement ##############################################
+		# 	1e-4, 1e-4])
+		self.y_underwater = np.array([1e-8,
+			1.0-2.0*self.tracer_frac, 1e-8])
+		
+		# Pure hydrostatic solution
+		hydrostatic_soln = scipy.integrate.solve_ivp(
+				lambda height, p:
+					-self.gravity / mixture_spec_vol(p, self.T_water, self.y_underwater),
+				[self.z_ocean_surface, self.z_min],
+				[self.psurf],
+				t_eval=[0.0, self.z_vent, self.z_premix],
+				dense_output=True, # Manual input for height 2D surface
+				)
+		# Compute pressure at top of 1D domain (water)
+		p_wtop = hydrostatic_soln.y[0,0]
+		# Compute pressure at vent
+		p_vent = hydrostatic_soln.y[0,1]
+
+		def compute_isothermal_water_layer(z:np.array, T:float, y:list,
+															   h0:float, h1:float, p0:float) -> np.array:
+			''' Compute U for an isothermal layer, evaluated on points in z.ravel(). '''
+			soln = scipy.integrate.solve_ivp(
+				lambda z, p:
+					-self.gravity / mixture_spec_vol(p, T, self.y_underwater),
+				[h0, h1],
+				[p0],
+				dense_output=True)
+			# Evaluate p using dense_output of solve_ivp (with shape magic)
+			p = np.reshape(soln.sol(z.ravel()), z.ravel().shape)
+			# Compute resultant density
+			rho = np.reshape(
+				1.0 / np.array([mixture_spec_vol(_p, T, y)
+					for _p in p.ravel()]),
+				p.shape)
+			# Use rho, p, T to fill in conserved variables
+			arhoA = rho * y[0]
+			arhoWv = rho * y[1]
+			arhoM = rho * y[2]
+			# Compute conservative variables for tracers (typically no source in 2D)
+			arhoWt = arhoWv + self.tracer_frac * arhoM
+			arhoC  = self.tracer_frac * arhoM
+			arhoFm = (1.0 - self.tracer_frac) * arhoM
+			# Zero velocity
+			u = np.zeros_like(p)
+			v = np.zeros_like(p)
+			# Compute specific energy for each phase
+			e_a = physics.Gas[0]["c_v"] * T
+			e_m_mech = np.reshape(np.array([mixtureWLMA.float_mix_functions.magma_mech_energy(_p,
+				physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
+				for _p in p.ravel()]), p.shape)
+			e_m = physics.Liquid["c_m"] * T + e_m_mech
+			e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+				mixtureWLMA.float_mix_functions.rho_l_pt(_p, T), T)
+				for _p in p.ravel()]), p.shape)
+			rho = arhoA + arhoWv + arhoM
+			# Compute volumetric energy
+			e_vol = (arhoA * e_a + arhoWv * e_w + arhoM * e_m
+					+ 0.5 * rho * (u*u+v*v))
+			# Assemble conservative state vector
+			Uq = np.zeros((z.ravel().size, physics.NUM_STATE_VARS))
+			Uq[:, iarhoA]  = arhoA
+			Uq[:, iarhoWv] = arhoWv
+			Uq[:, iarhoM]  = arhoM
+			Uq[:, irhou]   = rho * u
+			if physics.NDIMS == 2:
+				Uq[:, irhov]   = rho * v
+			Uq[:, ie]      = e_vol
+			# Tracer quantities
+			Uq[:, iarhoWt] = arhoWt
+			Uq[:, iarhoC]  = arhoC
+			Uq[:, iarhoFm] = arhoFm
+
+			return Uq
+
+		def magma_spec_vol(p:float) -> float:
+			''' Evaluate magma specific volume with equilibrium dissolution. '''
+			# Compute dissolved (yWd) and exsolved (yWv) mass fractions
+			yL = 1.0 - (self.yWt + self.yC)
+			yWd_max =	yL * self.solubility_k * p ** self.solubility_n
+			yWd = np.clip(yWd_max, self.tracer_frac, self.yWt - self.tracer_frac)
+			yWv = self.yWt - yWd
+			# Compute other mass fractions
+			yA = self.tracer_frac
+			yM = 1.0 - (yA + yWv)
+
+			return mixture_spec_vol(p, self.T_magma, [yA, yWv, yM])
+
+		''' Build hydrostatic middle premix layer '''
+		hydrostatic_soln = scipy.integrate.solve_ivp(
+				lambda height, p:
+					-self.gravity / mixture_spec_vol(p, self.T_water, self.y_underwater),
+				[self.z_vent, self.z_min],
+				[p_vent + self.delta_p],
+				dense_output=True, # Manual input for height 2D surface
+				)
+		p_hydrostatic = hydrostatic_soln.sol(x.ravel()).ravel()
+		# Compute rho_l as a function of p (applies when p > p_sat(T))
+		# rhol_unfiltered = mixtureWLMA.rhoc * np.array([
+		# 	mixtureWLMA.float_phi_functions.rhol_pT(p, self.T_infiltrate) for p in p_hydrostatic])
+		psat = mixtureWLMA.float_phi_functions.prho_sat(self.T_infiltrate)["psat"]
+		rhol_T = mixtureWLMA.float_phi_functions.prho_sat(self.T_infiltrate)["rho_satl"]
+		rhov_T = mixtureWLMA.float_phi_functions.prho_sat(self.T_infiltrate)["rho_satv"]
+		
+		if self.T_infiltrate <= mixtureWLMA.Tc:
+			rho_range_l = np.linspace(rhol_T, 1.3*rhol_T, 1000)
+			rho_to_p = [mixtureWLMA.float_phi_functions.p(_rho, self.T_infiltrate)
+									for _rho in rho_range_l]
+			rho_l = np.interp(p_hydrostatic, rho_to_p, rho_range_l)
+
+			# Compute rho_v as a function of p (applies when p < p_sat(T))
+			rho_range_v = np.linspace(1e-1, rhov_T, 1000)
+			rho_to_p = [mixtureWLMA.float_phi_functions.p(_rho, self.T_infiltrate)
+									for _rho in rho_range_v]
+			rho_v = np.interp(p_hydrostatic, rho_to_p, rho_range_v)
+			rho_w_pore = np.where(p_hydrostatic < psat, rho_v, rho_l)
+		else:
+			rho_range = np.linspace(0.01, 1.2e3, 1000)
+			rho_to_p = [mixtureWLMA.float_phi_functions.p(_rho, self.T_infiltrate)
+							  for _rho in rho_range]
+			rho_w_pore = np.interp(p_hydrostatic, rho_to_p, rho_range)
+
+
+		# Compute density of condensed magma phase
+		rho_m = physics.Liquid["rho0"] * (
+			1 + (p_hydrostatic - physics.Liquid["p0"]) / physics.Liquid["K"])
+		# Compute partial densities
+		arhoWv = self.porosity * rho_w_pore
+		arhoM = (1 - self.porosity) * rho_m
+
+		# Compute conservative variables for tracers (typically no source in 2D)
+		arhoA = self.tracer_frac * arhoWv
+		arhoWt = arhoWv + self.tracer_frac * arhoM
+		arhoC  = (1.0 - self.tracer_frac) * arhoM
+		arhoFm = (1.0 - self.tracer_frac) * arhoM
+		# Zero velocity
+		u = np.zeros_like(p_hydrostatic)
+		v = np.zeros_like(p_hydrostatic)
+		# Compute specific energy for each phase
+		e_a = physics.Gas[0]["c_v"] * self.T_infiltrate
+		e_m_mech = np.reshape(np.array([mixtureWLMA.float_mix_functions.magma_mech_energy(_p,
+			physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
+			for _p in p_hydrostatic.ravel()]), p_hydrostatic.shape)
+		e_m = physics.Liquid["c_m"] * self.T_infiltrate + e_m_mech
+		e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(rho, self.T_infiltrate)
+			for rho in rho_w_pore.ravel()]), p_hydrostatic.shape)
+		rho = arhoA + arhoWv + arhoM
+		# Compute volumetric energy
+		e_vol = (arhoA * e_a + arhoWv * e_w + arhoM * e_m
+				+ 0.5 * rho * (u*u+v*v))
+		# Assemble conservative state vector
+		Uq_premix = Uq.copy()
+		Uq_premix[:, :, iarhoA]  = np.reshape(arhoA, Uq_premix.shape[0:2])
+		Uq_premix[:, :, iarhoWv] = np.reshape(arhoWv, Uq_premix.shape[0:2])
+		Uq_premix[:, :, iarhoM]  = np.reshape(arhoM, Uq_premix.shape[0:2])
+		Uq_premix[:, :, irhou]   = np.reshape(rho * u, Uq_premix.shape[0:2])
+		if physics.NDIMS == 2:
+			Uq_premix[:, :, irhov]   = np.reshape(rho * v, Uq_premix.shape[0:2])
+		Uq_premix[:, :, ie]      = np.reshape(e_vol, Uq_premix.shape[0:2])
+		# Tracer quantities
+		Uq_premix[:, :, iarhoWt] = np.reshape(arhoWt, Uq_premix.shape[0:2])
+		Uq_premix[:, :, iarhoC]  = np.reshape(arhoC, Uq_premix.shape[0:2])
+		Uq_premix[:, :, iarhoFm] = np.reshape(arhoFm, Uq_premix.shape[0:2])
+
+		''' Build water layer '''
+		Uq_water = np.reshape(compute_isothermal_water_layer(
+			x.ravel(),
+			self.T_water,
+			self.y_underwater,
+			0,
+			self.z_min, # Overextend, and clip after
+			p_wtop), Uq.shape)
+		
+		
+		''' Build magma underlayer '''
+		
+		# Modify dissolved water in magma to saturation using one-step correction
+		# Extract p (redundant with compute_isothermal_layer but cheap)
+		soln = scipy.integrate.solve_ivp(
+						lambda height, p:
+							-self.gravity / magma_spec_vol(p),
+						[self.z_premix, self.z_min],
+						hydrostatic_soln.sol(self.z_premix),
+						dense_output=True)
+		p = np.reshape(soln.sol(x.ravel()), Uq_water[...,0:1].shape)
+
+		# Compute dissolved (yWd) and exsolved (yWv) mass fractions
+		yL = 1.0 - (self.yWt + self.yC)
+		yWd_max =	yL * self.solubility_k * p ** self.solubility_n
+		yWd = np.clip(yWd_max, self.tracer_frac, self.yWt - self.tracer_frac)
+		yWv = self.yWt - yWd
+		# Compute other mass fractions
+		yA = self.tracer_frac * np.ones_like(yWv)
+		yM = 1.0 - (yA + yWv)
+		yF = np.zeros_like(yM)
+
+		rho = np.reshape(
+				1.0 / np.array([mixture_spec_vol(_p, self.T_magma, _y)
+					for (_p, _y) in zip(
+						p.ravel(),
+						np.stack([yA.ravel(), yWv.ravel(), yM.ravel()], axis=-1))]),
+				p.shape)
+		# Zero velocity
+		u = np.zeros_like(p)
+		v = np.zeros_like(p)
+		# Compute specific energy for each phase
+		e_a = physics.Gas[0]["c_v"] * self.T_magma
+		e_m_mech = np.reshape(np.array([mixtureWLMA.float_mix_functions.magma_mech_energy(_p,
+			physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
+			for _p in p.ravel()]), p.shape)
+		e_m = physics.Liquid["c_m"] * self.T_magma + e_m_mech
+		e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+			mixtureWLMA.float_mix_functions.rho_l_pt(_p, self.T_magma), self.T_magma)
+			for _p in p.ravel()]), p.shape)
+		# Compute volumetric energy
+		e_vol = rho * (yA * e_a + yWv * e_w + yM * e_m
+				+ 0.5 * (u*u+v*v))
+
+		Uq_magma = Uq_water.copy()
+		Uq_magma[:, :, iarhoA]  = (rho * yA).squeeze(axis=2)
+		Uq_magma[:, :, iarhoWv] = (rho * yWv).squeeze(axis=2)
+		Uq_magma[:, :, iarhoM]  = (rho * yM).squeeze(axis=2)
+		Uq_magma[:, :, irhou]   = np.reshape(rho * u, Uq_magma.shape[0:2])
+		if physics.NDIMS == 2:
+			Uq_magma[:, :, irhov]   = np.reshape(rho * v, Uq_magma.shape[0:2])
+		Uq_magma[:, :, ie]      = np.reshape(e_vol, Uq_magma.shape[0:2])
+		# Tracer quantities
+		Uq_magma[:, :, iarhoWt] = (rho * self.yWt).squeeze(axis=2)
+		Uq_magma[:, :, iarhoC]  = (rho * self.yC).squeeze(axis=2)
+		Uq_magma[:, :, iarhoFm] = (rho * yF).squeeze(axis=2)
+
+		# Combine 1D water layer and 1D magma
+		Uq = np.reshape(
+			np.where(x[...,-1].ravel()[...,np.newaxis] >= self.z_vent,
+				np.reshape(Uq_water, (-1, physics.NUM_STATE_VARS)), # Water layer
+				np.where(x[...,-1].ravel()[...,np.newaxis] >= self.z_premix, # Premix porous layer
+					np.reshape(Uq_premix, (-1, physics.NUM_STATE_VARS)),
+					np.reshape(Uq_magma, (-1, physics.NUM_STATE_VARS)))),
+			Uq.shape)
+
+		return Uq # [ne, nq, ns]
+
 
 class _IsothermalAtmosphere_LavaLake(FcnBase):
 	'''
@@ -1503,20 +2016,30 @@ class LinearizedImpedance2D(BCWeakRiemann):
 
 		return UqB
 
-class VelocityInlet1D(BCWeakPrescribed):
+
+class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	'''
-	Blah blah blah TODO: copy from MassFluxInlet1D
+	See physics/multiphasevpT/functions.py > PressureStableLinearizedInlet1D
+	for the function this is based on. Here the equation of state is changed,
+	and the isothermal approximation is used for computing the boundary
+	temperature.
 	'''
-	def __init__(self, u:float=1.0, p_chamber:float=100e6,
-			T_chamber:float=1e3, trace_arho:float=1e-6, freq:float=0.25, # 1/36
-			yWt:float=0.04, yC:float=0.1, newton_tol:float=1e-7, newton_iter_max=20):
-		# Ingest args
-		self.u, self.p_chamber, self.T_chamber, self.trace_arho = \
-			u, p_chamber, T_chamber, trace_arho
-		# Angular frequency of variation
-		self.freq = freq
-		self.yWt, self.yC, self.newton_tol, self.newton_iter_max = \
-			yWt, yC, newton_tol, newton_iter_max
+	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=2.6e-4,
+			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
+			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0):
+		# Arguments for chamber properties
+		self.p_chamber, self.T_chamber, self.trace_arho = \
+			p_chamber, T_chamber, trace_arho
+		# Water concentration
+		self.chi_water = chi_water
+		# Crystal volume fraction average and perturbation amplitude
+		self.cVFav, self.cVFamp = cVFav, cVFamp
+		# Gaussian pulse if true (else sinusoidal)
+		self.is_gaussian:bool = is_gaussian
+		# Frequency for sinusodial (used if not is_gaussian)
+		self.cos_freq = cos_freq
+		# Gaussian properties (used if is_gaussian)
+		self.gaussian_tpulse, self.gaussian_sig = gaussian_tpulse, gaussian_sig
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
@@ -1525,7 +2048,7 @@ class VelocityInlet1D(BCWeakPrescribed):
 		''' Check validity of flow state, check number of boundary points. '''
 		if UqI.shape[0] * UqI.shape[1] > 1:
 			raise NotImplementedError('''Not implemented: for-loop over more than one
-				inflow boundary point.''')
+				inflow boundary point in 1D.''')
 
 		''' Compute boundary-satisfying primitive state that preserves Riemann
 		invariants (corresponding to outgoing acoustic waves) of the interior
@@ -1539,153 +2062,98 @@ class VelocityInlet1D(BCWeakPrescribed):
 		# Extract material properties
 		K, rho0, p0 = \
 			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
-		# Approximate desired mass flux
-		u = self.u
 		
 		# Compute grid primitives
-		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
-		gas_volfrac = atomics.gas_volfrac(arhoVecI, TGrid, physics)
-		pGrid = atomics.pressure(arhoVecI, TGrid, gas_volfrac, physics)
-		rhoGrid = atomics.rho(arhoVecI)
-		GammaGrid = atomics.Gamma(arhoVecI, physics)
-		cGrid = atomics.sound_speed(GammaGrid, pGrid, rhoGrid, gas_volfrac, physics)
+		TGrid = physics.compute_variable("Temperature", UqI)
+		pGrid = physics.compute_variable("Pressure", UqI)
+		rhoGrid = UqI[...,0:3].sum(axis=-1, keepdims=True)
+		cGrid = physics.compute_variable("SoundSpeed", UqI)
 		uGrid = momxI / rhoGrid
+		# Compute chamber mass properties
+		arhoVecChamber = arhoVecI.copy()
+		arhoVecChamber[...,0] = self.trace_arho # Small amount of air to preserve positivity
+		arhoVecChamber[...,1] = self.trace_arho # Small amount of water to preserve positivity
+		# Approximate partial density of magma by density
+		arhoVecChamber[...,2] = rho0 * (1 + (p_chamber - p0) / K)
+		rhoChamber = arhoVecChamber.sum(axis=-1, keepdims=True)
+		# Use approximate sound speed for chamber (assume no exsolved water)
+		cChamber = np.sqrt(K / rho0)
+
 		# Compute composition-based properties
-		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
+		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals >= 0.):
 			# Outflow
-			Gamma = atomics.Gamma(arhoVecI, physics)
 			y = atomics.massfrac(arhoVecI)
-			S = TGrid / pGrid**((Gamma-1)/Gamma)
+			T = TGrid
+			rho_base = rhoGrid
+			c_base = cGrid
+			p_base = pGrid
 		else:
 			# Inflow
-			arhoVecB = arhoVecI.copy()
-			arhoVecB[...,0] = self.trace_arho # Small amount of air to preserve positivity
-			arhoVecB[...,1] = self.trace_arho # Small amount of water to preserve positivity
-			# Approximate partial density of magma by density
-			arhoVecB[...,2] = rho0 * (1 + (p_chamber - p0) / K)
-			Gamma = atomics.Gamma(arhoVecB, physics)
-			y = atomics.massfrac(arhoVecB)
-			S = T_chamber / p_chamber**((Gamma-1)/Gamma)
+			y = atomics.massfrac(arhoVecChamber)
+			T = T_chamber
+			rho_base = rhoChamber
+			c_base = cChamber
+			p_base = self.p_chamber
 
-		# Specific gas constant for R
-		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
-		# Evaluate primitive variables for boundary state
-		p = pGrid - (rhoGrid * cGrid) * (uGrid - u)
-		T = S * p**((Gamma-1)/Gamma)
-		rho = atomics.mixture_density(y, p, T, physics)
+		# Compute acoustic impedances Z and admittances Y = 1/Z
+		ZGrid = rhoGrid * cGrid
+		ZChamber = rhoChamber * cChamber
+		YGrid = 1.0 / ZGrid
+		YChamber = 1.0 / ZChamber
+		# Approximate pressure as Y-weighted average
+		p = (YGrid * pGrid + YChamber * p_chamber) / (YGrid + YChamber)
+		# Approximate corresponding velocity in x-direction
+		u = uGrid + (p_chamber - pGrid) / (ZChamber + ZGrid)
+
+		# Evaluate density from first-order perturbation from upwind s
+		rho = rho_base + (p - p_base)/ (c_base * c_base)
 
 		''' Check positivity of computed state. '''
 		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
 			raise errors.NotPhysicalError
+		
+		# Compute energy
+		e_a = physics.Gas[0]["c_v"] * T
+		e_m_mech = np.reshape(np.array([mixtureWLMA.float_mix_functions.magma_mech_energy(_p,
+			physics.Liquid["K"], physics.Liquid["p0"], physics.Liquid["rho0"])
+			for _p in p.ravel()]), p.shape)
+		e_m = physics.Liquid["c_m"] * T + e_m_mech
+		# Water energy, assuming supercritical (can use rho_l for this case)
+		e_w = np.reshape(np.array([mixtureWLMA.float_mix_functions.u(
+			mixtureWLMA.float_mix_functions.rho_l_pt(_p, T), T)
+			for _p in p.ravel()]), p.shape)		
+		e_vec = np.concatenate((np.asarray(e_a).ravel(), np.asarray(e_w).ravel(), np.asarray(e_m).ravel(),), )
+		e_mix = (y.ravel() * e_vec).sum()
 
 		''' Map to conservative variables '''
 		UqB[:,:,physics.get_mass_slice()] = rho * y
 		UqB[:,:,physics.get_momentum_slice()] = rho * u
-		UqB[:,:,physics.get_state_slice("Energy")] = \
-			atomics.c_v(rho * y, physics) * T \
-			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
-			+ 0.5 * rho * u * u
-
-		# TODO: self.yWt, self.yC are not used
-
+		UqB[:,:,physics.get_state_slice("Energy")] = rho * e_mix
 		# Update adiabatically compressed/expanded tracer partial densities
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
+
 		# crystal vol / suspension vol
-		phi_crys = 0.4 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * t))
-		chi_water = 0.03
-		UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
-			* (1.0 - 0.4 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * 0.0)))  # frozen
+		ta = 5
+		tb = 5 + (1 / (2 * self.cos_freq)) if self.cos_freq != 0 else +np.inf
+		if self.is_gaussian:
+			phi_crys = self.cVFav + self.cVFamp \
+				* np.exp(-((t - self.gaussian_tpulse)/ self.gaussian_sig) **2 / 2)
+		else:
+			if t < ta:
+				phi_crys = self.cVFav
+			elif t < tb:
+				halfAmp = self.cVFamp / 2
+				phi_crys = self.cVFav * ((1-halfAmp) + halfAmp * (np.cos(2 * np.pi * self.cos_freq * (t - ta)) - 1) / 2)
+			else:
+				phi_crys = self.cVFav * (1 - self.cVFamp * np.cos(2 * np.pi * self.cos_freq * (t - tb)))
+		chi_water = self.chi_water
+		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
 		UqB[:,:,6] = rho * phi_crys
-	
 		# Fragmented state
 		UqB[:,:,7] = 0.0
-
+	
 		return UqB
 
-		''' Computes the boundary state that satisfies the pressure BC strongly. '''
-
-		if self.use_linearized:
-			# Delegate to linearized
-			return self.get_linearized_boundary_state(physics, UqI, normals, x, t)
-		UqB = UqI.copy()
-		''' Check validity of flow state, check number of boundary points. '''
-		# n_hat = normals/np.linalg.norm(normals, axis=2, keepdims=True)
-		if np.any(UqI[:, :, physics.get_momentum_slice()] * normals > 0.):
-			# TODO: improve out flow and sonic handling
-			print("Attempting to outflow into an inlet")
-		if UqI.shape[0] * UqI.shape[1] > 1:
-			raise NotImplementedError('''Not implemented: for-loop over more than one
-				inflow boundary point.''')
-
-		''' Compute boundary-satisfying primitive state that preserves Riemann
-		invariants (corresponding to outgoing acoustic waves) of the interior
-		solution. '''
-		# Extract data from input and prescribed chamber/reservoir values
-		arhoVecI = UqI[:,:,physics.get_mass_slice()]
-		momxI = UqI[...,physics.get_momentum_slice()]
-		eI = UqI[...,physics.get_state_slice("Energy")]
-		j, p_chamber, T_chamber = self.mass_flux, self.p_chamber, self.T_chamber
-		K, rho0, p0 = \
-			physics.Liquid["K"], physics.Liquid["rho0"], physics.Liquid["p0"]
-		# Compute intermediates
-		Gamma = atomics.Gamma(arhoVecI, physics)
-		y = atomics.massfrac(arhoVecI)
-		yRGas = y[...,0] * physics.Gas[0]["R"] + y[...,1] * physics.Gas[1]["R"]
-		# Compute chamber entropy as ratio T/p^(..)
-		S_r = T_chamber / p_chamber**((Gamma-1)/Gamma)
-		# Compute grid primitives
-		TGrid = atomics.temperature(arhoVecI, momxI, eI, physics)
-		pGrid = atomics.pressure(arhoVecI, TGrid,
-			atomics.gas_volfrac(arhoVecI, TGrid, physics), physics)
-
-		def eval_fun_dfun(p):
-			''' Evaluate function G and its derivative dG/dp. '''
-			# Define reusable groups
-			g1 = yRGas * p**(-1/Gamma) * S_r
-			g2 = y[...,2] * K / (rho0*(p + K - p0))
-			# Integration of 1/impedance
-			# Note that the output p, T are not used, since entropy is not taken from grid
-			_, uTarget, _ = atomics.velocity_RI_fixed_p_quadrature(p, UqI, physics, normals,
-				is_adaptive=True, tol=1e-1, rtol=1e-5)
-			# Evaluate integrand
-			f = atomics.acousticRI_integrand_scalar(np.array(p), TGrid, pGrid, y, Gamma, physics)
-			# Evaluate returns
-			G = j * (g1 + g2) + normals * uTarget
-			dGdp = -j * (g1 * (1/Gamma) / p + g2 / (p+K-p0)) - f
-			return G, dGdp, (p, uTarget)
-
-		# Perform Newton iteration to compute boundary p
-		p = pGrid.copy()
-		for i in range(self.newton_iter_max):
-			G, dGdp, _ = eval_fun_dfun(p)
-			p -= G / dGdp
-			if np.abs(G) < self.newton_tol:
-				break
-		# TODO: set logging if max iter is reached
-		# Evaluate primitive variables for boundary state
-		_, _, (p, u) = eval_fun_dfun(p)
-		T = S_r * p**((Gamma-1)/Gamma)
-		rho = atomics.mixture_density(y, p, T, physics)
-
-		''' Check positivity of computed state. '''
-		if np.any(T < 0.) or np.any(p < 0) or np.any(rho < 0):
-			raise errors.NotPhysicalError
-
-		''' Map to conservative variables '''
-		UqB[:,:,physics.get_mass_slice()] = rho * y
-		UqB[:,:,physics.get_momentum_slice()] = j
-		UqB[:,:,physics.get_state_slice("Energy")] = \
-			atomics.c_v(rho * y, physics) * T \
-			+ (rho * y[:,:,2:3]) * physics.Liquid["E_m0"] \
-			+ 0.5 * j * u
-		# Update adiabatically compressed/expanded tracer partial densities
-		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
-		#phi_crys = 0.4025 * (1.1 - 0.1 * np.cos(2 * np.pi * 0.25 * t)) # crystal vol / suspension vol
-		#chi_water = 0.05055
-		#UqB[:,:,5] = rho * (1 - phi_crys) / (1 + chi_water)
-		#UqB[:,:,6] = rho * phi_crys
-
-		return UqB
 
 class WaterMassSource(SourceBase):
 	'''
@@ -1707,18 +2175,25 @@ class WaterMassSource(SourceBase):
 	where e is relative to the energy of pure liquid at the triple point.
 	'''
 	def __init__(self,
-							 mass_rate=0.0,
+							 mass_rate_per_depth=1e5,
 							 specific_energy=109388.56885035457,
 							 injection_depth=-350,
 							 gaussian_width=50,
-							 conduit_radius=50,
+							 conduit_radius=25,
+							 hwm=-50,
+							 injection_time_start=0.0,
+							 injection_time_end=2.0,
 							 **kwargs):
 		super().__init__(kwargs)
-		self.mass_rate = mass_rate
+		self.mass_rate_per_depth = mass_rate_per_depth
 		self.specific_energy = specific_energy
 		self.injection_depth = injection_depth
 		self.gaussian_width = gaussian_width
 		self.conduit_radius = conduit_radius
+		self.hwm = hwm
+		self.injection_time_start = injection_time_start
+		self.injection_time_end = injection_time_end
+
 		self._sqrtpi = np.sqrt(np.pi)
 
 	def scaled_gaussian(self, x):
@@ -1741,10 +2216,18 @@ class WaterMassSource(SourceBase):
 		# Get mass-specific energy from input
 		specific_energy = self.specific_energy
 		# Compute partial density rate scaling
-		partial_density_rate = self.mass_rate / (
+		partial_density_rate = self.mass_rate_per_depth / (
 			np.pi * self.conduit_radius * self.conduit_radius)
-		# Compute partial density source using last spatial coordinate (x in 1D, y in 2D)
+		
+		# Compute partial density source using last spatial coordinate (x in 1D, y in 2D) as vertical spatial coordinate
 		partial_density_source = partial_density_rate * self.scaled_gaussian(x[:,:,-1:])
+		# Time-limit and space-limit
+		partial_density_source = np.where(x[:,:,-1:] >= self.hwm,
+																		  0.0,
+																			partial_density_source)
+		partial_density_source *= float(t >= self.injection_time_start
+																		and t <= self.injection_time_end)
+
 		# Assemble and return source vector
 		S[:,:,iarhoWv:iarhoWv+1] = partial_density_source
 		S[:,:,iarhoWt:iarhoWt+1] = partial_density_source
@@ -1760,58 +2243,93 @@ class WaterEntrainmentSource(SourceBase):
 	Note: the density rate is related to the total mass rate by
 		mass_rate = int (partial_density_rate * pi * conduit_radius**2) dz,
 	meaning that int (partial_density_rate) dz = mass_rate / (pi * radius**2).
-
-	Default specific energy is computed for:
-	  p = 4.0000e7 Pa, T = 300 K
-	giving
-	  rho = 1013.7496496496497 kg/m^3
-	and
-	  e = 109388.56885035457 J/kg,
-	where e is relative to the energy of pure liquid at the triple point.
 	'''
 	def __init__(self,
-							 mass_rate=0.0,
-							 specific_energy=109388.56885035457, ##### TODO: better treatment for this
+							 entrainment_coefficient=1e-2,
+							 T_ref=300,
+							 p_ref=1e5,
 							 injection_depth=-350,
-							 gaussian_width=50,
+							 smoothing_scale=50,
 							 conduit_radius=50,
+							 theta_deg=10, # Jet angle in degrees
+							 h1=-150,      # Jet nozzle depth
 							 **kwargs):
 		super().__init__(kwargs)
-		self.mass_rate = mass_rate
-		self.specific_energy = specific_energy
+		self.entrainment_coefficient = entrainment_coefficient
+		self.T_ref = T_ref
+		self.p_ref = p_ref
 		self.injection_depth = injection_depth
-		self.gaussian_width = gaussian_width
+		self.smoothing_scale = smoothing_scale
 		self.conduit_radius = conduit_radius
-		self._sqrtpi = np.sqrt(np.pi)
+		self.theta_deg = theta_deg
+		self.h1 = h1
+
+		# Initial thermodynamic computation: compute energy at reference pressure
+		# Energy is not sensitive to pressure perturbation
+		solnobj = scipy.optimize.root_scalar(
+			lambda rho: mixtureWLMA.float_phi_functions.p(rho, 300) / p_ref - 1,
+			x0=996.5,
+			x1=997)
+		if not solnobj.converged:
+			raise ValueError(f"Failed to compute water density. Dumping root finding object: {solnobj}")
+		self.rhow = solnobj.root
+		self.specific_energy = mixtureWLMA.float_phi_functions.u(self.rhow, T_ref)
+
+	def get_radius(self, x):
+		''' Returns radius of conduit or underwater jet. '''
+		# Interpret h1 as quasi-1D jet nozzle location
+		h1 = self.h1
+		# Compute radius
+		return np.where(x > h1,
+							self.conduit_radius + (x - h1) * np.tan(self.theta_deg * np.pi / 180),
+							self.conduit_radius)
 
 	def scaled_gaussian(self, x):
-		''' Returns the scaled and shifted gaussian with unit integral. '''
+		''' Legacy code. Returns the scaled and shifted gaussian with unit integral. '''
 		_t = (x - self.injection_depth) / self.gaussian_width
 		return np.exp(-_t*_t) / (self._sqrtpi * self.gaussian_width)
+	
+	def one_side_bump(self, x):
+		''' Smoothed Heaviside function H(x) with properties
+		1. H(x) = 0, x < self.injection_depth
+		2. H(x) = 1, x > self.injection_depth + self.smoothing_scale
+		3. H is smooth
+		'''
+		# Shift, scale, and clip to [-1, 0] to prevent exp overflow
+		_x = np.clip((x-(self.injection_depth + self.smoothing_scale))
+							    / self.smoothing_scale + 1, 0, 1)
+		f0 = np.exp(-1/np.where(_x == 0, 1, _x))
+		f1 = np.exp(-1/np.where(_x == 1, 1, 1-_x))
+		# Return piecewise evaluation
+		return np.where(_x >= 1, 1,
+						np.where(_x <= 0, 0, 
+							f0 / (f0 + f1)))
 
 	def get_source(self, physics, Uq, x, t):
+		# Allocate
 		S = np.zeros_like(Uq)
-		# Compute mixture density
-		state_indices = physics.get_state_indices()
-		if len(state_indices) == 8:
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
-					physics.get_state_indices()
-		elif len(state_indices) == 9:
-			iarhoA, iarhoWv, iarhoM, imomx, imomy, ie, iarhoWt, iarhoC, iarhoFm = \
-					physics.get_state_indices()
-		else:
-			raise ValueError("Unknown number of state_indices; can't unpack state_indices")
+		if physics.NDIMS > 1:
+			raise ValueError(f"WaterEntrainmentSource is appropriate for 1 dimension only, but got {physics.NDIMS} dimensions.")
+		# Unpack indices
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
+
+		rho = Uq[...,0:3].sum(axis=-1, keepdims=True)
+		u = Uq[...,imom:imom+1]	/ rho
 		# Get mass-specific energy from input
 		specific_energy = self.specific_energy
-		# Compute partial density rate scaling
-		partial_density_rate = self.mass_rate / (
-			np.pi * self.conduit_radius * self.conduit_radius)
-		# Compute partial density source using last spatial coordinate (x in 1D, y in 2D)
-		partial_density_source = partial_density_rate * self.scaled_gaussian(x[:,:,-1:])
+		# Compute surface flux as (kg / (m^2 * s))
+		surface_flux = self.entrainment_coefficient * np.abs(u) * self.rhow # * self.one_side_bump(x[:,:,-1:])
+		# Compute 4/D_H coefficient
+		coeff = np.where(x > self.h1,
+									 	 2.0 / self.get_radius(x),
+										 0.0)
+		# Compute partial density rate from surface flux (4 / D_h == 2 / R)
+		partial_density_rate = coeff * surface_flux		
 		# Assemble and return source vector
-		S[:,:,iarhoWv:iarhoWv+1] = partial_density_source
-		S[:,:,iarhoWt:iarhoWt+1] = partial_density_source
-		S[:,:,ie:ie+1]=  partial_density_source * specific_energy
+		S[:,:,iarhoWv:iarhoWv+1] = partial_density_rate
+		S[:,:,iarhoWt:iarhoWt+1] = partial_density_rate
+		S[:,:,ie:ie+1]=  partial_density_rate * specific_energy
 		return S # [ne, nq, ns]
 
 class MagmaMassSource(SourceBase):

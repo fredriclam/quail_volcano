@@ -76,9 +76,17 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 				physics.multiphasevpT.functions.MultiphasevpT2D2D,
 			physics.multiphasevpT.functions.BCType.MultiphasevpT2D1D:
 				physics.multiphasevpT.functions.MultiphasevpT2D1D,
+			physics.multiphasevpT.functions.BCType.PressureOutlet1D:
+				physics.multiphasevpT.functions.PressureOutlet1D,
+			physics.multiphaseWLMA.functions.BCType.PressureStableLinearizedInlet1D:
+				physics.multiphaseWLMA.functions.PressureStableLinearizedInlet1D,	
+
+			# Inherited TODO: check if this needs to be separate
+			# physics.multiphasevpT.functions.BCType.LinearizedImpedance2D:
+			#   physics.multiphasevpT.functions.LinearizedImpedance2D,
 			# Overriden WLMA functions
-			physics.multiphaseWLMA.functions.BCType.LinearizedImpedance2D:
-			  physics.multiphaseWLMA.functions.LinearizedImpedance2D,
+			# physics.multiphaseWLMA.functions.BCType.LinearizedImpedance2D:
+			  # physics.multiphaseWLMA.functions.LinearizedImpedance2D,
 			# WLMA-only functions
 			# BCType.MultiphasevpT1D1D: mpvpT_fcns.MultiphasevpT1D1D,
 			# BCType.MultiphasevpT2D1D: mpvpT_fcns.MultiphasevpT2D1D,
@@ -314,9 +322,13 @@ class MultiphaseWLMA(MultiphasevpT.MultiphasevpT):
 		# Compute (rhow, p, T)
 		rhow, p, T, sound_speed, volfracW = \
 			self.wlma(arhovec, momentum, vol_energy, self.pool)
-		# Delegate state gradient computation
-		return self.wlma.pressure_sgradient(vol_energy, rho_mix,
-			yw, ya, rhow, p, T, u, v)
+		# Delegate state gradient computation and index out
+		if self.NDIMS == 1:
+			return self.wlma.pressure_sgradient(vol_energy, rho_mix,
+				yw, ya, rhow, p, T, u, v)[...,[0,1,2,3,5,6,7,8]]
+		elif self.NDIMS == 2:
+			return self.wlma.pressure_sgradient(vol_energy, rho_mix,
+				yw, ya, rhow, p, T, u, v)
 	
 	def compute_phi_sgradient(self, Uq):
 		'''
@@ -396,6 +408,8 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 			  physics.multiphaseWLMA.functions.OverOceanIsothermalAtmosphere,
 			physics.multiphaseWLMA.functions.FcnType.UnderwaterMagmaConduit:
 			  physics.multiphaseWLMA.functions.UnderwaterMagmaConduit,
+			physics.multiphaseWLMA.functions.FcnType.CraterInitialVelocity:
+			  physics.multiphaseWLMA.functions.CraterInitialVelocity,
 			# physics.multiphaseWLMA.functions.FcnType.DebrisFlow:
 			#   physics.multiphaseWLMA.functions.DebrisFlow,
 		}
@@ -411,8 +425,6 @@ class MultiphaseWLMA2D(MultiphaseWLMA):
 			  physics.multiphasevpT.functions.CylindricalGeometricSource,
 			physics.multiphaseWLMA.functions.SourceType.WaterMassSource:
 			  physics.multiphaseWLMA.functions.WaterMassSource,
-			physics.multiphaseWLMA.functions.SourceType.WaterEntrainmentSource:
-			  physics.multiphaseWLMA.functions.WaterEntrainmentSource,
 			physics.multiphaseWLMA.functions.SourceType.MagmaMassSource:
 			  physics.multiphaseWLMA.functions.MagmaMassSource,
 		})
@@ -536,6 +548,8 @@ class MultiphaseWLMA1D(MultiphaseWLMA):
 			  physics.multiphaseWLMA.functions.OverOceanIsothermalAtmosphere,
 			physics.multiphaseWLMA.functions.FcnType.UnderwaterMagmaConduit:
 			  physics.multiphaseWLMA.functions.UnderwaterMagmaConduit,
+			physics.multiphaseWLMA.functions.FcnType.ThreeLayerModel:
+			  physics.multiphaseWLMA.functions.ThreeLayerModel,
 		}
 
 		self.IC_fcn_map.update(d)
@@ -547,14 +561,24 @@ class MultiphaseWLMA1D(MultiphaseWLMA):
 			  physics.multiphasevpT.functions.FrictionVolFracVariableMu,
 			physics.multiphasevpT.functions.SourceType.FrictionVolFracConstMu:
 			  physics.multiphasevpT.functions.FrictionVolFracConstMu,
+			physics.multiphasevpT.functions.SourceType.FrictionVolFracConstMuLayer:
+			  physics.multiphasevpT.functions.FrictionVolFracConstMuLayer,
 			physics.multiphasevpT.functions.SourceType.GravitySource:
 			  physics.multiphasevpT.functions.GravitySource,
 			physics.multiphasevpT.functions.SourceType.ExsolutionSource:
 			  physics.multiphasevpT.functions.ExsolutionSource,
 			physics.multiphasevpT.functions.SourceType.FragmentationTimescaleSource:
 			  physics.multiphasevpT.functions.FragmentationTimescaleSource,
+			physics.multiphasevpT.functions.SourceType.FragmentationTimescaleSourceSmoothed:
+			  physics.multiphasevpT.functions.FragmentationTimescaleSourceSmoothed,
+			physics.multiphasevpT.functions.SourceType.FragmentationStrainRateSource:
+			  physics.multiphasevpT.functions.FragmentationStrainRateSource,
 			physics.multiphaseWLMA.functions.SourceType.WaterMassSource:
 			  physics.multiphaseWLMA.functions.WaterMassSource,
+			physics.multiphaseWLMA.functions.SourceType.WaterEntrainmentSource:
+			  physics.multiphaseWLMA.functions.WaterEntrainmentSource,
+			physics.multiphasevpT.functions.SourceType.AreaGeometricSource:
+			  physics.multiphasevpT.functions.AreaGeometricSource,
 		})
 
 		self.conv_num_flux_map.update({

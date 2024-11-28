@@ -120,7 +120,7 @@ def eval_state_at(U_loc:np.array, ref_coords_loc:np.array, order:int):
 	_x = ref_coords_loc[...,0,:]
 	_y = ref_coords_loc[...,1,:]
 	if order == 0:
-		U_sample = U_loc[...,0,:]
+		U_sample = U_loc[...,0,:] * np.ones_like(_x) # Prepand new axis to match other order shapes
 	elif order == 1:
 		U_sample = (U_loc[...,0,:] * (1 - _x - _y)
 		+ U_loc[...,1,:] * _x

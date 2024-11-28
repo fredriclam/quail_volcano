@@ -103,6 +103,8 @@ class Domain():
     ''' Run solver.solve'''
     # Call solver solve
     self.solver.solve()
+    # Sanitize pool objects (WLMA local pool for parallel EOS evaluation)
+    self.solver.physics.pool = "deleted"
     # Send output to main process
     self.domain_output_dict[self.id] = self.solver
     # End timer
