@@ -1,4 +1,3 @@
-''' Sod shock tube problem for the multiphase mixture. '''
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
@@ -63,7 +62,37 @@ InitialCondition = {
     "arhoX": 0.0,          # Newly implemented state
 }
 
-SourceTerms = {}
+SourceTerms = {
+    # Add existing source terms (turn off by removing item from the SourceTerms dictionary)
+    "source1": {
+        "Function" : "GravitySource",
+        "gravity": 9.8,
+        "source_treatment" : "Explicit",
+    },
+    'source2': {
+        'Function': 'FrictionVolFracVariableMu',   # Friction source term for given conduit radius
+        'conduit_radius': 50,
+        'source_treatment': 'Explicit'
+    },
+    'source3': {
+        'Function': 'ExsolutionSource',   # Exsolution source
+        'source_treatment': 'Explicit',
+        'tau_d': 10.0,                    # Exsolution timescale (s)
+    },
+    'source4': {'Function': 'FragmentationTimescaleSourceSmoothed',
+        'crit_volfrac': 0.7,                       # Critical volume fraction
+        'fragsmooth_scale': 0.05,                  # Fragmentation smoothing scale (for two-sided smoothing)
+        'source_treatment': 'Explicit',
+        'tau_f': 1.0,                              # Fragmentation timescale (s)
+    },
+    # Add a new source term that does nothing yet; see src/physics/multiphasevpT/functions.py
+    "source5": {
+        "Function" : "GenericEvolutionSource",
+        "param1": 1234.5,
+        "param2": 678,
+        "source_treatment" : "Explicit",
+    },
+}
 
 # An "exact solution" is needed by Quail, but does not need to be called
 # This is a random function used as a placeholder
