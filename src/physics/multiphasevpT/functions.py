@@ -116,6 +116,7 @@ class SourceType(Enum):
 	WaterInflowSource = auto()
 	CylindricalGeometricSource = auto()
 	FragmentationStrainRateSource = auto()
+	GenericEvolutionSource = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -4815,6 +4816,110 @@ class FragmentationStrainRateSource(SourceBase):
 			raise Exception("Unexpected physics num dimension "
 				+ "in FragmentationTimescaleSourceSmoothed.")
 		return S # [ne, nq, ns]
+
+
+class GenericEvolutionSource(SourceBase):
+	'''
+	Generic source term example.
+	'''
+	def __init__(self, param1=0.0, param2=0.0, **kwargs):
+		super().__init__(kwargs)
+		# Save provided parameters at initialization
+		self.param1 = param1
+		self.param2 = param2
+
+	def get_source(self, physics, Uq, x, t):
+		''' Source term as evaluated during computation.
+		Input:
+		  physics -- quail physics object with physics parameters and methods
+			Uq -- vector of state variables with shape (ne, nq, ns)
+			        ne: number of elements in domain
+							nq: number of quadrature points in element
+							ns: number of states in state vector at each point
+			x -- vector of coordinates with shape (ne, nq, ndim)
+			        ndim: number of dimensions
+			t -- time
+		Output:
+		  S -- source vector with shape (ne, nq, ns); this is the vector of
+			     source terms evaluated at each point
+		'''
+
+		# Initialize source vector
+		S = np.zeros_like(Uq)
+		
+		''' In the following, we load some useful quantities to scope but don't
+		modify S, which is the output source vector. Note that sometimes index
+		is needed, and other times slicing is needed. To illustrate the difference,
+		consider an array A with shape (3,4); that is, a matrix with 3 rows and
+		4 columns. Let's access the 0th column. Using indexing, we write
+		  A[:,0]
+		which returns the 0th column as a new array with shape (3,). Using slices,
+		we write
+			A[:,0:1]
+		which returns the 0th column as a new array with shape (3, 1). The different
+		shape is crucial in mathematical operations (e.g., adding two arrays),
+		since it affects how numpy aligns arrays for broadcasting.
+		To make sure the right method is used, compare the shape (array.shape) before
+		and after the intended mathematical operations.
+		'''
+
+		# Extract some useful quantities
+		ndims = physics.NDIMS
+		# Get indices for accessing variables
+		if ndims == 1:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, iarhoX = \
+					physics.get_state_indices()
+		elif ndims == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, iarhoX = \
+					physics.get_state_indices()
+		# Get slice for momentum (differs in 1D and 2D)
+		smom = physics.get_momentum_slice()
+
+		# Extract conserved partial densities (these are mass per total volume)
+		arhoA = Uq[:, :, physics.get_state_slice("pDensityA")]
+		# Equivalently,
+		arhoA = Uq[:, :, iarhoA:iarhoA+1]
+		arhoWv = Uq[:, :, physics.get_state_slice("pDensityWv")]
+		arhoM = Uq[:, :, physics.get_state_slice("pDensityM")]
+
+		arhoWt = Uq[:, :, physics.get_state_slice("pDensityWt")]
+		arhoC = Uq[:, :, physics.get_state_slice("pDensityC")]
+		arhoFm = Uq[:, :, physics.get_state_slice("pDensityFm")]
+		arhoX = Uq[:, :, physics.get_state_slice("pDensityX")]
+		
+		# Compute mixture density (density of the fluid as a whole)
+		rho_mix = arhoA + arhoWv + arhoM
+
+		# Compute mass fractions
+		yA = arhoA / rho_mix
+		yWv = arhoWv / rho_mix
+		yM = arhoM / rho_mix
+
+		yWt = arhoWt / rho_mix
+		yC = arhoC / rho_mix
+		yFm = arhoFm / rho_mix
+		yX = arhoX / rho_mix
+
+		# Compute temperature using the atomics module for equation of state operations
+		T = atomics.temperature(Uq[...,0:3],
+				Uq[:, :, smom],
+				Uq[:, :, physics.get_state_slice("Energy")],
+				physics)
+		# Compute volume fraction of all gases (excluding dissolved volatiles)
+		gas_volfrac = atomics.gas_volfrac(Uq[...,0:3], T, physics)
+		# Compute pressure
+		p = atomics.pressure(Uq[...,0:3], T, gas_volfrac, physics)
+			
+		# Example of how to modify the source term corresponding to the new state
+		# (in this case changing zeroes to zeroes)
+		S[:, :, iarhoX:iarhoX+1] = 0.0
+	
+		# An example of printing in the source term
+		# print(f"p = {p.ravel()[0]/1e6:.1f}")
+
+		# Return source vector
+		return S # [ne, nq, ns]
+
 
 class WaterInflowSource(SourceBase):
 	'''
