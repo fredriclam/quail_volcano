@@ -58,7 +58,9 @@ class MultiphasevpT(base.PhysicsBase):
 		5. mass per total volume, water, dissolved
 		6. mass of crystals per total volume (crystallinity)
 		7. mass of fragmented magma per total volume (11/28/2022 Update)
-	where the last states after the line are essentially passive tracers for the
+		----
+		8. mass of a new phase placeholder
+	where states 5-7 are essentially passive tracers for the
 	conservation equations (pressure and sound speed are not dependent on these
 	states), though these tracer states can enter in the source term.
 
@@ -93,6 +95,15 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
 			BCType.NohInletMixture: mpvpT_fcns.NohInletMixture,
 			BCType.LinearizedIsothermalOutflow2D: mpvpT_fcns.LinearizedIsothermalOutflow2D,
+			# Backward compatibility
+			BCType.MultiphasevpT2D1DCylindrical: mpvpT_fcns.MultiphasevpT2D1DCylindrical,
+			BCType.MultiphasevpT2D2DCylindrical: mpvpT_fcns.MultiphasevpT2D2DCylindrical,
+			BCType.PressureOutlet2D: mpvpT_fcns.PressureOutlet2D,
+			BCType.Padding1: mpvpT_fcns.PressureOutlet2D,
+			BCType.Padding2: mpvpT_fcns.PressureOutlet2D,
+			BCType.Padding3: mpvpT_fcns.PressureOutlet2D,
+			BCType.Padding4: mpvpT_fcns.PressureOutlet2D,
+			BCType.Padding5: mpvpT_fcns.PressureOutlet2D,
 		})
 
 	def set_physical_params(self, 
@@ -189,6 +200,7 @@ class MultiphasevpT(base.PhysicsBase):
 		arhoWt = Uq[:, :, self.get_state_slice("pDensityWt")]
 		arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
 		arhoFm = Uq[:, :, self.get_state_slice("pDensityFm")]
+		arhoX = Uq[:, :, self.get_state_slice("pDensityX")]
 
 		''' Flag non-physical state
 		The EOS-constrained phases (A, Wv, M) are checked for positivity. Total
@@ -457,7 +469,7 @@ class MultiphasevpT1D(MultiphasevpT):
 	'''
 	This class corresponds to 1D vpT-equations for a two-gas, one liquid mixture.
 	'''
-	NUM_STATE_VARS = 5+3 # (essential states + tracer states)
+	NUM_STATE_VARS = 9 # Total number of state variables
 	NDIMS = 1
 
 	def set_maps(self):
@@ -466,6 +478,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		d = {
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
+			FcnType.UniformTest : mpvpT_fcns.UniformTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 			FcnType.SteadyState: mpvpT_fcns.SteadyState,
 			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,
@@ -502,6 +515,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		pDensityWt = "\\alpha_\{wt\} \\rho_\{wt\}"
 		pDensityC = "\\alpha_c \\rho_c"
 		pDensityFm = "\\alpha_\{fm\} \\rho_\{fm\}"
+		pDensityX = "\\alpha_a \\rho_x" # Identifier for new phase (pDensityX here for example), assigned a name string for built-in plotting tools
 
 	def get_state_indices(self):
 		iarhoA = self.get_state_index("pDensityA")
@@ -512,7 +526,8 @@ class MultiphasevpT1D(MultiphasevpT):
 		iarhoWt = self.get_state_index("pDensityWt")
 		iarhoC = self.get_state_index("pDensityC")
 		iarhoFm = self.get_state_index("pDensityFm")
-		return iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm
+		iarhoX = self.get_state_index("pDensityX")
+		return iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, iarhoX
 
 	def get_state_slices(self):
 		slarhoA = self.get_state_slice("pDensityA")
@@ -523,7 +538,8 @@ class MultiphasevpT1D(MultiphasevpT):
 		slarhoWt = self.get_state_slice("pDensityWt")
 		slarhoC = self.get_state_slice("pDensityC")
 		slarhoFm = self.get_state_slice("pDensityFm")
-		return slarhoA, slarhoWv, slarhoM, slmom, sle, slarhoWt, slarhoC, slarhoFm
+		slarhoX = self.get_state_slice("pDensityX")
+		return slarhoA, slarhoWv, slarhoM, slmom, sle, slarhoWt, slarhoC, slarhoFm, slarhoX
 
 	def get_mass_slice(self):
 		# Get mass component indices of phases
@@ -570,7 +586,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		u = mom / rho
 		
 		# Construct physical flux
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, iarhoX = \
 			self.get_state_indices()
 		F = np.repeat(Uq[...,np.newaxis], self.NDIMS, axis=-1)
 		F[:, :, iarhoA,  0:] *= u
@@ -581,6 +597,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		F[:, :, iarhoWt, 0:] *= u
 		F[:, :, iarhoC,  0:] *= u
 		F[:, :, iarhoFm, 0:] *= u
+		F[:, :, iarhoX, 0:] *= u   # Set flux equal to velocity times this state variable
 		# Compute sound speed
 		a = atomics.sound_speed(
 			atomics.Gamma(Uq[:, :, self.get_mass_slice()], self),
@@ -816,7 +833,7 @@ class MultiphasevpT2D(MultiphasevpT):
 
 	Additional methods and attributes are commented below.
 	'''
-	NUM_STATE_VARS = 6+3 # (essential states + tracer states)
+	NUM_STATE_VARS = MultiphasevpT1D.NUM_STATE_VARS + 1
 	NDIMS = 2
 
 	def __init__(self, mesh):
@@ -856,6 +873,7 @@ class MultiphasevpT2D(MultiphasevpT):
 		pDensityWt = "\\alpha_\{wt\} \\rho_\{wt\}"
 		pDensityC = "\\alpha_c \\rho_c"
 		pDensityFm = "\\alpha_\{fm\} \\rho_\{fm\}"
+		pDensityX = "\\alpha_a \\rho_x" # Identifier for new phase (pDensityX here for example), assigned a name string for built-in plotting tools
 
 	def get_state_indices(self):
 		iarhoA = self.get_state_index("pDensityA")
@@ -867,7 +885,8 @@ class MultiphasevpT2D(MultiphasevpT):
 		iarhoWt = self.get_state_index("pDensityWt")
 		iarhoC = self.get_state_index("pDensityC")
 		iarhoFm = self.get_state_index("pDensityFm")
-		return iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm
+		iarhoX = self.get_state_index("pDensityX")
+		return iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, iarhoX
 
 	def get_mass_slice(self):
 		# Get mass component indices
@@ -884,7 +903,7 @@ class MultiphasevpT2D(MultiphasevpT):
 
 	def get_conv_flux_interior(self, Uq):
 		# Get indices/slices of state variables
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, iarhoX = \
 			self.get_state_indices()
 		smom = self.get_momentum_slice()
 		# Extract data of size [n, nq]
@@ -897,6 +916,7 @@ class MultiphasevpT2D(MultiphasevpT):
 		arhoWt = Uq[:, :, iarhoWt]
 		arhoC  = Uq[:, :, iarhoC]
 		arhoFm = Uq[:, :, iarhoFm]
+		arhoX  = Uq[:, :, iarhoX]
 
 		# Extract momentum in vector form ([n, nq, ndims])
 		mom    = Uq[:, :, smom]
@@ -925,6 +945,7 @@ class MultiphasevpT2D(MultiphasevpT):
 		F[:, :, iarhoWt, :] = np.expand_dims(arhoWt,axis=2) * vel   # Flux of massWt in all directions
 		F[:, :, iarhoC,  :] = np.expand_dims(arhoC,axis=2) * vel    # Flux of massC in all directions
 		F[:, :, iarhoFm, :] = np.expand_dims(arhoFm,axis=2) * vel    # Flux of massFm in all directions
+		F[:, :, iarhoX,  :] = np.expand_dims(arhoX,axis=2) * vel    # Flux of massX in all directions
 
 		# Compute sound speed
 		a = self.compute_additional_variable("SoundSpeed", Uq, True).squeeze(axis=2)
