@@ -104,10 +104,10 @@ LinkedSolvers = []
 
 BoundaryConditions = {
     'x1': {
-        'BCType': "SlipWall",
-        #'BCType': 'VelocityInlet1D',   # Inlet boundary condition
-        #'u': 0.0,
-        #'p_chamber': 10e6,
+        #'BCType': "SlipWall",
+        'BCType': 'VelocityInlet1D',   # Inlet boundary condition
+        'u': 1.0,
+        'p_chamber': 10e6,
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
