@@ -2,6 +2,7 @@ TimeStepping = {
 	"FinalTime" : 1e-2,
 	"TimeStepSize" : 0.0001,
 	"TimeStepper" : "ADER",
+	"NumTimeSteps" : 100,
 }
 
 Numerics = {

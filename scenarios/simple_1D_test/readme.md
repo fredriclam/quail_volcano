@@ -5,7 +5,7 @@ Run `conduit.py` with the following commands. Depending on your installation of 
 If quail is added to `$PATH` and `$PYTHONPATH`, navigate to this folder (`scenarios/simple_1D_test`) and execute:
 
 ```
-python quail conduit.py
+quail conduit.py
 ```
 
 If `quail` cannot be found, you can instead execute :

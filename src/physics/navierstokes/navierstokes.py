@@ -121,6 +121,21 @@ class NavierStokes1D(NavierStokes, euler.Euler1D):
 	def set_maps(self):
 		super().set_maps()
 
+
+		d = {
+			navierstokes_fcn_type.ManufacturedSolution : 
+					navierstokes_fcns.ManufacturedSolution,
+			}
+
+		self.IC_fcn_map.update(d)
+		self.exact_fcn_map.update(d)
+		self.BC_fcn_map.update(d)
+
+		self.source_map.update({
+			navierstokes_source_type.ManufacturedSource : 
+					navierstokes_fcns.ManufacturedSource,
+		})
+
 	def get_diff_flux_interior(self, Uq, gUq):
 		# Get indices/slices of state variables
 		irho, irhou, irhoE = self.get_state_indices()

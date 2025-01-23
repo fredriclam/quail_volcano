@@ -208,7 +208,6 @@ def acousticRI_integrand_scalar(p, T0, p0, massfracVec, Gamma, physics):
   for inputs of shape (nq,) or (1,...,1,nq,) where nq is the number of
   quadrature points (from a possibly adaptive algorithm).
   '''
-  p = p.squeeze()
   T0 = T0.squeeze()
   p0 = p0.squeeze()
   Gamma = Gamma.squeeze()
@@ -252,10 +251,10 @@ def velocity_RI_fixed_p_quadrature(p_bdry:float, U:np.array,
 
   ''' Adaptive Gauss quadrature '''
   if is_adaptive:
-    val, err = scipy.integrate.quadrature(
+    val, err = scipy.integrate.quad(
       lambda p: acousticRI_integrand_scalar(
         p, T0, p0, massfracVec, Gamma0, physics),
-      p_bdry, p0, tol=tol, rtol=rtol)
+      p_bdry, p0, epsabs=tol, epsrel=rtol)
     uHat += normals * val
   else:
     raise NotImplementedError("Non-adaptive algorithm is deprecated.")
