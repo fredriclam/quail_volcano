@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 20.0,      # seconds
-	"NumTimeSteps" : 1000,
+	"FinalTime"    : 60.0,      # seconds
+	"NumTimeSteps" : 3000,
 	"TimeStepper"  : "RK3SR",
 }
 
@@ -20,7 +20,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "test_output",
-	"WriteInterval" : 10,
+	"WriteInterval" : 30,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -53,7 +53,7 @@ InitialCondition = {
     "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
     "arhoWv": 0.8,   # Mass water in fluid state per mixture volume
-    "arhoM": 2500.0, # Mass condensed phase per mixture volume
+    "arhoM": 2330.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
     "arhoWt": 0.0, # Mass total water (fluid + dissolved) per mixture volume
@@ -103,22 +103,14 @@ ExactSolution = {
 LinkedSolvers = []
 
 BoundaryConditions = {
-    "x1" : {
-        "BCType" : "StateAll",
-        "Function": "UniformTest",
-        "arhoA": 0.0,    # Mass air per mixture volume
-        "arhoWv": 0.8,   # Mass water in fluid state per mixture volume
-        "arhoM": 2500.0, # Mass condensed phase per mixture volume
-        "u": 0.0,        # Velocity
-        "T": 1000.0,     # Temperature
-        "arhoWt": 0.0, # Mass total water (fluid + dissolved) per mixture volume
-        "arhoC": 0.0,        # Mass crystals per mixture volume
-        "arhoF": 0.0,          # Mass fragmented magma per mixture volume
-        "arhoX": 0.0,          # Newly implemented state
-
+    'x1': {
+        'BCType': "SlipWall",
+        #'BCType': 'VelocityInlet1D',   # Inlet boundary condition
+        #'u': 0.0,
+        #'p_chamber': 10e6,
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
-        "p": 1e5,
+        "p": 3.55e6,
     },
 }

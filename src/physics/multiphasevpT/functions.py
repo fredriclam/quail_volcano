@@ -2988,13 +2988,13 @@ class VelocityInlet1D(BCWeakPrescribed):
 	def __init__(self, u:float=1.0, p_chamber:float=100e6, T_chamber:float=1e3,
 							trace_arho:float=1e-6, yWt:float=0.04, yC:float=0.1,
 							use_linearized:bool=True, newton_tol:float=1e-7,
-							newton_iter_max:float=20):
+							newton_iter_max:float=20, freq=0.5):
 		# Ingest args
 		self.u, self.p_chamber, self.T_chamber, self.trace_arho = \
 			u, p_chamber, T_chamber, trace_arho
 		# Angular frequency of variation
-		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max = \
-			yWt, yC, use_linearized, newton_tol, newton_iter_max
+		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max, self.freq = \
+			yWt, yC, use_linearized, newton_tol, newton_iter_max, freq
 
 	def get_linearized_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
