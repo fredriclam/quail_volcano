@@ -64,11 +64,12 @@ InitialCondition = {
 
 SourceTerms = {
     # Add existing source terms (turn off by removing item from the SourceTerms dictionary)
-    #'source1': {
-    #    'Function': 'FrictionVolFracVariableMu',   # Friction source term for given conduit radius
-    #    'conduit_radius': 50,
-    #    'source_treatment': 'Explicit'
-    #},
+    'source1': {
+        'Function': 'FrictionVolFracVariableMu',   # Friction source term for given conduit radius
+        'conduit_radius': 50,
+        "viscosity_factor": 1e-6,
+        'source_treatment': 'Explicit'
+    },
     #'source2': {
     #    'Function': 'GravitySource',
     #    "gravity": 9.8,
@@ -106,8 +107,8 @@ BoundaryConditions = {
     'x1': {
         #'BCType': "SlipWall",
         'BCType': 'VelocityInlet1D',   # Inlet boundary condition
-        'u': 1.0,
-        'p_chamber': 10e6,
+        'u': 1,
+        #'p_chamber': 10e6,
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
