@@ -52,8 +52,8 @@ Physics = {
 InitialCondition = {
     "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
-    "arhoWv": 0.8,   # Mass water in fluid state per mixture volume
-    "arhoM": 2330.0, # Mass condensed phase per mixture volume
+    "arhoWv": 0.01,   # Mass water in fluid state per mixture volume
+    "arhoM": 2550.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
     "arhoWt": 0.0, # Mass total water (fluid + dissolved) per mixture volume
@@ -108,10 +108,13 @@ BoundaryConditions = {
         #'BCType': "SlipWall",
         'BCType': 'VelocityInlet1D',   # Inlet boundary condition
         'u': 1,
+        'yWt': 0,
+        'yC': 0,
+        'trace_arho': 0,
         #'p_chamber': 10e6,
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
-        "p": 3.55e6,
+        "p": 2.4e5,
     },
 }
