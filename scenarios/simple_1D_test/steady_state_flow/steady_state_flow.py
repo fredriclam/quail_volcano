@@ -52,11 +52,11 @@ Physics = {
 InitialCondition = {
     "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
-    "arhoWv": 0.01,   # Mass water in fluid state per mixture volume
+    "arhoWv": 0.005,   # Mass water in fluid state per mixture volume
     "arhoM": 2550.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
-    "arhoWt": 0.0, # Mass total water (fluid + dissolved) per mixture volume
+    "arhoWt": 0.001, # Mass total water (fluid + dissolved) per mixture volume
     "arhoC": 0.0,        # Mass crystals per mixture volume
     "arhoF": 0.0,          # Mass fragmented magma per mixture volume
     "arhoX": 0.0,          # Newly implemented state
