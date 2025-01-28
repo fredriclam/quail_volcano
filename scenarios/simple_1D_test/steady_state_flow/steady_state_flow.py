@@ -52,7 +52,7 @@ Physics = {
 InitialCondition = {
     "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
-    "arhoWv": 0.01,   # Mass water in fluid state per mixture volume
+    "arhoWv": 0.001,   # Mass water in fluid state per mixture volume
     "arhoM": 2550.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
@@ -81,10 +81,10 @@ SourceTerms = {
         #'tau_d': 10.0,                    # Exsolution timescale (s)
     #},
     #'source4': {'Function': 'FragmentationTimescaleSourceSmoothed',
-        #'crit_volfrac': 0.7,                       # Critical volume fraction
-        #'fragsmooth_scale': 0.05,                  # Fragmentation smoothing scale (for two-sided smoothing)
-        #'source_treatment': 'Explicit',
-        #'tau_f': 1.0,                              # Fragmentation timescale (s)
+    #    'crit_volfrac': 0.7,                       # Critical volume fraction
+    #    'fragsmooth_scale': 0.05,                  # Fragmentation smoothing scale (for two-sided smoothing)
+    #    'source_treatment': 'Explicit',
+    #    'tau_f': 1.0,                              # Fragmentation timescale (s)
     #},
     ## Add a new source term that does nothing yet; see src/physics/multiphasevpT/functions.py
     #"source5": {
@@ -105,16 +105,15 @@ LinkedSolvers = []
 
 BoundaryConditions = {
     'x1': {
-        #'BCType': "SlipWall",
-        'BCType': 'VelocityInlet1D',   # Inlet boundary condition
-        'u': 1,
-        'yWt': 0,
-        'yC': 0,
+        'BCType': 'PressureStableLinearizedInlet1D',   # Inlet boundary condition
+        'p_chamber': 1e6, # Chamber pressure (Pa)
+        'T_chamber': 1000, # Chamber temperature (K)
         'trace_arho': 0,
-        #'p_chamber': 10e6,
+        'chi_water': 0,
+        'cVFav': 0,
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
-        "p": 2.4e5,
+        "p": 5e5,
     },
 }
