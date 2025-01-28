@@ -52,7 +52,7 @@ Physics = {
 InitialCondition = {
     "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
-    "arhoWv": 0.001,   # Mass water in fluid state per mixture volume
+    "arhoWv": 0.01,   # Mass water in fluid state per mixture volume
     "arhoM": 2550.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
