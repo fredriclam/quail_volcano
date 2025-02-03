@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 60.0,      # seconds
-	"NumTimeSteps" : 3000,
+	"FinalTime"    : 20.0,      # seconds
+	"NumTimeSteps" : 2000,
 	"TimeStepper"  : "RK3SR",
 }
 
@@ -20,7 +20,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "test_output",
-	"WriteInterval" : 30,
+	"WriteInterval" : 20,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -52,14 +52,14 @@ Physics = {
 InitialCondition = {
     "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
-    "arhoWv": 0.005,   # Mass water in exsolved state
+    "arhoWv": 0.003,   # Mass water in exsolved state
     "arhoM": 2550.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
-    "arhoWt": 0.001, # Mass total water (exsolved + dissolved) per mixture volume
+    "arhoWt": 0.003, # Mass total water (exsolved + dissolved) per mixture volume
     "arhoC": 0.0,        # Mass crystals per mixture volume
     "arhoF": 0.0,          # Mass fragmented magma per mixture volume
-    "arhoX": 0.0,          # Newly implemented state
+    "arhoX": 1.0,          # Newly implemented state
 }
 
 SourceTerms = {
@@ -87,12 +87,12 @@ SourceTerms = {
     #    'tau_f': 1.0,                              # Fragmentation timescale (s)
     #},
     ## Add a new source term that does nothing yet; see src/physics/multiphasevpT/functions.py
-    #"source5": {
-        #"Function" : "GenericEvolutionSource",
-        #"param1": 1234.5,
-        #"param2": 678,
-        #"source_treatment" : "Explicit",
-    #},
+    "source5": {
+        "Function" : "GenericEvolutionSource",
+        "param1": 1234.5,
+        "param2": 678,
+        "source_treatment" : "Explicit",
+    },
 }
 
 # An "exact solution" is needed by Quail, but does not need to be called
