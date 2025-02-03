@@ -51,6 +51,7 @@ class FcnType(Enum):
 	GravityRiemann = auto()
 	UniformExsolutionTest = auto()
 	UniformTest = auto()
+	SinusoidalXTest = auto()
 	IsothermalAtmosphere = auto()
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
@@ -600,6 +601,61 @@ class UniformTest(FcnBase):
 		Uq[:, :, iarhoC] = arhoC
 		Uq[:, :, iarhoFm] = arhoF
 		Uq[:, :, iarhoX] = arhoX
+
+		return Uq # [ne, nq, ns]
+
+
+class SinusoidalXTest(FcnBase):
+	'''
+	Sinusodial initial condition for testing new implementations.
+	'''
+
+	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=2500.0, u=0., T=1000.,
+		arhoWt=2500.0*0.04, arhoC=100.0, arhoF=0.0, arhoX=0.0):
+		self.arhoA = arhoA
+		self.arhoWv = arhoWv
+		self.arhoM = arhoM
+		self.u = u
+		self.T = T
+		self.arhoWt = arhoWt
+		self.arhoC = arhoC
+		self.arhoF = arhoF
+		self.arhoX = arhoX
+
+	def get_state(self, physics, x, t):
+		# Unpack variables to lcoal scope
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, iarhoX = \
+			physics.get_state_indices()
+		u = self.u
+		T = self.T
+		arhoA = self.arhoA
+		arhoWv = self.arhoWv
+		arhoM = self.arhoM
+		arhoWt = self.arhoWt
+		arhoC = self.arhoC
+		arhoF = self.arhoF
+		arhoX = self.arhoX
+
+		# Calculate mixture density
+		rho = arhoA + arhoWv + arhoM
+		# Calculate specific energy (internal plus kinetic energy per mass)
+		e = (arhoA * physics.Gas[0]["c_v"] * T + 
+			arhoWv * physics.Gas[1]["c_v"] * T + 
+			arhoM * (physics.Liquid["c_m"] * T + physics.Liquid["E_m0"])
+			+ 0.5 * rho * u**2.)
+		
+		# Set state vector
+		Uq[:, :, iarhoA] = arhoA
+		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoM] = arhoM
+		Uq[:, :, imom] = rho * u
+		Uq[:, :, ie] = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoC
+		Uq[:, :, iarhoFm] = arhoF
+		Uq[:, :, iarhoX] = arhoX * (1+ np.cos(x/100).reshape(Uq.shape[0], Uq.shape[1]))
 
 		return Uq # [ne, nq, ns]
 
@@ -2821,8 +2877,14 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		chi_water = self.chi_water
 		UqB[:,:,5] = rho * chi_water * (1.0 - phi_crys) / (1 + chi_water)
 		UqB[:,:,6] = rho * phi_crys
+
 		# Fragmented state
 		UqB[:,:,7] = 0.0
+
+		# Newly added state 
+		#UqB[:,:,8] = 2.0
+
+		''' Post-computation validity check '''
 	
 		return UqB
 
@@ -4916,7 +4978,7 @@ class GenericEvolutionSource(SourceBase):
 			
 		# Example of how to modify the source term corresponding to the new state
 		# (in this case changing zeroes to zeroes)
-		S[:, :, iarhoX:iarhoX+1] = 0.0
+		S[:, :, iarhoX:iarhoX+1] = 0
 	
 		# An example of printing in the source term
 		# print(f"p = {p.ravel()[0]/1e6:.1f}")

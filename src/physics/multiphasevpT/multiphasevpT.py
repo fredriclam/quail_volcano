@@ -479,6 +479,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 			FcnType.UniformTest : mpvpT_fcns.UniformTest,
+			FcnType.SinusoidalXTest: mpvpT_fcns.SinusoidalXTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 			FcnType.SteadyState: mpvpT_fcns.SteadyState,
 			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,

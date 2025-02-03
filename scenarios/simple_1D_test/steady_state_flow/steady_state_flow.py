@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 20.0,      # seconds
-	"NumTimeSteps" : 2000,
+	"FinalTime"    : 40.0,      # seconds
+	"NumTimeSteps" : 4000,
 	"TimeStepper"  : "RK3SR",
 }
 
@@ -20,7 +20,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "test_output",
-	"WriteInterval" : 20,
+	"WriteInterval" : 40,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -50,7 +50,7 @@ Physics = {
 # energy is calculated internally from temperature and all
 # other provided variables.
 InitialCondition = {
-    "Function": "UniformTest",
+    "Function": "SinusoidalXTest",
     "arhoA": 0.0,    # Mass air per mixture volume
     "arhoWv": 0.003,   # Mass water in exsolved state
     "arhoM": 2550.0, # Mass condensed phase per mixture volume
@@ -87,6 +87,7 @@ SourceTerms = {
     #    'tau_f': 1.0,                              # Fragmentation timescale (s)
     #},
     ## Add a new source term that does nothing yet; see src/physics/multiphasevpT/functions.py
+    ## It is easy to modify this source term to affect the value of the new state variable as a function of x and t. 
     "source5": {
         "Function" : "GenericEvolutionSource",
         "param1": 1234.5,
