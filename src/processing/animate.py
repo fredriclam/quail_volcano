@@ -30,19 +30,27 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	viscosity_index (int): The index of the viscosity source term in the source terms list.
 	"""
 
-	fig = plt.figure(figsize=(10,8))
-	ax = fig.add_subplot(321,autoscale_on=False,\
+	fig = plt.figure(figsize=(10,12))
+	ax = fig.add_subplot(521,autoscale_on=False,\
                             xlim=(0,-1000),ylim=(0,3))
-	ax2 = fig.add_subplot(322,autoscale_on=False,\
+	ax2 = fig.add_subplot(522,autoscale_on=False,\
                             xlim=(0,-1000),ylim=(-0.5,1.5))
-	ax3 = fig.add_subplot(323, autoscale_on=False,\
+	ax3 = fig.add_subplot(523, autoscale_on=False,\
                             xlim=(0,-1000), ylim=(0,1200))
-	ax4 = fig.add_subplot(324, autoscale_on=False,\
+	ax4 = fig.add_subplot(524, autoscale_on=False,\
                             xlim=(0,-1000), ylim=(0,1))
-	ax5 = fig.add_subplot(325, autoscale_on=False,\
+	ax5 = fig.add_subplot(525, autoscale_on=False,\
                             xlim=(0,-1000), ylim=(-0.02,0.02)) 
-	ax6 = fig.add_subplot(326, autoscale_on=False, \
+	ax6 = fig.add_subplot(526, autoscale_on=False, \
 							xlim=(0,-1000), ylim=(0,2))
+	ax7 = fig.add_subplot(527, autoscale_on=False, \
+							xlim=(0,-1000), ylim=(0,2000))
+	ax8 = fig.add_subplot(528, autoscale_on=False, \
+							xlim=(0,-1000), ylim=(-0.1,0.1))
+	ax9	= fig.add_subplot(529, autoscale_on=False, \
+							xlim=(0,-1000), ylim=(-1,1))	
+	ax10 = fig.add_subplot(5,2,10, autoscale_on=False, \
+							xlim=(0,-1000), ylim=(0,3000))
 
 	ax.invert_xaxis()
 	ax2.invert_xaxis()
@@ -50,17 +58,22 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax4.invert_xaxis()
 	ax5.invert_xaxis()
 	ax6.invert_xaxis()
+	ax7.invert_xaxis()
+	ax8.invert_xaxis()
+	ax9.invert_xaxis()
+	ax10.invert_xaxis()
 
 	pressure_line,  = ax.plot([], [], color="blue", label="pressure")
 	velocity_line, = ax2.plot([], [], color="red", label="velocity")
 	sound_speed_line, = ax3.plot([], [], color="green", label="speed of sound")
 	viscosity_line, = ax4.plot([], [], color="orange", label="viscosity")
-
-
 	total_water_line, = ax5.plot([], [], color="purple", label="total water")
 	exsolved_water_line, = ax5.plot([], [], color="blue", label="exsolved water")
-
 	new_state_line, = ax6.plot([], [], color="purple", label="new state")
+	temp_line, = ax7.plot([], [], label="temperature")
+	crystal_line, = ax8.plot([], [], label="crystals")
+	arhoF_line, = ax9.plot([], [], label="fragmented magma")
+	arhoM_line, = ax10.plot([], [], label="melt")
 
 	ax5.legend(loc="upper right")
 	ax5.set_xlabel("Depth [m]")
@@ -72,6 +85,10 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax4.set_ylabel("Effective viscosity [MPa * s]")
 	ax5.set_ylabel("Water partial density")
 	ax6.set_ylabel("New state variable")
+	ax7.set_ylabel("Temperature [K]")
+	ax8.set_ylabel("Crystal partial density [kg/m^3]")
+	ax9.set_ylabel("Frag. partial density [kg/m^3]")
+	ax10.set_ylabel("Melt partial density [kg/m^3]")
 
 	time_template = 'time = %.2f [s]'
 	time_text = ax.text(0.5,0.9,'',transform=ax.transAxes)
@@ -95,12 +112,16 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		total_water_line.set_data([], [])
 		exsolved_water_line.set_data([], [])
 		new_state_line.set_data([], [])
+		temp_line.set_data([], [])
+		crystal_line.set_data([], [])
+		arhoF_line.set_data([], [])
+		arhoM_line.set_data([], [])
 	
 		time_text.set_text("")
 		pl_text.set_text("")
 		velocity_text.set_text("")
 		new_state_text.set_text("")
-		return pressure_line, velocity_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, time_text, pl_text, velocity_text, new_state_text
+		return pressure_line, velocity_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, arhoF_line, arhoM_line, time_text, pl_text, velocity_text, new_state_text
 
 	def animate(i):
 		solver = readwritedatafiles.read_data_file(f"{folder}/{file_prefix}_{i}.pkl")
@@ -108,12 +129,16 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		p = solver.physics.compute_additional_variable("Pressure", solver.state_coeffs, flag_non_physical)
 		v = solver.physics.compute_additional_variable("Velocity", solver.state_coeffs, flag_non_physical)
 		sound_speed = solver.physics.compute_additional_variable("SoundSpeed", solver.state_coeffs, flag_non_physical)
+		temp = solver.physics.compute_additional_variable("Temperature", solver.state_coeffs, flag_non_physical)
 
 		fsource = solver.physics.source_terms[viscosity_index]
 		viscosity = fsource.compute_viscosity(solver.state_coeffs, solver.physics)
 
 		arhoWt = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityWt")]
 		arhoWv = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityWv")]
+		arhoC = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityC")]
+		arhoM = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityM")]
+		arhoF = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityFm")]
 
 		# Get the value of the new state variable.
 		arhoX = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityX")]
@@ -133,13 +158,17 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		total_water_line.set_data(x.ravel(), arhoWt.ravel())
 		exsolved_water_line.set_data(x.ravel(), arhoWv.ravel())
 		new_state_line.set_data(x.ravel(), arhoX.ravel())
+		temp_line.set_data(x.ravel(), temp.ravel())
+		crystal_line.set_data(x.ravel(), arhoC.ravel())
+		arhoF_line.set_data(x.ravel(), arhoF.ravel())
+		arhoM_line.set_data(x.ravel(), arhoM.ravel())
 
 		time_text.set_text(time_template % solver.time)
 		pl_text.set_text(pl_template % (p.ravel()/1e6)[0])
 		velocity_text.set_text(velocity_template % (v.ravel())[0])
 		new_state_text.set_text(new_state_template % (arhoX.ravel())[0])
 
-		return pressure_line, velocity_line, sound_speed_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, time_text, pl_text, velocity_text, new_state_text
+		return pressure_line, velocity_line, sound_speed_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, arhoM_line, arhoF_line, time_text, pl_text, velocity_text, new_state_text
 
 	plt.close()
 	return animation.FuncAnimation(fig, animate, np.arange(iterations), blit=False, init_func=init, interval=40)

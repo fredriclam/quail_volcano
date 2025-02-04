@@ -647,7 +647,7 @@ class SinusoidalXTest(FcnBase):
 		
 		# Set state vector
 		Uq[:, :, iarhoA] = arhoA
-		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoWv] = arhoWv * (1 + np.sin(x/100).reshape(Uq.shape[0], Uq.shape[1]))
 		Uq[:, :, iarhoM] = arhoM
 		Uq[:, :, imom] = rho * u
 		Uq[:, :, ie] = e
@@ -655,7 +655,7 @@ class SinusoidalXTest(FcnBase):
 		Uq[:, :, iarhoWt] = arhoWt
 		Uq[:, :, iarhoC] = arhoC
 		Uq[:, :, iarhoFm] = arhoF
-		Uq[:, :, iarhoX] = arhoX * (1+ np.cos(x/100).reshape(Uq.shape[0], Uq.shape[1]))
+		Uq[:, :, iarhoX] = arhoX * (1+ - np.sin(np.pi* x/1000).reshape(Uq.shape[0], Uq.shape[1]))
 
 		return Uq # [ne, nq, ns]
 
@@ -2602,7 +2602,9 @@ class PressureOutlet1D(BCWeakRiemann):
 			+ (rho_target * yI[:,:,2:3]) * physics.Liquid["E_m0"] \
 			+ 0.5 * rho_target * u_target * u_target
 		''' Update adiabatically compressed/expanded tracer partial densities '''
-		UqB[:,:,5:] *= rho_target / rhoI
+		UqB[:,:,5:7] *= rho_target / rhoI
+
+		# Currently we do not set the value of the new state variable with this boundary condition. 
 
 		''' Post-computation validity check '''
 		if np.any(T_target < 0.) or np.any(p_target < 0.):
@@ -2882,7 +2884,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		UqB[:,:,7] = 0.0
 
 		# Newly added state 
-		#UqB[:,:,8] = 2.0
+		#UqB[:,:,8] = 1.0
 
 		''' Post-computation validity check '''
 	
