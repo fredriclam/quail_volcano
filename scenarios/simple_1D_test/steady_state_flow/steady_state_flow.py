@@ -2,7 +2,7 @@
 TimeStepping = {
 	"InitialTime"  : 0.0,
 	"FinalTime"    : 40.0,      # seconds
-	"NumTimeSteps" : 4000,
+	"NumTimeSteps" : 80000,
 	"TimeStepper"  : "RK3SR",
 }
 
@@ -20,7 +20,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "test_output",
-	"WriteInterval" : 40,
+	"WriteInterval" : 800,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -52,11 +52,11 @@ Physics = {
 InitialCondition = {
     "Function": "SinusoidalXTest",
     "arhoA": 0.0,    # Mass air per mixture volume
-    "arhoWv": 0.003,   # Mass water in exsolved state
+    "arhoWv": 0.01,   # Mass water in exsolved state
     "arhoM": 2550.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
-    "arhoWt": 0.003, # Mass total water (exsolved + dissolved) per mixture volume
+    "arhoWt": 0.01, # Mass total water (exsolved + dissolved) per mixture volume
     "arhoC": 0.0,        # Mass crystals per mixture volume
     "arhoF": 0.0,          # Mass fragmented magma per mixture volume
     "arhoX": 1.0,          # Newly implemented state
@@ -107,7 +107,7 @@ LinkedSolvers = []
 BoundaryConditions = {
     'x1': {
         'BCType': 'PressureStableLinearizedInlet1D',   # Inlet boundary condition
-        'p_chamber': 1e6, # Chamber pressure (Pa)
+        'p_chamber': 5e6, # Chamber pressure (Pa)
         'T_chamber': 1000, # Chamber temperature (K)
         'trace_arho': 0,
         'chi_water': 0,
@@ -115,6 +115,6 @@ BoundaryConditions = {
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
-        "p": 5e5,
+        "p": 2e6,
     },
 }
