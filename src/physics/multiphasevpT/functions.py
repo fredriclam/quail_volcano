@@ -647,7 +647,7 @@ class SinusoidalXTest(FcnBase):
 		
 		# Set state vector
 		Uq[:, :, iarhoA] = arhoA
-		Uq[:, :, iarhoWv] = arhoWv * (1 + np.sin(x/100).reshape(Uq.shape[0], Uq.shape[1]))
+		Uq[:, :, iarhoWv] = arhoWv 
 		Uq[:, :, iarhoM] = arhoM
 		Uq[:, :, imom] = rho * u
 		Uq[:, :, ie] = e
@@ -655,7 +655,8 @@ class SinusoidalXTest(FcnBase):
 		Uq[:, :, iarhoWt] = arhoWt
 		Uq[:, :, iarhoC] = arhoC
 		Uq[:, :, iarhoFm] = arhoF
-		Uq[:, :, iarhoX] = arhoX * (1+ - np.sin(np.pi* x/1000).reshape(Uq.shape[0], Uq.shape[1]))
+		#
+		Uq[:, :, iarhoX] = arhoX * (1+ - np.sin(2* np.pi* x/1000).reshape(Uq.shape[0], Uq.shape[1]))
 
 		return Uq # [ne, nq, ns]
 
@@ -2744,7 +2745,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=1e-6,
 			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
 			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0,
-			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5):
+			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5, arhoX=0):
 		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
@@ -2766,6 +2767,9 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		# Solubility law
 		self.solubility_k = solubility_k
 		self.solubility_n = solubility_n
+
+		# New state variable 
+		self.arhoX = arhoX
 
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
@@ -2884,7 +2888,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		UqB[:,:,7] = 0.0
 
 		# Newly added state 
-		#UqB[:,:,8] = 1.0
+		#UqB[:,:,8] = self.arhoX * np.sin(2 * np. pi *t/10)
 
 		''' Post-computation validity check '''
 	
@@ -4980,7 +4984,7 @@ class GenericEvolutionSource(SourceBase):
 			
 		# Example of how to modify the source term corresponding to the new state
 		# (in this case changing zeroes to zeroes)
-		S[:, :, iarhoX:iarhoX+1] = 0
+		#S[:, :, iarhoX:iarhoX+1] =  0.0000001 * x**2
 	
 		# An example of printing in the source term
 		# print(f"p = {p.ravel()[0]/1e6:.1f}")

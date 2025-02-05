@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 40.0,      # seconds
-	"NumTimeSteps" : 80000,
+	"FinalTime"    : 20.0,      # seconds
+	"NumTimeSteps" : 4000,
 	"TimeStepper"  : "RK3SR",
 }
 
@@ -14,13 +14,13 @@ Numerics = {
     "ElementQuadrature" : "GaussLegendre",
     "FaceQuadrature" : "GaussLegendre",
     "ArtificialViscosity" : True,
-	"AVParameter" : 30, #0.3,
+	"AVParameter" : 90, #0.3,
     'L2InitialCondition': True,
 }
 
 Output = {
-	"Prefix" : "test_output",
-	"WriteInterval" : 800,
+	"Prefix" : "sinusoidal_IC_test",
+	"WriteInterval" : 40,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -112,6 +112,7 @@ BoundaryConditions = {
         'trace_arho': 0,
         'chi_water': 0,
         'cVFav': 0,
+        'arhoX': 2,  # Newly implemented state
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
