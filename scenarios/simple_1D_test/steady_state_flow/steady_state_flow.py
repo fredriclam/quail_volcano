@@ -19,7 +19,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "sinusoidal_IC_test",
+	"Prefix" : "test_output",
 	"WriteInterval" : 40,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -67,7 +67,8 @@ SourceTerms = {
     'source1': {
         'Function': 'FrictionVolFracVariableMu',   # Friction source term for given conduit radius
         'conduit_radius': 50,
-        "viscosity_factor": 1e-6,
+        'use_default_viscosity': True,
+        'default_viscosity': 5e5,
         'source_treatment': 'Explicit'
     },
     #'source2': {
@@ -107,7 +108,7 @@ LinkedSolvers = []
 BoundaryConditions = {
     'x1': {
         'BCType': 'PressureStableLinearizedInlet1D',   # Inlet boundary condition
-        'p_chamber': 5e6, # Chamber pressure (Pa)
+        'p_chamber': 1e7, # Chamber pressure (Pa)
         'T_chamber': 1000, # Chamber temperature (K)
         'trace_arho': 0,
         'chi_water': 0,
@@ -116,6 +117,6 @@ BoundaryConditions = {
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",
-        "p": 2e6,
+        "p": 1e6,
     },
 }
