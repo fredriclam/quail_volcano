@@ -3948,15 +3948,20 @@ class FrictionVolFracVariableMu(SourceBase):
 	conduit_radius: conduit radius used in Poiseuille approximation (units m)
 	crit_volfrac: critical volume fraction at which friction model transitions (-)
 	logistic_scale: scale of logistic function (-)
+	default_viscosity: viscosity to use when when `use_default_viscosity` is True
+	use_default_viscosity: whether to use default viscosity or parameterized viscosity as a function of crystal and melt visocsity.
 	'''
 	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
 							 logistic_scale:float=0.004, viscosity_factor=1.0,
-							 min_arhoWd=1e-3, min_arhoL=1e-3, mfWd_min=1e-3, T_min=700, **kwargs):
+							 default_viscosity=5e5, use_default_viscosity=False, 
+							 min_arhoWd=1e-3, min_arhoL=1e-3, mfWd_min=1e-3, T_min=700,**kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius
 		self.crit_volfrac = crit_volfrac
 		self.logistic_scale = logistic_scale
 		self.viscosity_factor = viscosity_factor
+		self.default_viscosity = default_viscosity
+		self.use_default_viscosity = use_default_viscosity
 		self.min_arhoWd = min_arhoWd
 		self.min_arhoL = min_arhoL
 		self.T_min = T_min
@@ -4033,13 +4038,12 @@ class FrictionVolFracVariableMu(SourceBase):
 		denom = (1 - alpha * erf)**(-B * phi_cr)
 		crysVisc = num * denom
 		
-		#viscosity = 4.386e5 * crysVisc
-		viscosity = self.viscosity_factor * meltVisc * crysVisc
-
-		#viscosity[(1 - phiM) > self.crit_volfrac] = 0
+		if self.use_default_viscosity:
+			viscosity = self.default_viscosity
+		else:
+			viscosity = self.viscosity_factor * meltVisc * crysVisc
 		
-		#fix = np.max(viscosity)
-		#viscosity[phi > self.crit_volfrac] = fix
+
 		return np.clip(viscosity, None, 1e8)
 
 	def get_source(self, physics, Uq, x, t):
