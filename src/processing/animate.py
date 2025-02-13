@@ -42,7 +42,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax5 = fig.add_subplot(525, autoscale_on=False,\
                             xlim=(0,-1000), ylim=(-0.02,0.02)) 
 	ax6 = fig.add_subplot(526, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(0,2))
+							xlim=(0,-1000), ylim=(0,150))
 	ax7 = fig.add_subplot(527, autoscale_on=False, \
 							xlim=(0,-1000), ylim=(0,2000))
 	ax8 = fig.add_subplot(528, autoscale_on=False, \
@@ -84,7 +84,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax3.set_ylabel("Speed of sound [m/s]")
 	ax4.set_ylabel("Effective viscosity [MPa * s]")
 	ax5.set_ylabel("Water partial density")
-	ax6.set_ylabel("New state variable")
+	ax6.set_ylabel("Slip (arhoS / rho_mix) [m]")
 	ax7.set_ylabel("Temperature [K]")
 	ax8.set_ylabel("Crystal partial density [kg/m^3]")
 	ax9.set_ylabel("Frag. partial density [kg/m^3]")
@@ -99,7 +99,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	velocity_template = 'V = %2f [m/s]'
 	velocity_text = ax2.text(0.5, 0.9, "", transform=ax2.transAxes)
 
-	new_state_template = 'X = %2f'
+	new_state_template = 'Slip = %2f'
 	new_state_text = ax6.text(0.5, 0.9, "", transform=ax6.transAxes)
 
 	print(os.getcwd())
@@ -134,6 +134,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		fsource = solver.physics.source_terms[viscosity_index]
 		viscosity = fsource.compute_viscosity(solver.state_coeffs, solver.physics)
 
+		arhoA = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityA")]
 		arhoWt = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityWt")]
 		arhoWv = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityWv")]
 		arhoC = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityC")]
@@ -141,9 +142,13 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		arhoF = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityFm")]
 
 		# Get the value of the new state variable.
-		arhoX = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityX")]
+		arhoS = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityS")]
 
-		# Get the position of of each nodal points (location corresponding to each entry of pDensityX)
+		rho_mix = arhoA + arhoWv + arhoM
+
+		slip = arhoS / rho_mix
+
+		# Get the position of of each nodal points (location corresponding to each entry of pDensityS)
 		nodal_pts = solver.basis.get_nodes(solver.order)
 		# Allocate [ne] x [nb, ndims]
 		x = np.empty((solver.mesh.num_elems,) + nodal_pts.shape)
@@ -157,7 +162,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		viscosity_line.set_data(x.ravel(), viscosity.ravel()/1e6)
 		total_water_line.set_data(x.ravel(), arhoWt.ravel())
 		exsolved_water_line.set_data(x.ravel(), arhoWv.ravel())
-		new_state_line.set_data(x.ravel(), arhoX.ravel())
+		new_state_line.set_data(x.ravel(), slip.ravel())
 		temp_line.set_data(x.ravel(), temp.ravel())
 		crystal_line.set_data(x.ravel(), arhoC.ravel())
 		arhoF_line.set_data(x.ravel(), arhoF.ravel())
@@ -166,7 +171,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		time_text.set_text(time_template % solver.time)
 		pl_text.set_text(pl_template % (p.ravel()/1e6)[0])
 		velocity_text.set_text(velocity_template % (v.ravel())[0])
-		new_state_text.set_text(new_state_template % (arhoX.ravel())[0])
+		new_state_text.set_text(new_state_template % (slip.ravel())[0])
 
 		return pressure_line, velocity_line, sound_speed_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, arhoM_line, arhoF_line, time_text, pl_text, velocity_text, new_state_text
 

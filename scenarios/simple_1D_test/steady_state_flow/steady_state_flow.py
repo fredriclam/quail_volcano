@@ -1,7 +1,7 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 20.0,      # seconds
+	"FinalTime"    : 1.5,      # seconds
 	"NumTimeSteps" : 4000,
 	"TimeStepper"  : "RK3SR",
 }
@@ -19,7 +19,7 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "test_output",
+	"Prefix" : "test_slip_friction",
 	"WriteInterval" : 40,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
@@ -59,7 +59,7 @@ InitialCondition = {
     "arhoWt": 0.01, # Mass total water (exsolved + dissolved) per mixture volume
     "arhoC": 0.0,        # Mass crystals per mixture volume
     "arhoF": 0.0,          # Mass fragmented magma per mixture volume
-    "arhoX": 1.0,          # Newly implemented state
+    "arhoS": 1.0,          # Newly implemented state
 }
 
 SourceTerms = {
@@ -90,11 +90,13 @@ SourceTerms = {
     ## Add a new source term that does nothing yet; see src/physics/multiphasevpT/functions.py
     ## It is easy to modify this source term to affect the value of the new state variable as a function of x and t. 
     "source5": {
-        "Function" : "GenericEvolutionSource",
-        "param1": 1234.5,
-        "param2": 678,
+        "Function" : "SlipSource",
         "source_treatment" : "Explicit",
     },
+    "source6": {
+        "Function": "FrictionVolSlip",
+        "source_treatment": "Explicit",
+    }
 }
 
 # An "exact solution" is needed by Quail, but does not need to be called
@@ -113,7 +115,7 @@ BoundaryConditions = {
         'trace_arho': 0,
         'chi_water': 0,
         'cVFav': 0,
-        'arhoX': 2,  # Newly implemented state
+        'arhoS': 2,  # Newly implemented state
     },
     "x2" : {
         "BCType" : "PressureOutlet1D",

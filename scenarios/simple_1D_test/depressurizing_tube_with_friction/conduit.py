@@ -59,7 +59,7 @@ InitialCondition = {
     "arhoWt": 0.0, # Mass total water (fluid + dissolved) per mixture volume
     "arhoC": 0.0,        # Mass crystals per mixture volume
     "arhoF": 0.0,          # Mass fragmented magma per mixture volume
-    "arhoX": 0.0,          # Newly implemented state
+    "arhoS": 0.0,          # Newly implemented state
 }
 
 SourceTerms = {
@@ -87,7 +87,7 @@ SourceTerms = {
     #},
     ## Add a new source term that does nothing yet; see src/physics/multiphasevpT/functions.py
     #"source5": {
-        #"Function" : "GenericEvolutionSource",
+        #"Function" : "SlipSource",
         #"param1": 1234.5,
         #"param2": 678,
         #"source_treatment" : "Explicit",
