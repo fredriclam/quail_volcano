@@ -34,7 +34,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax = fig.add_subplot(521,autoscale_on=False,\
                             xlim=(0,-1000),ylim=(0,12))
 	ax2 = fig.add_subplot(522,autoscale_on=False,\
-                            xlim=(0,-1000),ylim=(0,6))
+                            xlim=(0,-1000),ylim=(0,10))
 	ax3 = fig.add_subplot(523, autoscale_on=False,\
                             xlim=(0,-1000), ylim=(0,5000))
 	ax4 = fig.add_subplot(524, autoscale_on=False,\

@@ -1,7 +1,7 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 1.5,      # seconds
+	"FinalTime"    : 20,      # seconds
 	"NumTimeSteps" : 4000,
 	"TimeStepper"  : "RK3SR",
 }
@@ -50,16 +50,16 @@ Physics = {
 # energy is calculated internally from temperature and all
 # other provided variables.
 InitialCondition = {
-    "Function": "SinusoidalXTest",
+    "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
-    "arhoWv": 0.01,   # Mass water in exsolved state
+    "arhoWv": 0.001,   # Mass water in exsolved state
     "arhoM": 2550.0, # Mass condensed phase per mixture volume
     "u": 0.0,        # Velocity
     "T": 1000.0,     # Temperature
-    "arhoWt": 0.01, # Mass total water (exsolved + dissolved) per mixture volume
+    "arhoWt": 0.001, # Mass total water (exsolved + dissolved) per mixture volume
     "arhoC": 0.0,        # Mass crystals per mixture volume
     "arhoF": 0.0,          # Mass fragmented magma per mixture volume
-    "arhoS": 1.0,          # Newly implemented state
+    "arhoS": 0.0,          # Newly implemented state
 }
 
 SourceTerms = {

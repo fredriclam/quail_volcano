@@ -657,7 +657,7 @@ class SinusoidalXTest(FcnBase):
 		Uq[:, :, iarhoC] = arhoC
 		Uq[:, :, iarhoFm] = arhoF
 		#
-		Uq[:, :, iarhoS] = arhoS * (1+ - np.sin(2* np.pi* x/1000).reshape(Uq.shape[0], Uq.shape[1]))
+		Uq[:, :, iarhoS] = arhoS #* (1 - np.sin(2* np.pi* x/1000).reshape(Uq.shape[0], Uq.shape[1]))
 
 		return Uq # [ne, nq, ns]
 
@@ -4314,7 +4314,10 @@ class FrictionVolFracVariableMu(SourceBase):
 		# Compute gradient of log crystal viscosity (grad crystal viscosity divided by crystal viscosity)
 		gradCrysVisc = dcrysdform * grad_phi_ratio
 		# Compute viscosity
-		mu = meltVisc * crysVisc * np.clip(1 - arhoF / arhoM, 0, 1)
+		if self.use_default_viscosity:
+			mu = self.default_viscosity
+		else:
+			mu = meltVisc * crysVisc * np.clip(1 - arhoF / arhoM, 0, 1)
 		# Dimensionless form (grad . / .), momentum component of friction source
 		dFrhou_dq = (grad_melt_visc
 			+ gradCrysVisc
@@ -4895,13 +4898,21 @@ class FrictionVolSlip(SourceBase):
 	'''
 	Calculate volumetric friction as a function of slip. 
 	'''
-	def __init__(self, conduit_radius=50.0, tau_p=10e3, tau_r=2e3, D_c=0.5, **kwargs):
+	def __init__(self, conduit_radius=50.0, tau_p=1e5, tau_r=1e5, D_c=0.5, **kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius # conduit radius [m]
 		self.tau_p = tau_p # peak strength [Pa]
 		self.tau_r = tau_r # residual strength [Pa]
 		self.D_c = D_c # slip weakening distance [m]
 	
+	def compute_tau(self, Uq, physics):
+		'''Returns the shear stress term based on slip, tau peak, and tau residual.'''
+
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		slip = Uq[:, :, physics.get_state_slice("pDensityS")] / rho
+		
+		return self.tau_p - (self.tau_p - self.tau_r) * np.exp(- slip / self.D_c)
+
 	def get_source(self, physics, Uq, x, t):
 		''' Source term as evaluated during computation.
 		Input:
@@ -4922,17 +4933,14 @@ class FrictionVolSlip(SourceBase):
 											f"{physics.NDIMS} spatial dimensions.")
 
 		''' Compute mixture density, u, friction coefficient '''
+
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
 
-		slip = Uq[:, :, physics.get_state_slice("pDensityS")] / rho
-
-		# This definition for tau 
-		tau = self.tau_p - (self.tau_p - self.tau_r) * np.exp(- slip / self.D_c)
+		tau = self.compute_tau(Uq, physics)
 
 		# Define volumetric friction as tau integrated over the conduit walls, divided by the conduit volume.
-		volumetric_friction = - 2.0 * tau / self.conduit_radius
-
+		volumetric_friction = 2.0 * tau / self.conduit_radius
 
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
@@ -4941,25 +4949,26 @@ class FrictionVolSlip(SourceBase):
 
 		# Return source vector
 		return S # [ne, nq, ns]
-	
-	def get_jacobian(self, physics, Uq, x, t):
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, iarhoS = \
-			physics.get_state_indices()
-		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 
-		print(f"Jacobian size : {jac.shape}")
+	# 
+	##def get_jacobian(self, physics, Uq, x, t):
+	##	iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, iarhoS = \
+	##		physics.get_state_indices()
+	##	jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 
-		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
-		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+	##	print(f"Jacobian size : {jac.shape}")
 
-		slip = Uq[:, :, physics.get_state_slice("pDensityS")] / rho
-		M = Uq[:, :, physics.get_momentum_slice()] 
+	##	rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+	##	u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
 
-		# Fill in Jacobian
-		jac[:,:,imom,:] = 2 * (self.tau_p - self.tau_r) / (self.D_c * self.conduit_radius * rho) * np.exp(- slip / self.D_c)
-		jac[:,:,ie,:] = -1 / self.conduit_radius * ((self.tau_p - self.tau_r) / self.D_c * np.exp(- slip / self.D_c) * M/rho**2 + self.tau_r + (self.tau_p - self.tau_r) * np.exp(- slip / self.D_c) / rho)
+	##	slip = Uq[:, :, physics.get_state_slice("pDensityS")] / rho
+	##	M = Uq[:, :, physics.get_momentum_slice()] 
 
-		return np.clip(jac, -1e100, 1e100)
+	##	# Fill in Jacobian
+	##	jac[:,:,imom,:] = 2 * (self.tau_p - self.tau_r) / (self.D_c * self.conduit_radius * rho) * np.exp(- slip / self.D_c)
+	##	jac[:,:,ie,:] = -1 / self.conduit_radius * ((self.tau_p - self.tau_r) / self.D_c * np.exp(- slip / self.D_c) * M/rho**2 + self.tau_r + (self.tau_p - self.tau_r) * np.exp(- slip / self.D_c) / rho)
+
+	##	return np.clip(jac, -1e100, 1e100)
 	
 
 class SlipSource(SourceBase):
