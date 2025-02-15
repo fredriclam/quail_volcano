@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 20,      # seconds
-	"NumTimeSteps" : 4000,
+	"FinalTime"    : 30,      # seconds
+	"NumTimeSteps" : 6000,
 	"TimeStepper"  : "RK3SR",
 }
 
@@ -19,8 +19,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "test_slip_friction",
-	"WriteInterval" : 40,
+	"Prefix" : "test_variable_tau",
+	"WriteInterval" : 60,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -96,6 +96,9 @@ SourceTerms = {
     "source6": {
         "Function": "FrictionVolSlip",
         "source_treatment": "Explicit",
+        "tau_p": 2e5,       #[Pa]
+        "tau_r": 5e4,       #[Pa]
+        "D_c": 10,          #[m]
     }
 }
 

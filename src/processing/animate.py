@@ -34,7 +34,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax = fig.add_subplot(521,autoscale_on=False,\
                             xlim=(0,-1000),ylim=(0,12))
 	ax2 = fig.add_subplot(522,autoscale_on=False,\
-                            xlim=(0,-1000),ylim=(0,10))
+                            xlim=(0,-1000),ylim=(0,20))
 	ax3 = fig.add_subplot(523, autoscale_on=False,\
                             xlim=(0,-1000), ylim=(0,5000))
 	ax4 = fig.add_subplot(524, autoscale_on=False,\
@@ -50,7 +50,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax9	= fig.add_subplot(529, autoscale_on=False, \
 							xlim=(0,-1000), ylim=(-1,1))	
 	ax10 = fig.add_subplot(5,2,10, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(0,3000))
+							xlim=(0,-1000), ylim=(0,5e5))
 
 	ax.invert_xaxis()
 	ax2.invert_xaxis()
@@ -65,6 +65,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 
 	pressure_line,  = ax.plot([], [], color="blue", label="pressure")
 	velocity_line, = ax2.plot([], [], color="red", label="velocity")
+	analytical_velocity_line, = ax2.plot([], [], color="blue", label="analytical velocity")
 	sound_speed_line, = ax3.plot([], [], color="green", label="speed of sound")
 	viscosity_line, = ax4.plot([], [], color="orange", label="viscosity")
 	total_water_line, = ax5.plot([], [], color="purple", label="total water")
@@ -73,9 +74,11 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	temp_line, = ax7.plot([], [], label="temperature")
 	crystal_line, = ax8.plot([], [], label="crystals")
 	arhoF_line, = ax9.plot([], [], label="fragmented magma")
-	arhoM_line, = ax10.plot([], [], label="melt")
+	tau_line, = ax10.plot([], [], label="tau")
 
+	ax2.legend(loc="upper right")
 	ax5.legend(loc="upper right")
+
 	ax5.set_xlabel("Depth [m]")
 	ax6.set_xlabel("Depth [m]")
 
@@ -88,7 +91,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax7.set_ylabel("Temperature [K]")
 	ax8.set_ylabel("Crystal partial density [kg/m^3]")
 	ax9.set_ylabel("Frag. partial density [kg/m^3]")
-	ax10.set_ylabel("Melt partial density [kg/m^3]")
+	ax10.set_ylabel("Tau [N/m^]")
 
 	time_template = 'time = %.2f [s]'
 	time_text = ax.text(0.5,0.9,'',transform=ax.transAxes)
@@ -107,6 +110,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	def init():
 		pressure_line.set_data([], [])
 		velocity_line.set_data([], [])
+		analytical_velocity_line.set_data([], [])
 		sound_speed_line.set_data([], [])
 		viscosity_line.set_data([], [])
 		total_water_line.set_data([], [])
@@ -115,13 +119,13 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		temp_line.set_data([], [])
 		crystal_line.set_data([], [])
 		arhoF_line.set_data([], [])
-		arhoM_line.set_data([], [])
+		tau_line.set_data([], [])
 	
 		time_text.set_text("")
 		pl_text.set_text("")
 		velocity_text.set_text("")
 		new_state_text.set_text("")
-		return pressure_line, velocity_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, arhoF_line, arhoM_line, time_text, pl_text, velocity_text, new_state_text
+		return pressure_line, velocity_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, arhoF_line, tau_line, time_text, pl_text, velocity_text, new_state_text
 
 	def animate(i):
 		solver = readwritedatafiles.read_data_file(f"{folder}/{file_prefix}_{i}.pkl")
@@ -133,6 +137,9 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 
 		fsource = solver.physics.source_terms[viscosity_index]
 		viscosity = fsource.compute_viscosity(solver.state_coeffs, solver.physics)
+
+		fsource_tau = solver.physics.source_terms[2]
+		tau = fsource_tau.compute_tau(solver.state_coeffs, solver.physics)
 
 		arhoA = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityA")]
 		arhoWt = solver.state_coeffs[:,:,solver.physics.get_state_index("pDensityWt")]
@@ -148,6 +155,9 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 
 		slip = arhoS / rho_mix
 
+		tau = 5e4 + (2e5 - 5e4)*np.exp(-slip/10)
+		analytical_velocity = (50**2 / (8 * viscosity)) * ((10e6 - 1e6) / 1000 - 2 *tau / 50)
+
 		# Get the position of of each nodal points (location corresponding to each entry of pDensityS)
 		nodal_pts = solver.basis.get_nodes(solver.order)
 		# Allocate [ne] x [nb, ndims]
@@ -158,6 +168,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	
 		pressure_line.set_data(x.ravel(), p.ravel()/1e6)
 		velocity_line.set_data(x.ravel(), v.ravel())
+		analytical_velocity_line.set_data(x.ravel(), analytical_velocity.ravel())
 		sound_speed_line.set_data(x.ravel(), sound_speed.ravel())
 		viscosity_line.set_data(x.ravel(), viscosity.ravel()/1e6)
 		total_water_line.set_data(x.ravel(), arhoWt.ravel())
@@ -166,14 +177,14 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		temp_line.set_data(x.ravel(), temp.ravel())
 		crystal_line.set_data(x.ravel(), arhoC.ravel())
 		arhoF_line.set_data(x.ravel(), arhoF.ravel())
-		arhoM_line.set_data(x.ravel(), arhoM.ravel())
+		tau_line.set_data(x.ravel(), tau.ravel())
 
 		time_text.set_text(time_template % solver.time)
 		pl_text.set_text(pl_template % (p.ravel()/1e6)[0])
 		velocity_text.set_text(velocity_template % (v.ravel())[0])
 		new_state_text.set_text(new_state_template % (slip.ravel())[0])
 
-		return pressure_line, velocity_line, sound_speed_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, arhoM_line, arhoF_line, time_text, pl_text, velocity_text, new_state_text
+		return pressure_line, velocity_line, sound_speed_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, tau_line, arhoF_line, time_text, pl_text, velocity_text, new_state_text
 
 	plt.close()
 	return animation.FuncAnimation(fig, animate, np.arange(iterations), blit=False, init_func=init, interval=40)

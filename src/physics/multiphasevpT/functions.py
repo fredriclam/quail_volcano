@@ -4898,7 +4898,7 @@ class FrictionVolSlip(SourceBase):
 	'''
 	Calculate volumetric friction as a function of slip. 
 	'''
-	def __init__(self, conduit_radius=50.0, tau_p=1e5, tau_r=1e5, D_c=0.5, **kwargs):
+	def __init__(self, conduit_radius=50.0, tau_p=5e5, tau_r=1e5, D_c=10, **kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius # conduit radius [m]
 		self.tau_p = tau_p # peak strength [Pa]
@@ -4911,7 +4911,7 @@ class FrictionVolSlip(SourceBase):
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		slip = Uq[:, :, physics.get_state_slice("pDensityS")] / rho
 		
-		return self.tau_p - (self.tau_p - self.tau_r) * np.exp(- slip / self.D_c)
+		return self.tau_r + (self.tau_p - self.tau_r) * np.exp(- slip / self.D_c)
 
 	def get_source(self, physics, Uq, x, t):
 		''' Source term as evaluated during computation.
