@@ -478,6 +478,7 @@ class MultiphasevpT1D(MultiphasevpT):
 		d = {
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
+			FcnType.LinearPressureGrad: mpvpT_fcns.LinearPressureGrad,
 			FcnType.UniformTest : mpvpT_fcns.UniformTest,
 			FcnType.SinusoidalXTest: mpvpT_fcns.SinusoidalXTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,

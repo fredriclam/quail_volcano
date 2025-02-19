@@ -54,7 +54,7 @@ InitialCondition = {
     "arhoA": 0.0,    # Mass air per mixture volume
     "arhoWv": 0.8,   # Mass water in fluid state per mixture volume
     "arhoM": 2500.0, # Mass condensed phase per mixture volume
-    "u": 0.0,        # Velocity
+    "u": 4.0,        # Velocity
     "T": 1000.0,     # Temperature
     "arhoWt": 2500.0*0.04, # Mass total water (fluid + dissolved) per mixture volume
     "arhoC": 100.0,        # Mass crystals per mixture volume

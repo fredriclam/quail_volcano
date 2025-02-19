@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 30,      # seconds
-	"NumTimeSteps" : 6000,
+	"FinalTime"    : 20,      # seconds
+	"NumTimeSteps" : 4000,
 	"TimeStepper"  : "RK3SR",
 }
 
@@ -19,8 +19,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "test_variable_tau",
-	"WriteInterval" : 60,
+	"Prefix" : "test_stable_ic",
+	"WriteInterval" : 40,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -53,8 +53,8 @@ InitialCondition = {
     "Function": "UniformTest",
     "arhoA": 0.0,    # Mass air per mixture volume
     "arhoWv": 0.001,   # Mass water in exsolved state
-    "arhoM": 2550.0, # Mass condensed phase per mixture volume
-    "u": 0.0,        # Velocity
+    "arhoM": 2600.0, # Mass condensed phase per mixture volume
+    "u": 4.0,        # Velocity
     "T": 1000.0,     # Temperature
     "arhoWt": 0.001, # Mass total water (exsolved + dissolved) per mixture volume
     "arhoC": 0.0,        # Mass crystals per mixture volume
