@@ -50,7 +50,6 @@ class FcnType(Enum):
 	RiemannProblem = auto()
 	GravityRiemann = auto()
 	UniformExsolutionTest = auto()
-	LinearPressureGrad = auto()
 	UniformTest = auto()
 	SinusoidalXTest = auto()
 	IsothermalAtmosphere = auto()
@@ -551,81 +550,6 @@ class UniformExsolutionTest(FcnBase):
 
 		return Uq # [ne, nq, ns]
 
-class LinearPressureGrad(FcnBase):
-	'''
-	Initial condition for linear pressure gradient.
-	'''
-
-	def __init__(self, arhoA=0.0, arhoWv=0.8, arhoM=2500.0, u=0., T=1000.,
-		arhoWt=2500.0*0.04, arhoC=100.0, arhoF=0.0, arhoS=0.0, p_left=10e6, p_right=1e6, mesh_size=1000):
-		self.arhoA = arhoA
-		self.arhoWv = arhoWv
-		self.arhoM = arhoM
-		self.u = u
-		self.T = T
-		self.arhoWt = arhoWt
-		self.arhoC = arhoC
-		self.arhoF = arhoF
-		self.arhoS = arhoS
-		self.p_left = p_left
-		self.p_right = p_right
-		self.mesh_size = mesh_size
-
-	def get_state(self, physics, x, t):
-		# Unpack variables to lcoal scope
-		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, iarhoS = \
-			physics.get_state_indices()
-		u = self.u
-		T = self.T
-		arhoA = self.arhoA
-		arhoWv = self.arhoWv
-		arhoM = self.arhoM
-		arhoWt = self.arhoWt
-		arhoC = self.arhoC
-		arhoF = self.arhoF
-		arhoS = self.arhoS
-
-		def pressure_interpolant(x):
-			return self.p_right - ((self.p_left - self.p_right)/self.mesh_size) * x
-
-		p = np.reshape(pressure_interpolant(x[...,0].ravel()), x[...,0].shape)
-
-		p0 = x[...,1:].copy()
-		p0.ravel()[:] = pressure_interpolant(x[...,1:].ravel())
-		self.p0 = p0
-
-		phi = atomics.gas_volfrac(Uq[..., physics.get_mass_slice()], T, physics)
-
-		arhoM = (1.0 - phi) * physics.Liquid["rho0"] \
-				* (1.0 + (p0 - physics.Liquid["p0"])/physics.Liquid["K"])
-
-
-
-		arhoM = self.arhoM
-
-		# Calculate mixture density
-		rho = arhoA + arhoWv + arhoM
-		# Calculate specific energy (internal plus kinetic energy per mass)
-		e = (arhoA * physics.Gas[0]["c_v"] * T + 
-			arhoWv * physics.Gas[1]["c_v"] * T + 
-			arhoM * (physics.Liquid["c_m"] * T + physics.Liquid["E_m0"])
-			+ 0.5 * rho * u**2.)
-		
-		# Set state vector
-		Uq[:, :, iarhoA] = arhoA
-		Uq[:, :, iarhoWv] = arhoWv
-		Uq[:, :, iarhoM] = arhoM
-		Uq[:, :, imom] = rho * u
-		Uq[:, :, ie] = e
-		# Tracer quantities
-		Uq[:, :, iarhoWt] = arhoWt
-		Uq[:, :, iarhoC] = arhoC
-		Uq[:, :, iarhoFm] = arhoF
-		Uq[:, :, iarhoS] = arhoS
-
-		return Uq # [ne, nq, ns]
 
 class UniformTest(FcnBase):
 	'''
@@ -5142,6 +5066,11 @@ class SlipSource(SourceBase):
 		gas_volfrac = atomics.gas_volfrac(Uq[...,0:3], T, physics)
 		# Compute pressure
 		p = atomics.pressure(Uq[...,0:3], T, gas_volfrac, physics)
+
+
+		if np.any(rho*u < 0):
+			raise ValueError(
+				"Slip cannot be negative! ")
 			
 		# Example of how to modify the source term corresponding to the new state
 		# (in this case changing zeroes to zeroes)
