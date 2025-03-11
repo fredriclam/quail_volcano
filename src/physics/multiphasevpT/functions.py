@@ -50,6 +50,7 @@ class FcnType(Enum):
 	RiemannProblem = auto()
 	GravityRiemann = auto()
 	UniformExsolutionTest = auto()
+	LinearPressureGrad = auto()
 	IsothermalAtmosphere = auto()
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
@@ -115,6 +116,8 @@ class SourceType(Enum):
 	WaterInflowSource = auto()
 	CylindricalGeometricSource = auto()
 	FragmentationStrainRateSource = auto()
+	SlipSource = auto()
+	FrictionVolSlip = auto()
 
 
 class ConvNumFluxType(Enum):
@@ -193,7 +196,7 @@ class RiemannProblem(FcnBase):
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 		arhoAL = self.arhoAL
 		arhoWvL = self.arhoWvL
@@ -279,7 +282,7 @@ class RightTravelingGaussian(FcnBase):
 
 	def get_state(self, physics, x, t):
 		U = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 
 		# Compute 
@@ -519,7 +522,7 @@ class UniformExsolutionTest(FcnBase):
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 		arhoA = self.arhoA
 		arhoWv = self.arhoWv
@@ -543,6 +546,94 @@ class UniformExsolutionTest(FcnBase):
 		# Tracer quantities
 		Uq[:, :, iarhoWt] = arhoWt
 		Uq[:, :, iarhoC] = arhoC
+
+		return Uq # [ne, nq, ns]
+
+
+class LinearPressureGrad(FcnBase):
+	'''
+	Set a linear pressure gradient. 
+	'''
+
+	def __init__(self, arhoA=0.0, arhoWv=0.8, u=0., T=1000.,
+		arhoWt=2500.0*0.04, arhoCPlug=100.0, arhoF=0.0, slip=0.0, pL=10e6, pL_plug=4.1e6, pR=1e6, x_plug=500, x_length=1000):
+		self.arhoA = arhoA
+		self.arhoWv = arhoWv
+		self.u = u
+		self.T = T
+		self.arhoWt = arhoWt
+		self.arhoCPlug = arhoCPlug
+		self.arhoF = arhoF
+		self.slip = slip
+		self.pL = pL
+		self.pL_plug = pL_plug
+		self.pR = pR 
+		self.x_plug = x_plug
+		self.x_length = x_length
+
+	def get_state(self, physics, x, t):
+		# Unpack variables to lcoal scope
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
+			physics.get_state_indices()
+		u = self.u
+		T = self.T
+		arhoA = self.arhoA
+		arhoWv = self.arhoWv
+		arhoWt = self.arhoWt
+		arhoCPlug = self.arhoCPlug
+		arhoF = self.arhoF
+		slip = self.slip
+		pL = self.pL
+		pL_plug = self.pL_plug
+		pR = self.pR
+		x_plug = self.x_plug
+		x_length = self.x_length
+
+
+		plug_mask = np.zeros((x.shape))
+		plug_mask[x>(x_plug-x_length)] = 1
+		plug_mask = plug_mask[...,0]
+
+		melt_mask = np.zeros((x.shape))
+		melt_mask[x <= (x_plug-x_length)] = 1
+		melt_mask = melt_mask[...,0]
+
+		# Define piecewise linear pressure interpolant.
+		def pressure_interpolant(x):
+			pressure = np.zeros(x.shape)
+			N = x.shape[0]
+			boundary_index = int(N * x_plug/x_length)
+
+			pressure[0:boundary_index] = pL_plug + (pL - pL_plug)*(x[0:boundary_index] - x[boundary_index])/x[0]
+			pressure[boundary_index:N] = pR + (pL_plug - pR)*x[boundary_index:N]/x[boundary_index]
+
+			return pressure
+
+		# Evaluate p using dense_output of solve_ivp (with shape magic)
+		p = np.reshape(pressure_interpolant(x[...,0].ravel()), x[...,0].shape)
+		arhoM = physics.Liquid["rho0"] / (1 - (p - physics.Liquid["p0"]) / physics.Liquid["K"]) 
+
+		# Calculate mixture density
+		rho = arhoA + arhoWv + arhoM
+		# Calculate specific energy (internal plus kinetic energy per mass)
+		e = (arhoA * physics.Gas[0]["c_v"] * T + 
+			arhoWv * physics.Gas[1]["c_v"] * T + 
+			arhoM * (physics.Liquid["c_m"] * T + physics.Liquid["E_m0"])
+			+ 0.5 * rho * u**2.)
+		
+		# Set state vector
+		Uq[:, :, iarhoA] = arhoA
+		Uq[:, :, iarhoWv] = arhoWv 
+		Uq[:, :, iarhoM] = arhoM
+		Uq[:, :, imom] = rho * u
+		Uq[:, :, ie] = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoCPlug * plug_mask
+		Uq[:, :, iarhoFm] = arhoF
+		# Slip
+		Uq[:, :, islip] = slip 
 
 		return Uq # [ne, nq, ns]
 
@@ -579,7 +670,7 @@ class IsothermalAtmosphere(FcnBase):
 
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 
 		# Compute mole fractions times R_univ
@@ -677,7 +768,7 @@ class LinearAtmosphere(FcnBase):
 	def get_state(self, physics, x, t):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 
 		# Mass-weighted gas constant R (approx. yM ~ 0)
@@ -746,10 +837,10 @@ class NohProblem(FcnBase):
 		# Initialize and get useful index names
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
 		if physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			  physics.get_state_indices()
 		elif physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			  physics.get_state_indices()
 			irhov = slice(0,0)
 		# Take gamma of air
@@ -874,11 +965,11 @@ class NohProblemMixture(FcnBase):
 		# Initialize and get useful index names
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
 		if physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			irhov = slice(0,0)
 		elif physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 		# Compute infinitely strong shock exterior density solution
 		rho = self.rho_inf * (1 - self.u * np.where(x[...,0:1] > 0, t / x[...,0:1], 1))
@@ -2489,7 +2580,9 @@ class PressureOutlet1D(BCWeakRiemann):
 			+ (rho_target * yI[:,:,2:3]) * physics.Liquid["E_m0"] \
 			+ 0.5 * rho_target * u_target * u_target
 		''' Update adiabatically compressed/expanded tracer partial densities '''
-		UqB[:,:,5:] *= rho_target / rhoI
+		UqB[:,:,5:8] *= rho_target / rhoI
+
+		# Currently we do not set the value of the slip state variable with this boundary condition. 
 
 		''' Post-computation validity check '''
 		if np.any(T_target < 0.) or np.any(p_target < 0.):
@@ -2629,7 +2722,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	def __init__(self, p_chamber:float=100e6, T_chamber:float=1e3, trace_arho:float=1e-6,
 			chi_water:float=0.03, cVFav:float=0.4, cVFamp:float=0.25, is_gaussian:bool=False,
 			cos_freq:float=0.0, gaussian_tpulse:float=20.0, gaussian_sig:float=4.0,
-			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5):
+			approx_mass_fracs:bool=True, solubility_k:float=5e-5, solubility_n:float=0.5, slip:float=0.0):
 		# Arguments for chamber properties
 		self.p_chamber, self.T_chamber, self.trace_arho = \
 			p_chamber, T_chamber, trace_arho
@@ -2651,6 +2744,9 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		# Solubility law
 		self.solubility_k = solubility_k
 		self.solubility_n = solubility_n
+
+		# New state variable 
+		self.slip = slip
 
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):
@@ -2766,6 +2862,8 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		UqB[:,:,6] = rho * phi_crys
 		# Fragmented state
 		UqB[:,:,7] = 0.0
+		# Slip state 
+		UqB[:,:,8] = 0.0
 	
 		return UqB
 
@@ -2931,13 +3029,16 @@ class VelocityInlet1D(BCWeakPrescribed):
 	def __init__(self, u:float=1.0, p_chamber:float=100e6, T_chamber:float=1e3,
 							trace_arho:float=1e-6, yWt:float=0.04, yC:float=0.1,
 							use_linearized:bool=True, newton_tol:float=1e-7,
-							newton_iter_max:float=20):
+							newton_iter_max:float=20, freq=0.5, chi_water=0.03):
 		# Ingest args
 		self.u, self.p_chamber, self.T_chamber, self.trace_arho = \
 			u, p_chamber, T_chamber, trace_arho
 		# Angular frequency of variation
-		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max = \
-			yWt, yC, use_linearized, newton_tol, newton_iter_max
+		self.yWt, self.yC, self.use_linearized, self.newton_tol, self.newton_iter_max, self.freq = \
+			yWt, yC, use_linearized, newton_tol, newton_iter_max, freq
+		
+		# Water concentration
+		self.chi_water = chi_water
 
 	def get_linearized_boundary_state(self, physics, UqI, normals, x, t):
 		''' Compute a boundary state by replacing Riemann problem with acoustic
@@ -3013,7 +3114,7 @@ class VelocityInlet1D(BCWeakPrescribed):
 		UqB[:,:,5:] *= rho / atomics.rho(arhoVecI)
 		# crystal vol / suspension vol
 		phi_crys = 0.4 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * t))
-		chi_water = 0.03
+		chi_water = self.chi_water
 		UqB[:,:,5] = rho * chi_water / (1 + chi_water) \
 			* (1.0 - 0.4 * (1.1 - 0.1 * np.cos(2 * np.pi * self.freq * 0.0)))  # frozen
 		UqB[:,:,6] = rho * phi_crys
@@ -3748,10 +3849,10 @@ class NohInlet(BCWeakRiemann):
 
 		# Package boundary state
 		if physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			  physics.get_state_indices()
 		elif physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			  physics.get_state_indices()
 			irhov = slice(0,0)
 		UqB = UqI.copy()
@@ -3826,10 +3927,10 @@ class CylindricalGeometricSource(SourceBase):
 		# Remove pressure contribution (isotropic tensor pI has no contribution to
 		# geometric source terms, unlike the momentum dyad)
 		if physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			  physics.get_state_indices()
 		elif physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			  physics.get_state_indices()
 			irhov = slice(0,0)
 		p = physics.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
@@ -3865,7 +3966,7 @@ class FrictionAndesitic(SourceBase):
 		# Calculate gas volume fraction
 		phi = atomics.gas_volfrac(Uq[..., physics.get_mass_slice()], temp, physics)
 
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 		# Extract partial densities
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
@@ -3950,11 +4051,15 @@ class FrictionVolFracVariableMu(SourceBase):
 	logistic_scale: scale of logistic function (-)
 	default_viscosity: viscosity to use when when `use_default_viscosity` is True
 	use_default_viscosity: whether to use default viscosity or parameterized viscosity as a function of crystal and melt visocsity.
+	plug_boundary_0: The boundary above which we will model no viscous friction and instead use a conduit wall friction.
+	dissipate_heat: whether to dissipate frictional heat outside of the system.
+	model_plug: Whether to model the solid plug as part of the system.
 	'''
 	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
 							 logistic_scale:float=0.004, viscosity_factor=1.0,
 							 default_viscosity=5e5, use_default_viscosity=False, 
-							 min_arhoWd=1e-3, min_arhoL=1e-3, mfWd_min=1e-3, T_min=700,**kwargs):
+							 min_arhoWd=1e-3, min_arhoL=1e-3, mfWd_min=1e-3, T_min=700, 
+							 plug_boundary_0=0, dissipate_heat=True, model_plug=False,**kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius
 		self.crit_volfrac = crit_volfrac
@@ -3966,6 +4071,9 @@ class FrictionVolFracVariableMu(SourceBase):
 		self.min_arhoL = min_arhoL
 		self.T_min = T_min
 		self.mfWd_min = mfWd_min
+		self.plug_boundary_0 = plug_boundary_0
+		self.dissipate_heat = dissipate_heat
+		self.model_plug = model_plug 
 
 	def compute_indicator(self, phi):
 		''' Defines smoothed indicator for turning on friction. Takes value 1
@@ -3994,7 +4102,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		temp = np.clip(temp, self.T_min, None)
 		phi = atomics.gas_volfrac(Uq[..., physics.get_mass_slice()], temp, physics)
 		phiM = 1.0 - phi
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
@@ -4006,7 +4114,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		mfWd = np.clip(arhoWd / arhoMelt, self.mfWd_min, None) # mass concentration of dissolved water
 		log_mfWd = np.log(mfWd*100)
 
-		if np.any(np.isnan(log_mfWd)):
+		if np.any(np.isnan(log_mfWd)) and not self.use_default_viscosity:
 			raise ValueError("Nan encountered in computing melt viscosity. Possible overflow.")
 		
 		log10_vis = -3.545 + 0.833 * log_mfWd
@@ -4039,12 +4147,34 @@ class FrictionVolFracVariableMu(SourceBase):
 		crysVisc = num * denom
 		
 		if self.use_default_viscosity:
-			viscosity = self.default_viscosity
+			viscosity = self.default_viscosity 
 		else:
 			viscosity = self.viscosity_factor * meltVisc * crysVisc
-		
 
 		return np.clip(viscosity, None, 1e8)
+	
+	def compute_tau(self, Uq, x, physics):
+		'''Calculates tau at each point.'''
+		mu = self.compute_viscosity(Uq, physics)
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+
+		slarhoFm = physics.get_state_slice("pDensityFm")
+		slarhoM = physics.get_state_slice("pDensityM")
+		slslip = physics.get_state_slice("slip")
+		arhoFm = Uq[:,:,slarhoFm]
+		arhoM = Uq[:,:,slarhoM]
+		slip = Uq[:,:,slslip] / rho
+
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+
+		tau = 4.0 * mu / self.conduit_radius * u
+
+		# If we are modeling the solid plug, set viscous friction to zero for the domain of the plug.
+		if self.model_plug:
+			plug_mask = (slip + self.plug_boundary_0) < x
+			tau[plug_mask] = 0
+		
+		return tau
 
 	def get_source(self, physics, Uq, x, t):
 		'''
@@ -4055,14 +4185,15 @@ class FrictionVolFracVariableMu(SourceBase):
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
 											f"{physics.NDIMS} spatial dimensions.")
-		#iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		#iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 		#	physics.get_state_indices()
 
 		''' Compute mixture density, u, friction coefficient '''
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
 		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
-		mu = self.compute_viscosity(Uq, physics)
-		fric_coeff = 8.0 * mu / self.conduit_radius**2.0
+
+		tau = self.compute_tau(Uq, x, physics)
+
 		''' Compute indicator based on proportion of fragmented phase '''
 		slarhoFm = physics.get_state_slice("pDensityFm")
 		slarhoM = physics.get_state_slice("pDensityM")
@@ -4071,12 +4202,16 @@ class FrictionVolFracVariableMu(SourceBase):
 		I = np.clip(1 - arhoFm / arhoM, 0, 1)
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-		S[:, :, physics.get_momentum_slice()] = -I * fric_coeff * u
-		S[:, :, physics.get_state_slice("Energy")] = -I * fric_coeff * u * u
+		S[:, :, physics.get_momentum_slice()] = -I * tau * 2.0 / self.conduit_radius
+		
+		# Only reduce energy of the system, if the heat dissipation flag is enabled. 
+		if self.dissipate_heat:
+			S[:, :, physics.get_state_slice("Energy")] = -I * tau * 2.0 / self.conduit_radius * u
+
 		return S
 
 	def get_jacobian(self, physics, Uq, x, t):
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 		# Simulate heat capacity load
@@ -4091,7 +4226,10 @@ class FrictionVolFracVariableMu(SourceBase):
 		arhoWt = Uq[:, :, 5:6]
 		arhoC  = Uq[:, :, 6:7]
 		arhoF  = Uq[:, :, 7:8]
+		arhoSlip = Uq[:, :, islip:islip+1]
 		arhoWd = arhoWt - arhoWv
+
+
 		# Mixture density
 		rho = arhoA + arhoWv + arhoM
 		# Partial density of pure liquid melt
@@ -4117,6 +4255,8 @@ class FrictionVolFracVariableMu(SourceBase):
 		earhoC[:, :, 6:7] = 1.0
 		earhoF = np.zeros_like(Uq)
 		earhoF[:, :, 7:8] = 1.0
+		earhoSlip = np.zeros_like(Uq)
+		earhoSlip[:, :, islip:islip+1] = 1.0
 		erho = earhoA + earhoWv + earhoM
 
 		# Mixture heat capacity per mass
@@ -4158,7 +4298,7 @@ class FrictionVolFracVariableMu(SourceBase):
 				* (gradT - Cprime * grad_log_mfWd))
 
 		# Check numerical validity of meltVisc
-		if np.any(np.isnan(meltVisc)):
+		if np.any(np.isnan(meltVisc)) and not self.use_default_viscosity:
 			raise ValueError("Nan encountered in computing melt viscosity. Possible overflow.")
 
 		''' Crystal enhancement factor (Costa 2005), assuming crystal density is same as melt '''
@@ -4188,7 +4328,12 @@ class FrictionVolFracVariableMu(SourceBase):
 		# Compute gradient of log crystal viscosity (grad crystal viscosity divided by crystal viscosity)
 		gradCrysVisc = dcrysdform * grad_phi_ratio
 		# Compute viscosity
-		mu = meltVisc * crysVisc * np.clip(1 - arhoF / arhoM, 0, 1)
+		if self.use_default_viscosity:
+			mu = self.default_viscosity
+			grad_melt_visc = np.zeros_like(grad_melt_visc)
+			gradCrysVisc = np.zeros_like(gradCrysVisc)
+		else:
+			mu = meltVisc * crysVisc * np.clip(1 - arhoF / arhoM, 0, 1)
 		# Dimensionless form (grad . / .), momentum component of friction source
 		dFrhou_dq = (grad_melt_visc
 			+ gradCrysVisc
@@ -4202,12 +4347,17 @@ class FrictionVolFracVariableMu(SourceBase):
 				* (1 - arhoF / arhoM > 0).astype(float) * (1 - arhoF / arhoM < 1).astype(float)
 			+ 2 * erhou / rhou - 2 * erho / rho)
 
-		# Cap mu to prevent floating point overflow
-		mu_cap = np.clip(mu, None, 1e8)
+		# Compute tau using same function as in get_source.
+		tau = self.compute_tau(Uq, x, physics)
 
 		# Fill in Jacobian
-		jac[:,:,imom,:] = dFrhou_dq * -8 * mu_cap * u / (self.conduit_radius * self.conduit_radius)
-		jac[:,:,ie,:] = dFE_dq * -8 * mu_cap * u * u / (self.conduit_radius * self.conduit_radius)
+		jac[:,:,imom,:] = dFrhou_dq * -2 * tau / self.conduit_radius
+
+		# Energy is only a function of viscous drag if we assume energy is dissipated via conduction 
+		# through conduit walls.
+		if self.dissipate_heat:
+			jac[:,:,ie,:] = dFE_dq * -2 * tau * u / self.conduit_radius
+
 		return np.clip(jac, -1e100, 1e100)
 		
 
@@ -4250,7 +4400,7 @@ class FrictionVolFracVariableMu_SHARP(SourceBase):
 		### Hess & Dingwell 1996
 		temp = physics.compute_additional_variable("Temperature", Uq, True)
 		phiM = physics.compute_additional_variable("volFracM", Uq, True)
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = physics.get_state_indices()
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = physics.get_state_indices()
 		arhoWv = Uq[:, :, iarhoWv:iarhoWv+1]
 		arhoM  = Uq[:, :, iarhoM:iarhoM+1]
 		arhoWt = Uq[:, :, iarhoWt:iarhoWt+1]
@@ -4305,7 +4455,7 @@ class FrictionVolFracVariableMu_SHARP(SourceBase):
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
 											f"{physics.NDIMS} spatial dimensions.")
-		#iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		#iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 		#	physics.get_state_indices()
 
 		''' Compute mixture density, u, friction coefficient '''
@@ -4368,7 +4518,7 @@ class FrictionVolFracConstMu(SourceBase):
 		if physics.NDIMS != 1:
 			raise Exception(f"Conduit friction source not suitable for use in " +
 											f"{physics.NDIMS} spatial dimensions.")
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 
 		''' Compute mixture density, u, friction coefficient '''
@@ -4407,7 +4557,7 @@ class FrictionVolFracConstMu(SourceBase):
 		(repeated construction for implicit source steps, followed by inversion).
 		'''
 
-		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 			physics.get_state_indices()
 
 		phi = physics.compute_additional_variable("phi", Uq, True)
@@ -4451,14 +4601,14 @@ class GravitySource(SourceBase):
 		# Compute mixture density
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2)
 		if physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			# Orient gravity in axial direction
 			S[:, :, imom] = -rho * self.gravity
 			S[:, :, ie]   = -Uq[:, :, imom] * self.gravity # rhou * g (gravity work)
 		elif physics.NDIMS == 2:
 			# Orient gravity in y direction
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			S[:, :, irhov] = -rho * self.gravity
 			S[:, :, ie] = -Uq[:, :, irhov] * self.gravity
@@ -4469,13 +4619,13 @@ class GravitySource(SourceBase):
 	def get_jacobian(self, physics, Uq, x, t):
 		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 		if physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			# Orient gravity in axial direction
 			jac[:, :, imom, [iarhoA, iarhoWv, iarhoM]] = -self.gravity
 			jac[:, :, ie, imom] = -self.gravity
 		elif physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			# Orient gravity in y-direction
 			jac[:, :, irhov, [iarhoA, iarhoWv, iarhoM]] = -self.gravity
@@ -4514,7 +4664,7 @@ class ExsolutionSource(SourceBase):
 		S = np.zeros_like(Uq)
 		if physics.NDIMS == 1:
 			# Extract variables
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			slarhoA = physics.get_state_slice("pDensityA")
 			slarhoWv = physics.get_state_slice("pDensityWv")
@@ -4555,7 +4705,7 @@ class ExsolutionSource(SourceBase):
 	def get_jacobian(self, physics, Uq, x, t):
 		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
 		if physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			dSdU = self.compute_exsolution_source_sgradient(physics, Uq)
 			jac[:, :, iarhoWv, :] = dSdU
@@ -4764,6 +4914,168 @@ class FragmentationStrainRateSource(SourceBase):
 				+ "in FragmentationTimescaleSourceSmoothed.")
 		return S # [ne, nq, ns]
 
+
+class FrictionVolSlip(SourceBase):
+	'''
+	Calculate volumetric friction as a function of slip. 
+	'''
+	def __init__(self, conduit_radius=50.0, tau_p=5e5, tau_r=1e5, D_c=10, arhoC_threshold=25, plug_boundary_0=-100, use_constant_tau=False, k_sigmoid=1e3, dissipate_shear_heat=True, **kwargs):
+		super().__init__(kwargs)
+		self.conduit_radius = conduit_radius # conduit radius [m]
+		self.tau_p = tau_p # peak strength [Pa]
+		self.tau_r = tau_r # residual strength [Pa]
+		self.D_c = D_c # slip weakening distance [m]
+		self.arhoC_threshold = arhoC_threshold # partial density of crystals that defines plug
+		self.plug_boundary_0 = plug_boundary_0 # boundary condition for plug
+		self.use_constant_tau = use_constant_tau # Use a constant tau value which assumes positive velocity. 
+		self.k_sigmoid = k_sigmoid # sigmoid function parameter to smooth out tau.
+		self.dissipate_shear_heat = dissipate_shear_heat # Dissipate shear heat out of the system.
+	
+	def compute_tau(self, Uq, x, physics):
+		'''Returns the shear stress term based on slip, tau peak, and tau residual.'''
+
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		slip = Uq[:, :, physics.get_state_slice("slip")] / rho
+
+		melt_mask = (slip + self.plug_boundary_0) > x
+
+		tau = self.tau_r - (self.tau_r - self.tau_p) * np.exp(- slip / self.D_c)
+
+		tau[melt_mask] = 0
+		
+		return tau
+
+	def get_source(self, physics, Uq, x, t):
+		''' Source term as evaluated during computation.
+		Input:
+		  physics -- quail physics object with physics parameters and methods
+			Uq -- vector of state variables with shape (ne, nq, ns)
+			        ne: number of elements in domain
+							nq: number of quadrature points in element
+							ns: number of states in state vector at each point
+			x -- vector of coordinates with shape (ne, nq, ndim)
+			        ndim: number of dimensions
+			t -- time
+		Output:
+		  S -- source vector with shape (ne, nq, ns); this is the vector of
+			     source terms evaluated at each point
+		'''
+		if physics.NDIMS != 1:
+			raise Exception(f"Conduit friction source not suitable for use in " +
+											f"{physics.NDIMS} spatial dimensions.")
+
+		''' Compute mixture density, u, friction coefficient '''
+
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+
+		tau = self.compute_tau(Uq, x, physics)
+
+		def sigmoid_transform(x, k, tau_max):
+			return 2 * tau_max / (1 + np.exp(-k * x)) - tau_max
+
+		# Tau should always resist motion, and it should never cause velocity to change signs. 
+		# Passing tau through a sigmoid function dependent on u ensures this.	
+		if not self.use_constant_tau:
+			tau = sigmoid_transform(u, self.k_sigmoid, tau)
+
+		# Define volumetric friction as tau integrated over the conduit walls, divided by the conduit volume.
+		volumetric_friction = 2.0 * tau / self.conduit_radius
+
+		''' Compute source vector at each element [ne, nq] '''
+		S = np.zeros_like(Uq)
+		S[:, :, physics.get_momentum_slice()] =   - volumetric_friction
+
+		# Dissipate shear heat through conduction in the conduit walls.
+		if (self.dissipate_shear_heat):
+			S[:, :, physics.get_state_slice("Energy")] = - volumetric_friction * u
+
+		# Return source vector
+		return S # [ne, nq, ns]
+	
+	def get_jacobian(self, physics, Uq, x, t):
+		# At the moment, the Jacobian is not implemented for this source term meaning that 
+		# this source term cannot use implicit time stepping.
+		raise NotImplementedError("Jacobian not implemented for FrictionVolSlip.")
+
+
+class SlipSource(SourceBase):
+	'''
+	Calculate slip as a function of velocity.
+	'''
+	def __init__(self, **kwargs):
+		super().__init__(kwargs)
+
+	def get_source(self, physics, Uq, x, t):
+		''' Source term as evaluated during computation.
+		Input:
+		  physics -- quail physics object with physics parameters and methods
+			Uq -- vector of state variables with shape (ne, nq, ns)
+			        ne: number of elements in domain
+							nq: number of quadrature points in element
+							ns: number of states in state vector at each point
+			x -- vector of coordinates with shape (ne, nq, ndim)
+			        ndim: number of dimensions
+			t -- time
+		Output:
+		  S -- source vector with shape (ne, nq, ns); this is the vector of
+			     source terms evaluated at each point
+		'''
+
+		# Initialize source vector
+		S = np.zeros_like(Uq)
+		
+		''' In the following, we load some useful quantities to scope but don't
+		modify S, which is the output source vector. Note that sometimes index
+		is needed, and other times slicing is needed. To illustrate the difference,
+		consider an array A with shape (3,4); that is, a matrix with 3 rows and
+		4 columns. Let's access the 0th column. Using indexing, we write
+		  A[:,0]
+		which returns the 0th column as a new array with shape (3,). Using slices,
+		we write
+			A[:,0:1]
+		which returns the 0th column as a new array with shape (3, 1). The different
+		shape is crucial in mathematical operations (e.g., adding two arrays),
+		since it affects how numpy aligns arrays for broadcasting.
+		To make sure the right method is used, compare the shape (array.shape) before
+		and after the intended mathematical operations.
+		'''
+
+		# Extract some useful quantities
+		ndims = physics.NDIMS
+		# Get indices for accessing variables
+		if ndims == 1:
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
+					physics.get_state_indices()
+		elif ndims == 2:
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, islip = \
+					physics.get_state_indices()
+		# Get slice for momentum (differs in 1D and 2D)
+		smom = physics.get_momentum_slice()
+
+		# Compute mixture density (density of the fluid as a whole)
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho )#+ general.eps)
+
+		# Compute temperature using the atomics module for equation of state operations
+		T = atomics.temperature(Uq[...,0:3],
+				Uq[:, :, smom],
+				Uq[:, :, physics.get_state_slice("Energy")],
+				physics)
+		# Compute volume fraction of all gases (excluding dissolved volatiles)
+		gas_volfrac = atomics.gas_volfrac(Uq[...,0:3], T, physics)
+		# Compute pressure
+		p = atomics.pressure(Uq[...,0:3], T, gas_volfrac, physics)
+
+			
+		# Compute slip as a function of velocity. Do not allow negative slip by clipping.
+		S[:, :, islip:islip+1] =  np.maximum(rho * u, 0)
+
+		# Return source vector
+		return S # [ne, nq, ns]
+
+
 class WaterInflowSource(SourceBase):
 	'''
 	Water Inflow Source term, equipped with water as an ideal gas
@@ -4782,7 +5094,7 @@ class WaterInflowSource(SourceBase):
 		S = np.zeros_like(Uq)
 		if physics.NDIMS == 1:
 			# Extract variables
-			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
 				physics.get_state_indices()
 			slarhoWv = physics.get_state_slice("pDensityWv")
 			slarhoM = physics.get_state_slice("pDensityM")
