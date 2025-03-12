@@ -4920,7 +4920,7 @@ class FrictionVolSlip(SourceBase):
 	'''
 	Calculate volumetric friction as a function of slip. 
 	'''
-	def __init__(self, conduit_radius=50.0, tau_p=5e5, tau_r=1e5, D_c=10, arhoC_threshold=25, plug_boundary_0=-100, use_constant_tau=False, k_sigmoid=1e3, dissipate_shear_heat=True, **kwargs):
+	def __init__(self, conduit_radius=50.0, tau_p=5e5, tau_r=1e5, D_c=10, arhoC_threshold=25, plug_boundary_0=-100, use_constant_tau=False, k_sigmoid=1e3, dissipate_shear_heat=True, exponential_tau=True, **kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius # conduit radius [m]
 		self.tau_p = tau_p # peak strength [Pa]
@@ -4928,9 +4928,10 @@ class FrictionVolSlip(SourceBase):
 		self.D_c = D_c # slip weakening distance [m]
 		self.arhoC_threshold = arhoC_threshold # partial density of crystals that defines plug
 		self.plug_boundary_0 = plug_boundary_0 # boundary condition for plug
-		self.use_constant_tau = use_constant_tau # Use a constant tau value which assumes positive velocity. 
+		self.use_constant_tau = use_constant_tau # Make tau constant relative to velocity. This is not physical but works so long as velocity is always positive. 
 		self.k_sigmoid = k_sigmoid # sigmoid function parameter to smooth out tau.
 		self.dissipate_shear_heat = dissipate_shear_heat # Dissipate shear heat out of the system.
+		self.exponential_tau = exponential_tau # Use exponential tau model.
 	
 	def compute_tau(self, Uq, x, physics):
 		'''Returns the shear stress term based on slip, tau peak, and tau residual.'''
@@ -4940,7 +4941,15 @@ class FrictionVolSlip(SourceBase):
 
 		melt_mask = (slip + self.plug_boundary_0) > x
 
-		tau = self.tau_r - (self.tau_r - self.tau_p) * np.exp(- slip / self.D_c)
+		if self.exponential_tau:
+			tau = self.tau_r - (self.tau_r - self.tau_p) * np.exp(- slip / self.D_c)
+		else:
+			tau_r_mask = slip > self.D_c
+			tau_linear_mask = slip <= self.D_c
+
+			tau = np.zeros_like(slip)
+			tau[tau_r_mask] = self.tau_r
+			tau[tau_linear_mask] = self.tau_p + (self.tau_r - self.tau_p) * slip[tau_linear_mask] / self.D_c
 
 		tau[melt_mask] = 0
 		
@@ -4997,7 +5006,38 @@ class FrictionVolSlip(SourceBase):
 	def get_jacobian(self, physics, Uq, x, t):
 		# At the moment, the Jacobian is not implemented for this source term meaning that 
 		# this source term cannot use implicit time stepping.
-		raise NotImplementedError("Jacobian not implemented for FrictionVolSlip.")
+
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, islip = \
+			physics.get_state_indices()
+		jac = np.zeros([Uq.shape[0], Uq.shape[1], Uq.shape[-1], Uq.shape[-1]])
+
+		earhoSlip = np.zeros_like(Uq)
+		earhoSlip[:, :, islip:islip+1] = 1.0
+
+		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
+		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
+
+		slip = Uq[:, :, islip:islip+1] / rho
+
+		plug_mask = (slip + self.plug_boundary_0) <= x
+		plug_mask = plug_mask.astype(float)
+
+		if self.exponential_tau:
+			dTaudSlip = (self.tau_r - self.tau_p) * np.exp(- slip / self.D_c) / self.D_c 
+		else:
+			dTaudSlip = np.zeros_like(slip)
+			dTaudSlip[slip <= self.D_c] = (self.tau_r - self.tau_p) / self.D_c
+			dTaudSlip[slip > self.D_c] = 0
+
+		jac[:, :, physics.get_momentum_slice(), islip] = - plug_mask * 2.0 / self.conduit_radius  * dTaudSlip
+
+		if self.dissipate_shear_heat:
+			jac[:, :, ie, :] = - plug_mask * 2.0 / self.conduit_radius * dTaudSlip * u
+
+
+		return np.clip(jac, -1e10, 1e10)
+
+
 
 
 class SlipSource(SourceBase):
