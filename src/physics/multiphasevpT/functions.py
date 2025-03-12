@@ -452,6 +452,7 @@ class StaticPlug(FcnBase):
 			yF_fn=yF_fn,
 			override_properties=props,
 			enforce_p_vent=enforce_p_vent,
+			num_state_variables=9,
 		)
 		# Save argument values
 		self.is_solve_direction_downward = is_solve_direction_downward
