@@ -98,6 +98,7 @@ SourceTerms = {
         "plug_boundary_0" : -100,
         "use_constant_tau": True,
         "dissipate_shear_heat": True,  # If true, model the shear heat dissipation through conduction in the conduit. 
+        "exponential_friction": False,  # If true, use an exponential friction law to calculate tau.
     },
     # Add existing source terms (turn off by removing item from the SourceTerms dictionary)
     'viscous_drag': {
@@ -121,15 +122,15 @@ ExactSolution = {
 LinkedSolvers = []
 
 BoundaryConditions = {
-    #'x1': {
-    #    'BCType': 'SlipWall',   # Inlet boundary condition
-    #},
     'x1': {
-        'BCType': 'VelocityInlet1D',   # Inlet boundary condition
-        "u": 0.4,                      # Velocity
-        "yWt": 0.0,                    # Mass total water (exsolved + dissolved) per mixture volume
-        "p_chamber": 10e6,
+        'BCType': 'SlipWall',   # Inlet boundary condition
     },
+    #'x1': {
+    #    'BCType': 'VelocityInlet1D',   # Inlet boundary condition
+    #    "u": 0.4,                      # Velocity
+    #    "yWt": 0.0,                    # Mass total water (exsolved + dissolved) per mixture volume
+    #    "p_chamber": 10e6,
+    #},
     "x2" : {
         "BCType" : "PressureOutlet1D",
         "p": 1e5,
