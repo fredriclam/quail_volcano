@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 20,      # seconds
-	"NumTimeSteps" : 2000,
+	"FinalTime"    : 400,      # seconds
+	"NumTimeSteps" : 160000,
 	"TimeStepper"  : "Strang",
 }
 
@@ -20,7 +20,7 @@ Numerics = {
 
 Output = {
 	"Prefix" : "short_plug_v1",
-	"WriteInterval" : 20,
+	"WriteInterval" : 1600,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -28,7 +28,7 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 200,
+    "NumElemsX" : 800,
     "xmin" : -1000.0,
     "xmax" : 0.0,
 }
@@ -58,8 +58,8 @@ InitialCondition = {
     "arhoCPlug": 50,        # Mass crystals per mixture volume in the plug
     "arhoF": 1e-10,          # Mass fragmented magma per mixture volume
     "slip": 1e-10,          # Newly implemented state
-    "pL": 9e6,           # Pressure on the left boundary [M Pa]
-    "pL_plug": 9e6,      # Pressure on left boundary of the plug
+    "pL": 5e6,           # Pressure on the left boundary [M Pa]
+    "pL_plug": 5e6,      # Pressure on left boundary of the plug
     "pR": 1e5,             # Pressure on the right boundary [M Pa]
     "x_plug": 900,         # Position of the plug from the left of the domain [m]
     "x_length": 1000,      # Length of the plug [m]
@@ -94,11 +94,11 @@ SourceTerms = {
         "conduit_radius": 10,    # Condut radius[m]
         "tau_p": 3e5,            # Primary shear stress from slip [Pa]
         "tau_r": 1e5,            # Residual shear stress from slip [Pa]
-        "D_c": 3.5,             #[m]
+        "D_c": 3.5,              #[m]
         "plug_boundary_0" : -100,
         "use_constant_tau": True,
         "dissipate_shear_heat": True,  # If true, model the shear heat dissipation through conduction in the conduit. 
-        "exponential_tau": False,  # If true, use an exponential friction law to calculate tau.
+        "exponential_tau": False,  # If true, use an exponential friction law to calculate tau. Otherwise, use a linear law.
     },
     # Add existing source terms (turn off by removing item from the SourceTerms dictionary)
     'viscous_drag': {

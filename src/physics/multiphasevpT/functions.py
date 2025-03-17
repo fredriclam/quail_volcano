@@ -4168,7 +4168,9 @@ class FrictionVolFracVariableMu(SourceBase):
 
 		u = Uq[:, :, physics.get_momentum_slice()] / (rho + general.eps)
 
-		tau = 4.0 * mu / self.conduit_radius * u
+		I = np.clip(1 - arhoFm / arhoM, 0, 1)
+
+		tau = I * 4.0 * mu / self.conduit_radius * u
 
 		# If we are modeling the solid plug, set viscous friction to zero for the domain of the plug.
 		if self.model_plug:
@@ -4200,14 +4202,13 @@ class FrictionVolFracVariableMu(SourceBase):
 		slarhoM = physics.get_state_slice("pDensityM")
 		arhoFm = Uq[:,:,slarhoFm]
 		arhoM = Uq[:,:,slarhoM]
-		I = np.clip(1 - arhoFm / arhoM, 0, 1)
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-		S[:, :, physics.get_momentum_slice()] = -I * tau * 2.0 / self.conduit_radius
+		S[:, :, physics.get_momentum_slice()] = - tau * 2.0 / self.conduit_radius
 		
 		# Only reduce energy of the system, if the heat dissipation flag is enabled. 
 		if self.dissipate_heat:
-			S[:, :, physics.get_state_slice("Energy")] = -I * tau * 2.0 / self.conduit_radius * u
+			S[:, :, physics.get_state_slice("Energy")] = - tau * 2.0 / self.conduit_radius * u
 
 		return S
 
@@ -4994,7 +4995,7 @@ class FrictionVolSlip(SourceBase):
 
 		''' Compute source vector at each element [ne, nq] '''
 		S = np.zeros_like(Uq)
-		S[:, :, physics.get_momentum_slice()] =   - volumetric_friction
+		S[:, :, physics.get_momentum_slice()] =  - volumetric_friction
 
 		# Dissipate shear heat through conduction in the conduit walls.
 		if (self.dissipate_shear_heat):
