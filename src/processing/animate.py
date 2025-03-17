@@ -38,7 +38,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax5 = fig.add_subplot(525, autoscale_on=False,\
                             xlim=(0,-1000), ylim=(-0.02,0.02)) 
 	ax6 = fig.add_subplot(526, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(-1,20))
+							xlim=(0,-1000), ylim=(-1,5))
 	ax7 = fig.add_subplot(527, autoscale_on=False, \
 							xlim=(0,-1000), ylim=(0,2000))
 	ax8 = fig.add_subplot(528, autoscale_on=False, \
@@ -75,6 +75,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	tau_viscous_line, = ax10.plot([], [], label="tau viscous")
 
 	ax2.axhline(y=0, color='k', linestyle='dashed')
+	ax6.axhline(y=3.5, color='k', linestyle='dashed', label="predicted slip")
 
 	#ax2.legend(loc="upper right")
 	ax5.legend(loc="upper right")
