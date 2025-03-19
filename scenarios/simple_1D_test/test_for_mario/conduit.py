@@ -21,7 +21,7 @@ Numerics = {'AVParameter': 30,
 # elements.
 Mesh = {'ElementShape': 'Segment',
  'File': None,
- 'NumElemsX': 800,
+ 'NumElemsX': 500,
  'xmax': 0,   # Top of the conduit is placed at -150 m for 2D coupling, but you can choose whatever if not coupling to 2D.
  'xmin': -5000.0
 }
@@ -49,10 +49,10 @@ SourceTerms = {'source1': {'Function': 'GravitySource', # Gravity
              'source_treatment': 'Explicit'},
  'source2': {'Function': 'FrictionVolFracVariableMu',   # Friction source term for given conduit radius
 	     'use_default_viscosity': True,
-	     'default_viscosit': 5e4,
+	     'default_viscosity': 5e4,
              'conduit_radius': 5.,
              'viscosity_factor': 1/5,#1/20,
-             'source_treatment': 'Implicit',
+             'source_treatment': 'Explicit',
 	     'model_plug': True,
 	     'plug_boundary_0': -50,
              },
@@ -74,23 +74,24 @@ SourceTerms = {'source1': {'Function': 'GravitySource', # Gravity
 	"Function": "FrictionVolSlip",
 	"source_treatment": "Explicit", 
 	"conduit_radius": 5, 
-	"tau_p": 2e8,
+	"tau_p": 1e4,
 	"tau_r": 1e4,
 	"D_c": 2,
 	"plug_boundary_0": -50,
 	"use_constant_tau": True,
+  "exponential_tau": False,
     	   },
 }
 
 Output = {'AutoPostProcess': False,
  'Prefix': 'tungurahua_rad_5_v14_conduit',              # Output filename
  'WriteInitialSolution': True,
- 'WriteInterval': 100,                                   # Output frequency (this many timesteps pass before file is written)
+ 'WriteInterval': 40,                                   # Output frequency (this many timesteps pass before file is written)
 }
 
 
 # Set common parameters
-p_chamber = 34831417.52
+p_chamber = 34859121.82
 T_chamber = 950 + 273.15 # 1223.15
 yC = 0.4    # Crystal mass fraction
 yWt = 0.03  # Total water mass fraction
@@ -121,7 +122,7 @@ x2 = -len_plug + 10  # End of transition
 InitialCondition = {'Function': 'StaticPlug',          # Specify to call physics/multiphasevpT/functions > SteadyState as initial condition
  'p_chamber': p_chamber,
   # Magma properties
- 'K_magma': 1e9,
+ 'K_magma': 1e10,
  'c_v_magma': 1000.0,
  'neglect_edfm': True,
  'p0_magma': 35999999.99999999,
@@ -185,9 +186,9 @@ LinkedSolvers = []
 # Set timestepping options. The timestep size (dt) is calculated based on final
 # time and NumTimeSteps. If a NonPhysicalError is returned, check here first to
 # see if the CFL condition is met.6
-TimeStepping = {'FinalTime': 1, # Final 
+TimeStepping = {'FinalTime': 10, # Final 
  'InitialTime': 0.0,
- 'NumTimeSteps': 4000,# Number of timesteps to run for
+ 'NumTimeSteps': 2000,# Number of timesteps to run for
  'TimeStepper': 'Strang', # 'FE', # 'RK3SR',  # 4-step RK3 scheme that maximizes CFL stability region per function eval
 }
 
