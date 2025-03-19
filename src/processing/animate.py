@@ -15,7 +15,7 @@ from matplotlib import animation
 from processing import readwritedatafiles
 
 
-def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", viscosity_index=2, wall_friction_index=1, crystal_plug_boundary=25):
+def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", viscosity_index=2, wall_friction_index=1, plug_boundary=25, p0=4.1, x_min=-1000, max_speed_of_sound=1000, max_pressure=12, max_velocity=1):
 	"""This function takes in a folder, file prefix, and number of iterations and returns an animation of various state variables in the conduit over time.
 	
 	Parameters
@@ -28,25 +28,25 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 
 	fig = plt.figure(figsize=(10,10))
 	ax = fig.add_subplot(521,autoscale_on=False,\
-                            xlim=(0,-1000),ylim=(0,12))
+                            xlim=(0,x_min),ylim=(0,max_pressure))
 	ax2 = fig.add_subplot(522,autoscale_on=False,\
-                            xlim=(0,-1000),ylim=(-0.2,0.2))
+                            xlim=(0,x_min),ylim=(-0.2,max_velocity))
 	ax3 = fig.add_subplot(523, autoscale_on=False,\
-                            xlim=(0,-1000), ylim=(0,1000))
+                            xlim=(0,x_min), ylim=(0,max_speed_of_sound))
 	ax4 = fig.add_subplot(524, autoscale_on=False,\
-                            xlim=(0,-1000), ylim=(0,1.2))
+                            xlim=(0,x_min), ylim=(0,1.2))
 	ax5 = fig.add_subplot(525, autoscale_on=False,\
-                            xlim=(0,-1000), ylim=(-0.02,0.02)) 
+                            xlim=(0,x_min), ylim=(-0.02,0.02)) 
 	ax6 = fig.add_subplot(526, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(-1,5))
+							xlim=(0,x_min), ylim=(-1,5))
 	ax7 = fig.add_subplot(527, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(0,2000))
+							xlim=(0,x_min), ylim=(0,2000))
 	ax8 = fig.add_subplot(528, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(-1,150))
+							xlim=(0,x_min), ylim=(-1,150))
 	ax9	= fig.add_subplot(529, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(2400,2800))	
+							xlim=(0,x_min), ylim=(2400,2800))	
 	ax10 = fig.add_subplot(5,2,10, autoscale_on=False, \
-							xlim=(0,-1000), ylim=(0,0.5))
+							xlim=(0,-500), ylim=(0,0.5))
 
 	ax.invert_xaxis()
 	ax2.invert_xaxis()
@@ -76,6 +76,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 
 	ax2.axhline(y=0, color='k', linestyle='dashed')
 	ax6.axhline(y=3.5, color='k', linestyle='dashed', label="predicted slip")
+	ax.axhline(y=p0, color='k', linestyle='dashed', label="predicted p0")
 
 	#ax2.legend(loc="upper right")
 	ax5.legend(loc="upper right")
@@ -110,6 +111,9 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	boundary_template = 'Boundary = %2f'
 	boundary_text = ax10.text(0.5, 0.9, "", transform=ax10.transAxes)
 
+	tau_slip_template = "Tau slip = %2f [MPa]"
+	tau_slip_text = ax10.text(0.5, 0.8, "", transform=ax10.transAxes)
+
 	print(os.getcwd())
 
 	def init():
@@ -132,7 +136,9 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		pr_text.set_text("")
 		velocity_text.set_text("")
 		boundary_text.set_text("")
-		return pressure_line, velocity_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, plug_boundary, arhoM_line, tau_line, tau_viscous_line, time_text, pl_text, pr_text, velocity_text, boundary_text
+		tau_slip_text.set_text("")
+
+		return pressure_line, velocity_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, plug_boundary, arhoM_line, tau_line, tau_viscous_line, time_text, pl_text, pr_text, velocity_text, boundary_text, tau_slip_text
 
 	def animate(i):
 		solver = readwritedatafiles.read_data_file(f"{folder}/{file_prefix}_{i}.pkl")
@@ -200,8 +206,9 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		pr_text.set_text(pr_template % (p.ravel()/1e6)[-1])
 		velocity_text.set_text(velocity_template % u[0])
 		boundary_text.set_text(boundary_template % (crystal_boundary))
+		tau_slip_text.set_text(tau_slip_template % (tau_slip.ravel()[-1]/1e6))
 
-		return pressure_line, velocity_line, sound_speed_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, plug_boundary, tau_line, tau_viscous_line, arhoM_line, time_text, pl_text, pr_text, velocity_text, boundary_text
+		return pressure_line, velocity_line, sound_speed_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, plug_boundary, tau_line, tau_viscous_line, arhoM_line, time_text, pl_text, pr_text, velocity_text, boundary_text, tau_slip_text
 
 	plt.close()
 	return animation.FuncAnimation(fig, animate, np.arange(iterations), blit=False, init_func=init, interval=40)
