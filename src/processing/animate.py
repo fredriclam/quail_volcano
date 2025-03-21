@@ -46,7 +46,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax9	= fig.add_subplot(529, autoscale_on=False, \
 							xlim=(0,x_min), ylim=(2400,2800))	
 	ax10 = fig.add_subplot(5,2,10, autoscale_on=False, \
-							xlim=(0,-500), ylim=(0,0.5))
+							xlim=(0,-500), ylim=(-0.5,0.5))
 
 	ax.invert_xaxis()
 	ax2.invert_xaxis()

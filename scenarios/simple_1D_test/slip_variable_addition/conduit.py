@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 1,      # seconds
-	"NumTimeSteps" : 4000,
+	"FinalTime"    : 60,      # seconds
+	"NumTimeSteps" : 40000,
 	"TimeStepper"  : "Strang",
 }
 
@@ -19,8 +19,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "short_plug_v7",
-	"WriteInterval" : 40,
+	"Prefix" : "short_plug_v9",
+	"WriteInterval" : 100,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -28,7 +28,7 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 8000,
+    "NumElemsX" : 2000,
     "xmin" : -1000.0,
     "xmax" : 0.0,
 }
@@ -58,8 +58,8 @@ InitialCondition = {
     "arhoCPlug": 50,        # Mass crystals per mixture volume in the plug
     "arhoF": 1e-10,          # Mass fragmented magma per mixture volume
     "slip": 1e-10,          # Newly implemented state
-    "pL": 4.1e6,           # Pressure on the left boundary [M Pa]
-    "pL_plug": 4.1e6,      # Pressure on left boundary of the plug
+    "pL": 4.5e6,           # Pressure on the left boundary [M Pa]
+    "pL_plug": 4.5e6,      # Pressure on left boundary of the plug
     "pR": 1e5,             # Pressure on the right boundary [M Pa]
     "x_plug": 900,         # Position of the plug from the left of the domain [m]
     "x_length": 1000,      # Length of the plug [m]
@@ -94,7 +94,7 @@ SourceTerms = {
         "conduit_radius": 10,    # Conduit radius[m]
         "tau_p": 2e5,            # Primary shear stress from slip [Pa]
         "tau_r": 0e5,            # Residual shear stress from slip [Pa]
-        "D_c": 100,              #[m]
+        "D_c": 3.3,              #[m]
         "plug_boundary_0" : -100,
         "use_constant_tau": True,
         "dissipate_shear_heat": True,  # If true, model the shear heat dissipation through conduction in the conduit. 
