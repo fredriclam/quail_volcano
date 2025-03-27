@@ -167,15 +167,15 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		crystal_boundary = x.ravel()[np.argmax(tau_slip.ravel() > 0.01)]
 
 		# Get the value of the new state variable.
-		slip = solver.state_coeffs[:,:,solver.physics.get_state_index("slip")]
+		rhoSlip = solver.state_coeffs[:,:,solver.physics.get_state_index("rhoSlip")]
 
 		momentum = solver.state_coeffs[:,:,solver.physics.get_momentum_slice()]
-		rho_mix = arhoA + arhoWv + arhoM
+		rho = np.sum(solver.state_coeffs[:, :, solver.physics.get_mass_slice()],axis=2,keepdims=True)
 
 		# Define velocity as momentum divided by density. "velocity" when computed as an additional state variable appears to be an absolute value. 
-		u = momentum.ravel() / rho_mix.ravel()
+		u = momentum.ravel() / rho.ravel()
 
-		slip = slip / rho_mix
+		slip = rhoSlip.ravel() / rho.ravel()
 
 		tau = 5e4 - (5e4 - 2e5)*np.exp(-slip/10)
 		#analytical_velocity = (50**2 / (8 * viscosity)) * ((10e6 - 1e6) / 1000 - 2 *tau / 50)
