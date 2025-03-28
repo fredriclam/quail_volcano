@@ -1,8 +1,8 @@
 
 TimeStepping = {
 	"InitialTime"  : 0.0,
-	"FinalTime"    : 20,      # seconds
-	"NumTimeSteps" : 2000,
+	"FinalTime"    : 30,      # seconds
+	"NumTimeSteps" : 12000,
 	"TimeStepper"  : "Strang",
 }
 
@@ -19,8 +19,8 @@ Numerics = {
 }
 
 Output = {
-	"Prefix" : "short_plug_dynamic",
-	"WriteInterval" : 40,
+	"Prefix" : "short_plug_v10",
+	"WriteInterval" : 120,
 	"WriteInitialSolution" : True,
 	"AutoPostProcess": False,
 }
@@ -28,7 +28,7 @@ Output = {
 Mesh = {
     "File" : None,
     "ElementShape" : "Segment",
-    "NumElemsX" : 200,
+    "NumElemsX" : 1000,
     "xmin" : -1000.0,
     "xmax" : 0.0,
 }
@@ -57,11 +57,11 @@ InitialCondition = {
     "arhoWt": 1e-10, # Mass total water (exsolved + dissolved) per mixture volume
     "arhoCPlug": 50,        # Mass crystals per mixture volume in the plug
     "arhoF": 1e-10,          # Mass fragmented magma per mixture volume
-    "rhoSlip": 1e-10,          # Newly implemented state
-    "pL": 4.1e6,           # Pressure on the left boundary [M Pa]
-    "pL_plug": 4.1e6,      # Pressure on left boundary of the plug
+    "slip": 1e-10,          # Newly implemented state
+    "pL": 11e6,           # Pressure on the left boundary [M Pa]
+    "pL_plug": 11e6,      # Pressure on left boundary of the plug
     "pR": 1e5,             # Pressure on the right boundary [M Pa]
-    "x_plug": 900,         # Position of the plug from the left of the domain [m]
+    "x_plug": 950,         # Position of the plug from the left of the domain [m]
     "x_length": 1000,      # Length of the plug [m]
 }
 
@@ -91,23 +91,23 @@ SourceTerms = {
     "conduit_wall_drag": {
         "Function": "FrictionVolSlip",
         "source_treatment": "Explicit",
-        "conduit_radius": 10,    # Condut radius[m]
-        "tau_p": 2e5,            # Primary shear stress from slip [Pa]
-        "tau_r": 0,            # Residual shear stress from slip [Pa]
-        "D_c": 3.5,             #[m]
-        "plug_boundary_0" : -100,
+        "conduit_radius": 10,    # Conduit radius[m]
+        "tau_p": 1e6,            # Primary shear stress from slip [Pa]
+        "tau_r": 0e5,            # Residual shear stress from slip [Pa]
+        "D_c": 7,              #[m]
+        "plug_boundary_0" : -50,
         "use_constant_tau": True,
         "dissipate_shear_heat": True,  # If true, model the shear heat dissipation through conduction in the conduit. 
-        "exponential_friction": False,  # If true, use an exponential friction law to calculate tau.
+        "exponential_tau": False,  # If true, use an exponential friction law to calculate tau. Otherwise, use a linear law.
     },
     # Add existing source terms (turn off by removing item from the SourceTerms dictionary)
     'viscous_drag': {
         'Function': 'FrictionVolFracVariableMu',   # Friction source term for given conduit radius
         'conduit_radius': 10,
         'use_default_viscosity': True,
-        'default_viscosity': 2e6,
+        'default_viscosity': 5e4,
         'source_treatment': 'Explicit',
-        'plug_boundary_0': -100,
+        'plug_boundary_0': -50,
         'dissipate_heat': True,  # If true, dissipate the heat from viscous drag through the conduit walls. 
         'model_plug': True,
     },
