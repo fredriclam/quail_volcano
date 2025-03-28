@@ -4938,7 +4938,7 @@ class FrictionVolSlip(SourceBase):
 	def compute_plug_boundary(self, Uq, x, physics):
 		''' Returns the plug boundary based on the initial plug boundary and slip.'''
 		rho = np.sum(Uq[:, :, physics.get_mass_slice()],axis=2,keepdims=True)
-		slip = Uq[:, :, physics.get_state_slice("slip")] / rho
+		slip = Uq[:, :, physics.get_state_slice("rhoSlip")] / rho
 
 		plug_mask = slip + self.plug_boundary_0 < x
 
