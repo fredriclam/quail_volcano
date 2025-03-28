@@ -4920,10 +4920,10 @@ class FrictionVolSlip(SourceBase):
 	'''
 	Calculate volumetric friction as a function of slip. 
 	'''
-	def __init__(self, conduit_radius=50.0, tau_p=5e5, tau_r=1e5, D_c=10, arhoC_threshold=25, plug_boundary_0=-100, use_constant_tau=False, k_sigmoid=1e3, dissipate_shear_heat=True, exponential_tau=True, **kwargs):
+	def __init__(self, conduit_radius=50.0, tau_peak=5e5, tau_r=1e5, D_c=10, arhoC_threshold=25, plug_boundary_0=-100, use_constant_tau=False, k_sigmoid=1e3, dissipate_shear_heat=True, exponential_tau=True, **kwargs):
 		super().__init__(kwargs)
 		self.conduit_radius = conduit_radius # conduit radius [m]
-		self.tau_p = tau_p # peak strength [Pa]
+		self.tau_peak = tau_peak # peak strength [Pa]
 		self.tau_r = tau_r # residual strength [Pa]
 		self.D_c = D_c # slip weakening distance [m]
 		self.arhoC_threshold = arhoC_threshold # partial density of crystals that defines plug
@@ -4942,14 +4942,14 @@ class FrictionVolSlip(SourceBase):
 		melt_mask = (slip + self.plug_boundary_0) > x
 
 		if self.exponential_tau:
-			tau = self.tau_r - (self.tau_r - self.tau_p) * np.exp(- slip / self.D_c)
+			tau = self.tau_r - (self.tau_r - self.tau_peak) * np.exp(- slip / self.D_c)
 		else:
 			tau_r_mask = slip > self.D_c
 			tau_linear_mask = slip <= self.D_c
 
 			tau = np.zeros_like(slip)
 			tau[tau_r_mask] = self.tau_r
-			tau[tau_linear_mask] = self.tau_p + (self.tau_r - self.tau_p) * slip[tau_linear_mask] / self.D_c
+			tau[tau_linear_mask] = self.tau_peak + (self.tau_r - self.tau_peak) * slip[tau_linear_mask] / self.D_c
 
 		tau[melt_mask] = 0
 		
@@ -5020,10 +5020,10 @@ class FrictionVolSlip(SourceBase):
 		plug_mask = plug_mask.astype(float)
 
 		if self.exponential_tau:
-			dTaudSlip = (self.tau_r - self.tau_p) * np.exp(- slip / self.D_c) / self.D_c 
+			dTaudSlip = (self.tau_r - self.tau_peak) * np.exp(- slip / self.D_c) / self.D_c 
 		else:
 			dTaudSlip = np.zeros_like(slip)
-			dTaudSlip[slip <= self.D_c] = (self.tau_r - self.tau_p) / self.D_c
+			dTaudSlip[slip <= self.D_c] = (self.tau_r - self.tau_peak) / self.D_c
 			dTaudSlip[slip > self.D_c] = 0
 
 		jac[:, :, physics.get_momentum_slice(), irhoslip] = - plug_mask * 2.0 / self.conduit_radius  * dTaudSlip
