@@ -58,8 +58,8 @@ InitialCondition = {
     "arhoCPlug": 50,        # Mass crystals per mixture volume in the plug
     "arhoF": 1e-10,          # Mass fragmented magma per mixture volume
     "rhoSlip": 1e-10,          # Newly implemented state
-    "pL": 11e6,           # Pressure on the left boundary [M Pa]
-    "pL_plug": 11e6,      # Pressure on left boundary of the plug
+    "pL": 10e6,           # Pressure on the left boundary [M Pa]
+    "pL_plug": 10e6,      # Pressure on left boundary of the plug
     "pR": 1e5,             # Pressure on the right boundary [M Pa]
     "x_plug": 950,         # Position of the plug from the left of the domain [m]
     "x_length": 1000,      # Length of the plug [m]
@@ -92,9 +92,9 @@ SourceTerms = {
         "Function": "FrictionVolSlip",
         "source_treatment": "Explicit",
         "conduit_radius": 10,    # Conduit radius[m]
-        "tau_p": 1e6,            # Primary shear stress from slip [Pa]
+        "tau_peak": 1e6,            # Primary shear stress from slip [Pa]
         "tau_r": 0e5,            # Residual shear stress from slip [Pa]
-        "D_c": 7,              #[m]
+        "D_c": 10,              #[m]
         "plug_boundary_0" : -50,
         "use_constant_tau": True,
         "dissipate_shear_heat": True,  # If true, model the shear heat dissipation through conduction in the conduit. 
