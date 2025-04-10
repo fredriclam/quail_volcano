@@ -1,6 +1,7 @@
 ''' Sample input file for conduit in Vulcanian eruption. See below for instructions. '''
 
 import numpy as np
+import run_globals
 
 # Numerical solver options. These options worked well in the past.
 # Artificial viscosity keeps spurious oscillations in check, and the positivity-
@@ -48,13 +49,9 @@ SourceTerms = {'source1': {'Function': 'GravitySource', # Gravity
              'gravity': 9.8,
              'source_treatment': 'Explicit'},
  'source2': {'Function': 'FrictionVolFracVariableMu',   # Friction source term for given conduit radius
-	     'use_default_viscosity': True,
-	     'default_viscosity': 5e4,
              'conduit_radius': 5.,
              'viscosity_factor': 1/5,#1/20,
-             'source_treatment': 'Explicit',
-	     'model_plug': True,
-	     'plug_boundary_0': -50,
+             'source_treatment': 'Implicit'
              },
  'source3': {'Function': 'ExsolutionSource',            # Exsolution source
              'source_treatment': 'Explicit',
@@ -70,38 +67,20 @@ SourceTerms = {'source1': {'Function': 'GravitySource', # Gravity
         "conduit_radius": 5, # Conduit radius (make sure this is the same as what you provide to the Friction source term!
         'source_treatment': 'Explicit',
     },
-"source5": {
-	"Function": "FrictionVolSlip",
-	"source_treatment": "Explicit", 
-	"conduit_radius": 5, 
-	"tau_p": 1e4,
-	"tau_r": 0  ,
-	"D_c": 2,
-	"plug_boundary_0": -50,
-	"use_constant_tau": True,
-  "exponential_tau": False,
-    	   },
-  "slip_source": {
-        "Function" : "SlipSource",
-        "source_treatment" : "Explicit",
-    },
 }
 
 Output = {'AutoPostProcess': False,
- 'Prefix': 'tungurahua_rad_5_v15_conduit',              # Output filename
- 'WriteInitialSolution': True,
- 'WriteInterval': 40,                                   # Output frequency (this many timesteps pass before file is written)
+  'Prefix' : f"{run_globals.output_file_prefix}_cond",              # Output filename
+  'WriteInitialSolution': True,
+  'WriteInterval': 50,                                   # Output frequency (this many timesteps pass before file is written)
 }
 
-
 # Set common parameters
-p_chamber = 34859121.82
+p_chamber = 4519097.42
 T_chamber = 950 + 273.15 # 1223.15
 yC = 0.4    # Crystal mass fraction
 yWt = 0.03  # Total water mass fraction
-
 chi_water = (1.0 - yC) * yWt / (1 - yWt)
-
 radio = 5
 f_plug = 1.9e8
 len_plug = 50
@@ -113,8 +92,6 @@ def cosine_taper(x, x1, x2, y1, y2):
     return np.where(x < x1, y1,
                     np.where(x > x2, y2,
                              y1 + (y2 - y1) * 0.5 * (1 - np.cos(np.pi * (x - x1) / (x2 - x1)))))
-
-
  # Define the transition region
 x1 = -len_plug - 10  # Start of transition
 x2 = -len_plug + 10  # End of transition
@@ -126,7 +103,7 @@ x2 = -len_plug + 10  # End of transition
 InitialCondition = {'Function': 'StaticPlug',          # Specify to call physics/multiphasevpT/functions > SteadyState as initial condition
  'p_chamber': p_chamber,
   # Magma properties
- 'K_magma': 1e10,
+ 'K_magma': 10000000000.0,
  'c_v_magma': 1000.0,
  'neglect_edfm': True,
  'p0_magma': 35999999.99999999,
@@ -135,17 +112,15 @@ InitialCondition = {'Function': 'StaticPlug',          # Specify to call physics
  'solubility_k': Physics["Solubility"]["k"],
  'solubility_n': Physics["Solubility"]["n"],
  'x_global': np.linspace(Mesh["xmin"], Mesh["xmax"], Mesh["NumElemsX"]), # All x meshes linked together
-
  # Define the functions using cosine taper
  'traction_fn': lambda x: cosine_taper(x, x1, x2, 0, -trac_par),
  'yWt_fn': lambda x: cosine_taper(x, x1, x2, yWt, 0.02),
  'yC_fn': lambda x: cosine_taper(x, x1, x2, yC, 0.8),
  'T_fn': lambda x: cosine_taper(x, x1, x2, T_chamber, 930 + 273.15),
  'yF_fn': lambda x: cosine_taper(x, x1, x2, 0, 1),
-
- # p_vent is set slightly above 1e5 to make sure flow is outflow
+# p_vent is set slightly above 1e5 to make sure flow is outflow
  'enforce_p_vent': None,                    # If not None, Scales traction_fn iteratively so that vent pressure has this value
- # 'is_solve_direction_downward': False,
+# 'is_solve_direction_downward': False,
  }
 
 # This is needed by Quail. This is not the exact solution, just something callable.
@@ -172,27 +147,27 @@ BoundaryConditions = {
         # 'solubility_n': 0.5,                          # Henry's law exponent
 },  
   # For running serial, using p boundary condition:
- 'x2': {'BCType': 'PressureOutlet1D',                   # Pressure outlet boundary condition (automatically chokes if needed)
-        'p': 100000.0,                  # Boundary pressure (if flow not choked) -- with scale height factor
-        },
-  # For running in parallel, the following boundary condition type is needed:
-#    'x2': {'BCType': 'MultiphasevpT1D1D',
-        #   'bkey': 'comm2D1D'}
+#  'x2': {'BCType': 'PressureOutlet1D',                   # Pressure outlet boundary condition (automatically chokes if needed)
+        # 'p': 100000.0,                  # Boundary pressure (if flow not choked) -- with scale height factor
+        # },
+   'x2': {'BCType': 'MultiphasevpT2D1D',
+          'bkey': 'vent'}
 }
 
 # Linked parallel solvers. If running in serial, leave as empty list.
-LinkedSolvers = []
-# A parallel solver would have multiple input files like this one, and they would
-# be linked as follows:
-# LinkedSolvers = [{'BoundaryName': 'comm2D1D',
-#                   'DeckName': 'vent_region.py'}]
+LinkedSolvers = [
+  {
+    "DeckName": "vent_region.py",
+    "BoundaryName": "vent", # set equal to the "bkey" param of a MultiphasevpT2D1D BoundaryCondition
+  },
+]
 
 # Set timestepping options. The timestep size (dt) is calculated based on final
 # time and NumTimeSteps. If a NonPhysicalError is returned, check here first to
 # see if the CFL condition is met.6
 TimeStepping = {'FinalTime': 5, # Final 
  'InitialTime': 0.0,
- 'NumTimeSteps': 2000,# Number of timesteps to run for
+ 'NumTimeSteps': 2000, # 2500000,# Number of timesteps to run for
  'TimeStepper': 'Strang', # 'FE', # 'RK3SR',  # 4-step RK3 scheme that maximizes CFL stability region per function eval
 }
 

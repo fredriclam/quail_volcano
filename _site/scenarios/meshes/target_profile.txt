@@ -1,0 +1,16 @@
+Z: 1500 m
+r: 3000 m
+(26.5 deg)
+
+Statistics on mesh:
+tris
+====
+ve-r1	1301
+r1-r2	1174
+r2-r3	1661
+r3-r4	1949
+r4-r5	1908
+r5-r6	1330
+r6-r7	1287
+r7-r8	962
+max	1949

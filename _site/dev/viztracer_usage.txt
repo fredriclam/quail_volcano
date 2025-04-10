@@ -1,0 +1,28 @@
+in folder containing conduit.py, replacing with path to quail
+
+python -m viztracer --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\src\\quail conduit.py
+
+======================
+
+Simple flamegraph:
+python -m viztracer --generate_flamegraph result.json
+
+To show on vizviewer: use colab vizviewer server
+
+======================
+
+With file builder
+
+python generate_domainpartitions.py
+
+python -m viztracer --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\src\\quail conduit_sub0.py
+
+or reduced size: from 1000000
+
+python -m viztracer --tracer_entries 200000 --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\src\\quail conduit_sub0.py
+
+======================
+
+legacy:
+
+python -m viztracer --log_multiprocess C:\\Users\\Fredric\\Documents\\Volcano\\quail_dev\\src\\quail runmushroom.py
