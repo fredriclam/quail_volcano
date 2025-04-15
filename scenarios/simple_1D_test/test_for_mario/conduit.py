@@ -24,7 +24,7 @@ Mesh = {'ElementShape': 'Segment',
  'File': None,
  'NumElemsX': 500,
  'xmax': 0,   # Top of the conduit is placed at -150 m for 2D coupling, but you can choose whatever if not coupling to 2D.
- 'xmin': -1000.0
+ 'xmin': -5000.0
 }
 
 # Specify physical properties here.
@@ -75,6 +75,29 @@ Output = {'AutoPostProcess': False,
   'WriteInterval': 50,                                   # Output frequency (this many timesteps pass before file is written)
 }
 
+# Define a traction function
+def gaussian_traction(x:np.array, total_pressure_change=10e6, x0=-350, sigma=50) -> np.array:
+  ''' Traction function added to the hydrostatic equation. Negative
+   sign indicates downward traction on the fluid. Units are Pa / m. 
+   Total pressure change due to traction is amp * sigma.
+   Inputs:
+     x: array of points at which traction is evaluated
+     total_pressure_change: total pressure change across the traction. The
+       Gaussian amplitude is calculated from this.
+     x0: Gaussian center (m)
+     sigma: standard deviation parameter (length scale of traction function)
+   '''
+  # Compute amplitude of Gaussian TODO:
+  amplitude = total_pressure_change / (np.sqrt(np.pi) * sigma)
+  _t = (x-x0)/sigma
+  return -amplitude * np.exp(-_t * _t)
+
+radio = 5
+f_plug = 1.79e8
+len_plug = 60
+t_plug = f_plug / (2*np.pi*radio*len_plug)
+trac_par = 2*t_plug/radio
+
 # Set common parameters
 p_chamber = 4519097.42
 T_chamber = 950 + 273.15 # 1223.15
@@ -87,14 +110,20 @@ len_plug = 50
 t_plug = f_plug / (2*np.pi*radio*len_plug)
 trac_par = 2*t_plug/radio
 
+chi_water = (1.0 - yC) * yWt / (1 - yWt)
+
+a = 1/7
+
 # Define the cosine taper function
 def cosine_taper(x, x1, x2, y1, y2):
     return np.where(x < x1, y1,
                     np.where(x > x2, y2,
                              y1 + (y2 - y1) * 0.5 * (1 - np.cos(np.pi * (x - x1) / (x2 - x1)))))
- # Define the transition region
+
+# Define the transition region
 x1 = -len_plug - 10  # Start of transition
 x2 = -len_plug + 10  # End of transition
+
 
 # Initial condition parameters
 # Note that some parameters here are repeated, and must be consistent with the
@@ -165,9 +194,9 @@ LinkedSolvers = [
 # Set timestepping options. The timestep size (dt) is calculated based on final
 # time and NumTimeSteps. If a NonPhysicalError is returned, check here first to
 # see if the CFL condition is met.6
-TimeStepping = {'FinalTime': 5, # Final 
+TimeStepping = {'FinalTime': 90, # Final 
  'InitialTime': 0.0,
- 'NumTimeSteps': 2000, # 2500000,# Number of timesteps to run for
+ 'NumTimeSteps': 2500000, # 2500000,# Number of timesteps to run for
  'TimeStepper': 'Strang', # 'FE', # 'RK3SR',  # 4-step RK3 scheme that maximizes CFL stability region per function eval
 }
 

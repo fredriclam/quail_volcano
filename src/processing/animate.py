@@ -15,7 +15,7 @@ from matplotlib import animation
 from processing import readwritedatafiles
 
 
-def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", viscosity_index=2, wall_friction_index=1, plug_boundary=25, p0=4.1, x_min=-1000, max_speed_of_sound=1000, max_pressure=12, max_velocity=1, slip_final = 3.5, max_slip=20, max_tau=0.5):
+def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", viscosity_index=2, wall_friction_index=1, plug_boundary=25, p0=4.1, x_min=-1000, max_speed_of_sound=1000, max_pressure=12, max_velocity=1, slip_final = 3.5, max_slip=20, max_tau=0.5, max_viscosity=1.0):
 	"""This function takes in a folder, file prefix, and number of iterations and returns an animation of various state variables in the conduit over time.
 	
 	Parameters
@@ -34,7 +34,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 	ax3 = fig.add_subplot(523, autoscale_on=False,\
                             xlim=(0,x_min), ylim=(0,max_speed_of_sound))
 	ax4 = fig.add_subplot(524, autoscale_on=False,\
-                            xlim=(0,x_min), ylim=(0,1.2))
+                            xlim=(0,x_min), ylim=(0,max_viscosity))
 	ax5 = fig.add_subplot(525, autoscale_on=False,\
                             xlim=(0,x_min), ylim=(-0.02,0.02)) 
 	ax6 = fig.add_subplot(526, autoscale_on=False, \
