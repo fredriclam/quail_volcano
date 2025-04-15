@@ -2,7 +2,7 @@
 
 # TimeStepping is set in input_file.py
 
-import run_globals
+import scenarios.simple_1D_test.eruption_model.run_globals as run_globals
 
 Numerics = {
 	"SolutionOrder" : run_globals.ElementOrder2D,
