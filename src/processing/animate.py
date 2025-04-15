@@ -15,7 +15,7 @@ from matplotlib import animation
 from processing import readwritedatafiles
 
 
-def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", viscosity_index=2, wall_friction_index=1, plug_boundary=25, p0=4.1, x_min=-1000, max_speed_of_sound=1000, max_pressure=12, max_velocity=1, slip_final = 3.5, max_slip=20, max_tau=0.5):
+def animate_conduit_pressure(solver_from_i, iterations=100, viscosity_index=2, wall_friction_index=1, p0=4.1, x_min=-1000, max_speed_of_sound=1000, max_pressure=12, max_velocity=1, slip_final = 3.5, max_slip=20, max_tau=0.5):
 	"""This function takes in a folder, file prefix, and number of iterations and returns an animation of various state variables in the conduit over time.
 	
 	Parameters
@@ -141,7 +141,7 @@ def animate_conduit_pressure(folder, iterations=100, file_prefix="test_output", 
 		return pressure_line, velocity_line, viscosity_line, total_water_line, exsolved_water_line, new_state_line, temp_line, crystal_line, plug_boundary_line, arhoM_line, tau_line, tau_viscous_line, time_text, pl_text, pr_text, velocity_text, boundary_text, tau_slip_text
 
 	def animate(i):
-		solver = readwritedatafiles.read_data_file(f"{folder}/{file_prefix}_{i}.pkl")
+		solver = solver_from_i(i)
 		flag_non_physical = True
 		p = solver.physics.compute_additional_variable("Pressure", solver.state_coeffs, flag_non_physical)
 		sound_speed = solver.physics.compute_additional_variable("SoundSpeed", solver.state_coeffs, flag_non_physical)

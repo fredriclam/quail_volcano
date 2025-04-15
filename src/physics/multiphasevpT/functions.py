@@ -4148,7 +4148,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		crysVisc = num * denom
 		
 		if self.use_default_viscosity:
-			viscosity = self.default_viscosity 
+			viscosity = self.default_viscosity * np.ones_like(meltVisc) 
 		else:
 			viscosity = self.viscosity_factor * meltVisc * crysVisc
 
