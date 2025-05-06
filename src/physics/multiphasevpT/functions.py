@@ -4942,7 +4942,12 @@ class FrictionVolSlip(SourceBase):
 
 		plug_mask = slip + self.plug_boundary_0 < x
 
-		return x.ravel()[np.argmax(plug_mask.ravel())]
+		boundary = x.ravel()[np.argmax(plug_mask.ravel())]
+
+		if boundary > self.plug_boundary_0:
+			return boundary
+		else:
+			return 0
 
 	
 	def compute_tau(self, Uq, x, physics):
