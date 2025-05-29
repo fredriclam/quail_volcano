@@ -59,6 +59,7 @@ Cases/Miscellaneous/Plot
 *.m
 *.gmsh
 *.pkl
+*.npz
 *.mp4
 *.png
 *.swp
@@ -92,3 +93,4 @@ scenarios/tungurahua/run1/
 scenarios/tungurahua/run1_final_output.txt
 scenarios/tungurahua/trash_from_copy/
 src/compressible_conduit_steady
+src/physics/diffusive

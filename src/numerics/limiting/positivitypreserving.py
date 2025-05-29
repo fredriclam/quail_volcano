@@ -425,7 +425,6 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 		if np.any([np.any(rho < 0.) for rho in rho_bar.values()]) \
 			 or np.any(p_bar < 0.):
 			raise errors.NotPhysicalError
-		# TODO: reduce to mixtDensity
 		mix_rho_bar = physics.compute_variable("pDensityA", U_bar) \
 		  + physics.compute_variable("pDensityWv", U_bar) \
 		  + physics.compute_variable("pDensityM", U_bar)

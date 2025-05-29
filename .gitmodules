@@ -1,3 +1,9 @@
 [submodule "compressible-conduit-steady"]
 	path = src/compressible_conduit_steady
 	url = https://github.com/fredriclam/compressible-conduit-steady
+[submodule "src/physics/multiphase_WLMA/iapws95_light"]
+	path = src/physics/multiphase_WLMA/iapws95_light
+	url = https://github.com/fredriclam/iapws95_light.git
+[submodule "src/physics/multiphaseWLMA/iapws95_light"]
+	path = src/physics/multiphaseWLMA/iapws95_light
+	url = https://github.com/fredriclam/iapws95_light.git

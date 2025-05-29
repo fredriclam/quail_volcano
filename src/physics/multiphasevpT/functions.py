@@ -2673,6 +2673,10 @@ class LinearizedImpedance2D(BCWeakPrescribed):
 		return UqB
 
 
+class PressureStableLinearizedInlet1D_genericFunc(BCWeakPrescribed):
+	pass
+
+
 class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 	'''
 	Linearized inlet conditions that solve a linearized version of the Riemann

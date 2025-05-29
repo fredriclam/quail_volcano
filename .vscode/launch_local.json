@@ -20,12 +20,12 @@
       // "args": ["noh_problem2.py"], // Noh problem in axisymmetry
       // "args": ["conduit_p.py"], // BC tester
       // "args": ["conduit_v2.py"], // // Testing for 1D steadystate 
-      "args": ["conduit_sub0.py"],
+      "args": ["conduit.py"],
       // "args": ["-p", "post_process.py"],
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\mixture_shocktube\\",
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit_flow\\", // Testing for 1D steadystate !! revisit
       // "cwd": "C:\\Users\\fredr\\OneDrive\\Documents\\quail_volcano\\scenarios\\conduit_flow\\",
-      "cwd": "C:\\Users\\fredr\\OneDrive\\Documents\\quail_volcano\\scenarios\\conduit1D\\",
+      // "cwd": "C:\\Users\\fredr\\OneDrive\\Documents\\quail_volcano\\scenarios\\conduit1D\\",
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\verification_acoustic\\",
       // "cwd": "C:\\Users\\fredr\\Documents\\quail_volcano\\scenarios\\verification_acoustic\\",
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\axisymmetric_test\\", // Noh problem in axisymmetry
@@ -33,7 +33,11 @@
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\test_oscillations\\",
       // 
       // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\check2D\\",
-      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit_flow\\",
+      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\conduit_flow\\", // Last last was here
+      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\submarine\\", // Last was here
+      "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\entrainment\\",
+      // "cwd": "C:\\Users\\Fredric\\Documents\\Volcano\\quail_volcano\\scenarios\\fragtest\\",
+
       "subProcess": true,
     }
   ]

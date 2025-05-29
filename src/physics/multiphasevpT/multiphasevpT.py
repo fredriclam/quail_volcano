@@ -94,7 +94,10 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.VelocityInlet1D_gaussianPulse: mpvpT_fcns.VelocityInlet1D_gaussianPulse,
 			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
+<<<<<<< HEAD
 			BCType.NohInletMixture: mpvpT_fcns.NohInletMixture,
+=======
+>>>>>>> feature/water
 			BCType.ChokedInlet2D: mpvpT_fcns.ChokedInlet2D,
 			BCType.LinearizedIsothermalOutflow2D: mpvpT_fcns.LinearizedIsothermalOutflow2D,
 			BCType.OscillatingSphere: mpvpT_fcns.OscillatingSphere,
@@ -854,8 +857,15 @@ class MultiphasevpT2D(MultiphasevpT):
 			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
 			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
 			FcnType.NohProblem: mpvpT_fcns.NohProblem,
+<<<<<<< HEAD
 			FcnType.NohProblemMixture: mpvpT_fcns.NohProblemMixture,
 			FcnType.UniformAir: mpvpT_fcns.UniformAir,
+=======
+			FcnType.UniformAir: mpvpT_fcns.UniformAir,
+			# euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
+			# euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
+			# euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
+>>>>>>> feature/water
 		}
 
 		self.IC_fcn_map.update(d)
