@@ -21,6 +21,7 @@
 #
 # ------------------------------------------------------------------------ #
 import pickle
+import numpy as np
 
 def write_data_file(solver, iwrite):
 	'''
@@ -37,6 +38,14 @@ def write_data_file(solver, iwrite):
 	# Remove piped objects
 	bdnet = solver.physics.bdry_data_net
 	solver.physics.bdry_data_net = None
+
+	# Remove local pool if needed for vector state evaluation (WLMA model)
+	local_pool = None
+	try:
+		local_pool = solver.physics.pool
+		solver.physics.pool = None
+	except AttributeError:
+		pass
 	
 	# Remove advection map (don't need to replace this)
 	if hasattr(solver.physics.IC, "advection_map"):
@@ -49,12 +58,19 @@ def write_data_file(solver, iwrite):
 	else:
 		fname = prefix + "_final" + ".pkl"
 
-	with open(fname, 'wb') as fo:
-		# Save solver
-		pickle.dump(solver, fo, pickle.HIGHEST_PROTOCOL)
+	if solver.params["CompressedOutput"] and iwrite >= 1:
+		np.savez_compressed(fname[:-3] + "npz",
+											  state_coeffs=solver.state_coeffs,
+											  time=solver.time)
+	else:
+		with open(fname, 'wb') as fo:
+			# Save solver
+			pickle.dump(solver, fo, pickle.HIGHEST_PROTOCOL)
 	
 	# Replace removed objects
 	solver.physics.bdry_data_net = bdnet
+	if local_pool is not None:
+		solver.physics.pool = local_pool
 
 
 def read_data_file(fname):

@@ -183,7 +183,8 @@ class PhysicsType(Enum):
 	MultispeciesPSR = auto()
 		# Model for PSR (with H2/Air chemistry)
 
-	MultiphasevpT = auto() # vpT relaxation model
+	MultiphasevpT = auto() # vpT-equilibrium multiphase model
+	MultiphaseWLMA = auto() # vpT-equilibrium for water, linearized magma, air
 		
 class TransportType(Enum):
 	'''

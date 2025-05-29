@@ -1,0 +1,101 @@
+// Blasted crater wide vent geometry
+
+SetFactory("Built-in");
+//+
+
+// Pointwise dx control
+dx = 20;      // Pointwise dx control
+// Box dx control
+dx_L1 = 1; // Refinement x2 // 75;     // In-box (region of interest) dx control -- chamber, dike
+dx_L2 = 2; // Refinement ~ // 150;   // Transition level 1
+
+r1 = 250; // Domain size
+
+conduit_length = 75;
+conduit_radius = 5;
+crater_lip_radius = 10;
+crater_depth = 5;
+
+Point(1) = {0, r1, 0, dx};    // Far top point
+Point(2) = {0, 0, 0, dx};     // Boundary circle center
+Point(3) = {r1, 0, 0, dx};    // Far right point
+Point(4) = {crater_lip_radius, 0, 0, dx};                         // Top point of crater
+Point(5) = {crater_lip_radius, -crater_depth, 0, dx};             // Fillet center of crater
+Point(6) = {conduit_radius, -crater_depth, 0, dx};                // Bottom point of crater
+Point(7) = {conduit_radius, -crater_depth-conduit_length, 0, dx}; // Bottom outer point of conduit
+Point(8) = {0, -crater_depth-conduit_length, 0, dx};    // Origin (along symmetry axis)
+
+Circle(1)  = {1, 2, 3};        // First domain boundary r1
+Line(2)    = {3, 4};           // Ocean floor outer
+Line(3) = {4, 6}; // Crater slope
+// Ellipse(3) = {4, 5, 6, 6};     // Crater fillet
+Line(4) = {6, 7}; // Conduit outer wall
+Line(5) = {7, 8};                // Inlet coupling boundary
+Line(6)   = {8, 1};          // Symmetry line
+
+// Define curve loop from curves
+Curve Loop(1) = {3, 4, 5, 6, 1, 2};
+
+// Set planes with compatible (reversed) orientation
+Plane Surface(1) = {-1};
+
+// Set refinement from refinement curve
+// Field[1] = Distance;
+// Field[1].CurvesList = {12};
+// Field[2] = MathEval;
+// Field[2].F = Sprintf("(F1/400)^2 + %g", 0.5*dx_L2);
+// Set refinement near origin
+Field[3] = Distance;
+// Field[3].CurvesList = {4};
+Field[3].PointsList = {2};
+Field[4] = MathEval;
+Field[4].F = Sprintf("((F3/10)^2 + 1) * %g", dx_L1);
+// Limit mesh size >= dx_L1 in magic box
+Field[5] = Box;
+Field[5].VIn  = dx_L2;
+Field[5].VOut = dx;
+Field[5].XMin = 0.0 * crater_lip_radius;
+Field[5].XMax = 1.5 * crater_lip_radius;
+Field[5].YMin = -crater_depth-conduit_length;
+Field[5].YMax = 0.0;
+// Set max
+// Field[6] = Max;
+// Field[6].FieldsList={2, 5};
+// Set refinement near axis
+// Field[7] = Distance;
+// Field[7].CurvesList = {11};
+// Field[8] = MathEval;
+// Field[8].F = Sprintf("(F7/200)^2 + %g", dx_L2);
+
+// Set min field
+Field[9] = Min;
+Field[9].FieldsList = {4, 5};
+Background Field = 9;
+
+// Generate 2D mesh
+Mesh 2;
+
+// RefineMesh;
+OptimizeMesh "Laplace2D";
+OptimizeMesh "Laplace2D";
+OptimizeMesh "Laplace2D";
+
+// Mesh export
+Physical Curve("r1", 1) = {1};
+Physical Curve("groundouter", 2) = {2};
+Physical Curve("craterslope", 3) = {3};
+Physical Curve("conduitwall", 4) = {4};
+Physical Curve("x2", 5) = {5};
+Physical Curve("symmetry", 6) = {6};
+// Physical Curve("dikeouter", 4) = {4};
+// Physical Curve("chamberwallouter", 5) = {5};
+// Physical Curve("chambersymmetry", 6) = {6};
+// Physical Curve("chamberwallinner", 7) = {7};
+// Physical Curve("dikeinner", 8) = {8};
+// Physical Curve("flareinner", 9) = {9};
+// Physical Curve("groundinner", 10) = {10};
+// Physical Curve("symmetry", 11) = {11};
+
+Physical Surface("domain1") = {1};
+
+Save "submarine_wide_vent.msh";
