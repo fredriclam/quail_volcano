@@ -47,9 +47,13 @@ def write_data_file(solver, iwrite):
 	except AttributeError:
 		pass
 	
+	solver.physics.IC = "Deleted to pickle"
 	# Remove advection map (don't need to replace this)
-	if hasattr(solver.physics.IC, "advection_map"):
-		solver.physics.IC = "Deleted to pickle"
+	# if hasattr(solver.physics.IC, "advection_map"):
+	# 	solver.physics.IC.advection_map = None
+	# # Chop IC (contains lambdas)
+	# if solver.physics.IC.__class__.__name__ == "StaticPlug":
+	# 	solver.physics.IC = None
 
 	# Get file name
 	prefix = solver.params["Prefix"]

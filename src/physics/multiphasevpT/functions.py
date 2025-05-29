@@ -491,6 +491,58 @@ class StaticPlug(FcnBase):
 
 		return U_full
 
+class StaticPlug(FcnBase):
+	''' 1D steady state with zero velocity and an initial plug drag.
+	  Calls submodule compressible-conduit-steady
+		(https://github.com/fredriclam/compressible-conduit-steady).
+	'''
+	def __init__(self,
+							 traction_fn:callable, yWt_fn:callable, yC_fn:callable, T_fn:callable,
+							 x_global:np.array=None,
+							 p_chamber=40e6,
+							 yA=1e-7,
+							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
+							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
+							 neglect_edfm=True,
+							 enforce_p_vent=None):
+		'''
+		Interface to compressible_conduit_steady.StaticPlug.
+		'''
+		if x_global is None:
+			raise ValueError(
+				"x_global must be specified in the StaticPlug initial condition. " +
+				"x_global provides 1D mesh information across all partitions of " +
+				"the 1D domain.")
+		props = {
+				"yA": yA,
+				"c_v_magma": c_v_magma,
+				"rho0_magma": rho0_magma,
+				"K_magma": K_magma,
+				"p0_magma": p0_magma,
+				"solubility_k": solubility_k,
+				"solubility_n": solubility_n,
+				"neglect_edfm": neglect_edfm,
+		}
+		# Register StaticPlug object from steady state module
+		self.f:callable = plugin_steady_state.StaticPlug(x_global,
+																									 p_chamber,
+			traction_fn,
+			yWt_fn,
+			yC_fn,
+			T_fn,
+			override_properties=props,
+			enforce_p_vent=enforce_p_vent,
+		)
+		# Save argument values
+		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.p_chamber = p_chamber
+		self.enforce_p_vent = enforce_p_vent
+
+	def get_state(self, physics, x, t):
+		# Evaluate intial condition
+		U_init = self.f(x)
+		return U_init
+
 class UniformExsolutionTest(FcnBase):
 	'''
 	Uniform n-dimensional box for testing exsolution.
@@ -630,7 +682,7 @@ class IsothermalAtmosphere(FcnBase):
 	'''
 
 	def __init__(self,T:float=300., p_atm:float=1e5,
-		h0:float=-150.0, hmax:float=6000.0, gravity:float=9.8,
+		h0:float=-150.0, hmin:float=-10000.0, hmax:float=6000.0, gravity:float=9.8,
 		massFracWv:float=5e-3, massFracM:float=1e-7, tracer_frac:float=1e-7):
 		''' Set atmosphere temperature, pressure, and location of pressure.
 		Pressure distribution is computed as hydrostatic profile with p = p_atm
@@ -639,15 +691,20 @@ class IsothermalAtmosphere(FcnBase):
 		self.T = T
 		self.p_atm = p_atm
 		self.h0 = h0
+		self.hmin = hmin
 		self.hmax = hmax
 		self.gravity = gravity
 		self.massFracWv = massFracWv
 		self.massFracM = massFracM
 		# Allocate pressure interpolant (filled when self.get_state is called
 		# because physics object is required)
-		self.pressure_interpolant = None
+		# self.pressure_interpolant = None
 		# Set numerical fraction for essentially inert fields
 		self.tracer_frac = tracer_frac
+
+	def pressure_interpolant(self, x):
+		''' Returns p(x). Raises an exception if sol_up or sol_down is not initialized in self.get_state. '''
+		return np.where(x >= self.h0, self.sol_up(x), self.sol_down(x))
 
 	def get_state(self, physics, x, t):
 		''' Computes the pressure in an isothermal atmosphere for an ideal gas
@@ -672,27 +729,62 @@ class IsothermalAtmosphere(FcnBase):
 		self.nWv = nWv
 		self.Gas = physics.Gas
 		self.Liquid = physics.Liquid
-		# Compute scale height (constant)
-		hs = R*self.T/self.gravity
+		self.y = np.array([1.0-self.massFracWv-self.massFracM,
+			self.massFracWv, self.massFracM])
+
+		if self.gravity == 0:
+			# Uniform pressure
+			p = self.p_atm * np.ones_like(x[...,1])
+			rho = atomics.mixture_density(self.y, p, self.T, physics)
+			phi = atomics.gas_volfrac(np.einsum("ij, k -> ijk", rho, self.y),
+				self.T, physics)[:,:,0]
+			# Compute partial densities
+			arhoA = (phi * nA) * p / (physics.Gas[0]["R"] * self.T)
+			arhoWv = (phi * nWv) * p / (physics.Gas[1]["R"] * self.T)
+			arhoM = (1.0 - phi) * physics.Liquid["rho0"] \
+				* (1.0 + (p - physics.Liquid["p0"])/physics.Liquid["K"])
+			# Compute volumetric energy
+			e = (arhoA * physics.Gas[0]["c_v"] * self.T + 
+				arhoWv * physics.Gas[1]["c_v"] * self.T + 
+				arhoM * (physics.Liquid["c_m"] * self.T + physics.Liquid["E_m0"]))
+			# Assemble conservative state vector		
+			Uq[:, :, iarhoA] = arhoA
+			Uq[:, :, iarhoWv] = arhoWv
+			Uq[:, :, iarhoM] = arhoM
+			Uq[:, :, irhou] = 0.0
+			Uq[:, :, irhov] = 0.0
+			Uq[:, :, ie] = e
+			# Tracer quantities
+			Uq[:, :, iarhoWt] = arhoWv + self.tracer_frac * arhoM
+			Uq[:, :, iarhoC] = self.tracer_frac * arhoM
+			Uq[:, :, iarhoFm] = (1.0 - self.tracer_frac) * arhoM
+
+			return Uq # [ne, nq, ns]
 
 		''' Compute hydrostatic pressure as initial value problem (IVP) '''
 		# Compare this to
 		#   plt.plot(np.unique(x[...,1]),
 		#     np.exp(-(np.unique(x[...,1])-x[...,1].min())/hs)*1e5, '-')
 		# Compute (nearly exponential) pressure p as a function of y
-		self.y = np.array([1.0-self.massFracWv-self.massFracM,
-			self.massFracWv, self.massFracM])
 		eval_pts = np.unique(x[:,:,1:2])
+
 		# Evaluate IVP solution
-		soln = scipy.integrate.solve_ivp(
+		soln_up = scipy.integrate.solve_ivp(
 			lambda height, p:
 				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
 			[self.h0, self.hmax],
 			[self.p_atm],
-			t_eval=eval_pts,
 			dense_output=True)
-		# Cache the pressure interpolant
-		self.pressure_interpolant = soln.sol
+		soln_down = scipy.integrate.solve_ivp(
+			lambda height, p:
+				-self.gravity / atomics.mixture_spec_vol(self.y, p, self.T, physics),
+			[self.h0, self.hmin],
+			[self.p_atm],
+			dense_output=True)
+		# Cache picklable solution callables
+		self.sol_up = soln_up.sol
+		self.sol_down = soln_down.sol
+
 		# Evaluate p using dense_output of solve_ivp (with shape magic)
 		p = np.reshape(self.pressure_interpolant(x[...,1].ravel()), x[...,1].shape)
 		rho = atomics.mixture_density(self.y, p, self.T, physics)
@@ -4126,7 +4218,6 @@ class FrictionVolFracVariableMu(SourceBase):
 	model_plug: Whether to model the solid plug as part of the system.
 	'''
 	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
-							 logistic_scale:float=0.004, viscosity_factor=1.0,
 							 default_viscosity=5e5, use_default_viscosity=False, 
 							 min_arhoWd=1e-3, min_arhoL=1e-3, mfWd_min=1e-3, T_min=700, 
 							 plug_boundary_0=0, dissipate_heat=True, model_plug=False,**kwargs):
@@ -4158,7 +4249,7 @@ class FrictionVolFracVariableMu(SourceBase):
 		return (1.0/self.logistic_scale) * self.compute_indicator(phi) \
 			* (self.compute_indicator(phi) - 1.0)
 	
-	def compute_viscosity(self, Uq, physics):
+	def compute_viscosity(self, Uq, physics, exclude_crystals=False):
 		''' calculates the viscosity at each depth point as function of dissolved
 		water and crystal content (assumes crystal phase is incompressible)
 		'''
@@ -4220,6 +4311,11 @@ class FrictionVolFracVariableMu(SourceBase):
 			viscosity = self.default_viscosity * np.ones_like(meltVisc) 
 		else:
 			viscosity = self.viscosity_factor * meltVisc * crysVisc
+
+		if exclude_crystals:
+			return self.viscosity_factor * meltVisc
+
+		return viscosity
 
 		return np.clip(viscosity, None, 1e8)
 	

@@ -94,10 +94,7 @@ class MultiphasevpT(base.PhysicsBase):
 			BCType.VelocityInlet1D_gaussianPulse: mpvpT_fcns.VelocityInlet1D_gaussianPulse,
 			BCType.LinearizedImpedance2D: mpvpT_fcns.LinearizedImpedance2D,
 			BCType.NohInlet: mpvpT_fcns.NohInlet,
-<<<<<<< HEAD
 			BCType.NohInletMixture: mpvpT_fcns.NohInletMixture,
-=======
->>>>>>> feature/water
 			BCType.ChokedInlet2D: mpvpT_fcns.ChokedInlet2D,
 			BCType.LinearizedIsothermalOutflow2D: mpvpT_fcns.LinearizedIsothermalOutflow2D,
 			BCType.OscillatingSphere: mpvpT_fcns.OscillatingSphere,
@@ -107,7 +104,7 @@ class MultiphasevpT(base.PhysicsBase):
 													Gas1={"R": 287., "gamma": 1.4},
 													Gas2={"R": 8.314/18.02e-3, "c_p": 2.288e3}, 
 													Liquid={"K": 10e9, "rho0": 2.7e3, "p0": 5e6,
-																	"E_m0": 0, "c_m": 3e3},
+																	"E_m0": 0, "c_m": 1e3},
 													Solubility={"k": 5e-6, "n": 0.5},
 													Viscosity={"mu0": 3e5},
 													tau_d = 0.5):
@@ -857,15 +854,8 @@ class MultiphasevpT2D(MultiphasevpT):
 			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
 			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
 			FcnType.NohProblem: mpvpT_fcns.NohProblem,
-<<<<<<< HEAD
 			FcnType.NohProblemMixture: mpvpT_fcns.NohProblemMixture,
 			FcnType.UniformAir: mpvpT_fcns.UniformAir,
-=======
-			FcnType.UniformAir: mpvpT_fcns.UniformAir,
-			# euler_fcn_type.IsentropicVortex : euler_fcns.IsentropicVortex,
-			# euler_fcn_type.TaylorGreenVortex : euler_fcns.TaylorGreenVortex,
-			# euler_fcn_type.GravityRiemann : euler_fcns.GravityRiemann,
->>>>>>> feature/water
 		}
 
 		self.IC_fcn_map.update(d)
