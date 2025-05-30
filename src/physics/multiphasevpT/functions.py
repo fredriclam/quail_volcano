@@ -100,6 +100,7 @@ class SourceType(Enum):
 	FragmentationTimescaleSource = auto()
 	FragmentationTimescaleSourceSmoothed = auto()
 	WaterInflowSource = auto()
+	AreaGeometricSource = auto()
 	CylindricalGeometricSource = auto()
 	FragmentationStrainRateSource = auto()
 	SlipSource = auto()
@@ -418,7 +419,7 @@ class StaticPlug(FcnBase):
 				"x_global must be specified in the StaticPlug initial condition. " +
 				"x_global provides 1D mesh information across all partitions of " +
 				"the 1D domain.")
-		props = {
+		self.props = {
 				"yA": yA,
 				"c_v_magma": c_v_magma,
 				"rho0_magma": rho0_magma,
@@ -428,35 +429,43 @@ class StaticPlug(FcnBase):
 				"solubility_n": solubility_n,
 				"neglect_edfm": neglect_edfm,
 		}
-		# Register StaticPlug object from steady state module
-		self.f:callable = plugin_steady_state.StaticPlug(x_global,
-																									 p_chamber,
-			traction_fn,
-			yWt_fn,
-			yC_fn,
-			T_fn,
-			yF_fn=yF_fn,
-			override_properties=props,
-			enforce_p_vent=enforce_p_vent,
-			num_state_variables=9,
-		)
 		# Save argument values
 		self.is_solve_direction_downward = is_solve_direction_downward
-		self.x_global = np.expand_dims(x_global,axis=(1,2))
+		self.x_global = x_global # np.expand_dims(x_global,axis=(1,2))
 		self.p_chamber = p_chamber
 		self.enforce_p_vent = enforce_p_vent
 		self.solubility_k = solubility_k
 		self.solubility_n = solubility_n
 
+		self.traction_fn = traction_fn
+		self.yWt_fn = yWt_fn
+		self.yC_fn = yC_fn
+		self.T_fn = T_fn
+		self.yF_fn = yF_fn
+
 	def get_state(self, physics, x, t):
+
+		# StaticPlug 
+		f:callable = plugin_steady_state.StaticPlug(self.x_global,
+																									 self.p_chamber,
+			self.traction_fn,
+			self.yWt_fn,
+			self.yC_fn,
+			self.T_fn,
+			yF_fn=self.yF_fn,
+			override_properties=self.props,
+			enforce_p_vent=self.enforce_p_vent,
+			num_state_variables=9,
+		)
+
 		# Pseudo-1D partition
 		x_conduit = x[np.where(np.all(x <= 0, axis=(1,2)))[0],...]
 		x_atm = x[np.where(~np.all(x <= 0, axis=(1,2)))[0],...]
 		# Evaluate initial condition
-		U_init = self.f(x_conduit,
+		U_init = f(x_conduit,
 									  is_solve_direction_downward=self.is_solve_direction_downward)
 		# Initial condition, atmosphere part
-		U_atm = np.zeros((x_atm.shape[0], *U_init.shape[1:]))
+		U_atm = np.zeros((x_atm.shape[0], U_init.shape[1], physics.NUM_STATE_VARS,))
 
 		# Set isothermal atmosphere
 		T_atm = 300
@@ -480,7 +489,7 @@ class StaticPlug(FcnBase):
 										+ sol / (1 + sol) * (U_atm[...,1] + U_atm[...,2] - U_atm[...,6])) # Dissolved
 		U_atm[...,7] = 1 * U_atm[...,2] # All fragmented in 1D atmosphere (x > 0)
 
-		U_full = np.zeros((x.shape[0], *U_init.shape[1:]))
+		U_full = np.zeros((x.shape[0], U_init.shape[1], physics.NUM_STATE_VARS,))
 		U_full[np.where(np.all(x <= 0, axis=(1,2)))[0],...] = U_init
 		U_full[np.where(~np.all(x <= 0, axis=(1,2)))[0],...] = U_atm
 
@@ -491,57 +500,6 @@ class StaticPlug(FcnBase):
 
 		return U_full
 
-class StaticPlug(FcnBase):
-	''' 1D steady state with zero velocity and an initial plug drag.
-	  Calls submodule compressible-conduit-steady
-		(https://github.com/fredriclam/compressible-conduit-steady).
-	'''
-	def __init__(self,
-							 traction_fn:callable, yWt_fn:callable, yC_fn:callable, T_fn:callable,
-							 x_global:np.array=None,
-							 p_chamber=40e6,
-							 yA=1e-7,
-							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
-							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
-							 neglect_edfm=True,
-							 enforce_p_vent=None):
-		'''
-		Interface to compressible_conduit_steady.StaticPlug.
-		'''
-		if x_global is None:
-			raise ValueError(
-				"x_global must be specified in the StaticPlug initial condition. " +
-				"x_global provides 1D mesh information across all partitions of " +
-				"the 1D domain.")
-		props = {
-				"yA": yA,
-				"c_v_magma": c_v_magma,
-				"rho0_magma": rho0_magma,
-				"K_magma": K_magma,
-				"p0_magma": p0_magma,
-				"solubility_k": solubility_k,
-				"solubility_n": solubility_n,
-				"neglect_edfm": neglect_edfm,
-		}
-		# Register StaticPlug object from steady state module
-		self.f:callable = plugin_steady_state.StaticPlug(x_global,
-																									 p_chamber,
-			traction_fn,
-			yWt_fn,
-			yC_fn,
-			T_fn,
-			override_properties=props,
-			enforce_p_vent=enforce_p_vent,
-		)
-		# Save argument values
-		self.x_global = np.expand_dims(x_global,axis=(1,2))
-		self.p_chamber = p_chamber
-		self.enforce_p_vent = enforce_p_vent
-
-	def get_state(self, physics, x, t):
-		# Evaluate intial condition
-		U_init = self.f(x)
-		return U_init
 
 class UniformExsolutionTest(FcnBase):
 	'''
@@ -918,10 +876,10 @@ class UniformAir(FcnBase):
 		# Unpack
 		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
 		if physics.NDIMS == 2:
-			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, irhoSlip = \
 				physics.get_state_indices()
 		elif physics.NDIMS == 1:
-			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm, irhoSlip = \
 					physics.get_state_indices() 
 		else:
 			raise ValueError(f"Unexpected ndims {physics.NDIMS}")
@@ -3988,7 +3946,7 @@ class ChokedInlet2D(BCWeakPrescribed):
 
 	def get_boundary_state(self, physics, UqI, normals, x, t):		
 		# Package boundary state
-		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm = \
+		iarhoA, iarhoWv, iarhoM, irhou, irhov, ie, iarhoWt, iarhoC, iarhoFm, irhoslip = \
 			physics.get_state_indices()
 		UqB = np.empty_like(UqI)
 		# Store mass fractions
@@ -4100,6 +4058,68 @@ class CylindricalGeometricSource(SourceBase):
 
 		# Set source term equal to -1/r times the radial flux due to advection
 		return -r_inv * F_r
+
+
+class AreaGeometricSource(SourceBase):
+	'''
+	Geometric source term that arises when the quasi-1D domain has cross-sectional
+	area changing as a function of z.
+	'''
+
+	def __init__(self, h1=-150, r1=10, theta1_deg=10, added_depth=0.0, mode:str="jet", **kwargs):
+		super().__init__(kwargs)
+		self.mode = mode
+		self.h1 = h1
+		self.r1 = r1
+		self.theta1_deg = theta1_deg
+		self.added_depth = added_depth
+
+	def get_dA_A_coefficient(self, x):
+		''' Returns coefficient (1/A) (dA/dz) based on geometry mode. '''
+		if self.mode == "jet":
+			# Interpret h1 as quasi-1D jet nozzle location
+			h1 = self.h1
+			# Interpret r1 as conduit radius
+			r1 = self.r1
+			# Convert expansion angle into radians and compute tan
+			tantheta = np.tan(self.theta1_deg * np.pi / 180)
+			# Compute radius
+			r = np.where(x > h1,
+								self.r1 + (x - h1) * tantheta,
+								self.r1)
+			# Return (1/A) (dA/dz)
+			return np.where(x > h1,
+								2 / r * tantheta,
+								0.0)
+		else:
+			raise NotImplementedError
+
+	def get_source(self, physics, Uq, x, t):
+		''' Returns the geometric source due to divergences in polar (cylindrical)
+		coordinates. Interpret the first spatial coordinate as r, and incur the
+		geometric source term. '''
+
+		# Compute flux
+		F, (u2, a) = physics.get_conv_flux_interior(Uq)
+		# Index first coordinate of flux (does not copy F)
+		F_z = F[:, :, :, 0]
+		# Remove pressure contribution (isotropic tensor pI has no contribution to
+		# geometric source terms, unlike the momentum dyad)
+		iarhoA, iarhoWv, iarhoM, irhou, ie, iarhoWt, iarhoC, iarhoFm = \
+			physics.get_state_indices()
+		p = physics.compute_additional_variable("Pressure", Uq, True).squeeze(axis=2)
+		u = physics.compute_additional_variable("XVelocity", Uq, True).squeeze(axis=2)
+		# Compute approximate hydrostatic pressure for fluid surrounding the jet
+		p_hydro = 1e5 + 1e3 * 9.8 * (self.added_depth - x)
+		# Open-system jet interface pressure with pressure continuity
+		F_z[:, :, irhou] -= p
+		F_z[:, :, ie] -= p * u
+		# Open-system jet interface pressure without pressure continuity
+		# F_z[:, :, irhou] -= p_hydro[...,0]
+		# F_z[:, :, ie] -= p_hydro[...,0] * u
+
+		# Set source term equal to -1/r times the radial flux due to advection
+		return -self.get_dA_A_coefficient(x) * F_z
 
 
 class FrictionAndesitic(SourceBase):
@@ -4218,6 +4238,7 @@ class FrictionVolFracVariableMu(SourceBase):
 	model_plug: Whether to model the solid plug as part of the system.
 	'''
 	def __init__(self, conduit_radius:float=50.0, crit_volfrac:float=0.8,
+							 logistic_scale=0.01, viscosity_factor=1.0,
 							 default_viscosity=5e5, use_default_viscosity=False, 
 							 min_arhoWd=1e-3, min_arhoL=1e-3, mfWd_min=1e-3, T_min=700, 
 							 plug_boundary_0=0, dissipate_heat=True, model_plug=False,**kwargs):

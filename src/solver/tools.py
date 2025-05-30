@@ -420,7 +420,6 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 			psgrad = atomics.pressure_sgrad(arhoVec, pressure, T, u, physics)
 			# psgrad = physics.compute_pressure_sgradient(Uq)
 			pgrad = np.einsum('ijk, ijkl -> ijl', psgrad, grad_Uq)
-<<<<<<< HEAD
 
 			pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
 			f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:,:,0] + 1e-12)
@@ -431,18 +430,6 @@ def calculate_artificial_viscosity_integral(physics, elem_helpers, Uc, av_param,
 			usgrad[:,:,physics.get_momentum_slice()] = 1
 			usgrad /= rho
 
-=======
-
-			pgradhydro = -9.8 * arhoVec.sum(axis=-1, keepdims=True)
-			f = np.linalg.norm(pgrad - pgradhydro, axis=2) / (pressure[:,:,0] + 1e-12)
-
-			# Compute u gradient wrt state
-			usgrad = np.zeros_like(psgrad)
-			usgrad[:,:,physics.get_mass_slice()] = -u
-			usgrad[:,:,physics.get_momentum_slice()] = 1
-			usgrad /= rho
-
->>>>>>> feature/water
 			is_computing_jacobian = False
 			if is_computing_jacobian:
 				# Assemble full flux jacobian (ne, nq, ns, ns) with convective flux part q*u
