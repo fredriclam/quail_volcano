@@ -486,7 +486,7 @@ class PhysicsBase(ABC):
 		--------
 			idx: index of state variable (int)
 		'''
-		idx = self.state_indices[var_name]
+		idx = self.state_indices.get(var_name, False)
 
 		return idx
 

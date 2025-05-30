@@ -204,9 +204,18 @@ class MultiphasevpT(base.PhysicsBase):
 		mom = Uq[:, :, self.get_momentum_slice()]
 		e = Uq[:, :, self.get_state_slice("Energy")]
 		arhoWt = Uq[:, :, self.get_state_slice("pDensityWt")]
-		arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
-		arhoFm = Uq[:, :, self.get_state_slice("pDensityFm")]
-		rhoSlip = Uq[:, :, self.get_state_slice("rhoSlip")]
+		try:
+			arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
+		except KeyError:
+			arhoC = np.zeros_like(arhoA)
+		try:
+			arhoFm = Uq[:, :, self.get_state_slice("pDensityFm")]
+		except KeyError:
+			arhoFm = np.zeros_like(arhoA)
+		try:
+			rhoSlip = Uq[:, :, self.get_state_slice("rhoSlip")]
+		except KeyError:
+			rhoSlip = np.zeros_like(arhoA)
 
 		''' Flag non-physical state
 		The EOS-constrained phases (A, Wv, M) are checked for positivity. Total
