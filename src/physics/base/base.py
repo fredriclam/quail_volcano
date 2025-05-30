@@ -53,7 +53,7 @@ def process_map(fcn_type, fcn_map):
 			break
 
 	if fcn_class is None:
-		raise ValueError("Function not found in corresponding map")
+		raise ValueError(f"Function {str(fcn_type)} not found in corresponding map")
 
 	return fcn_class
 

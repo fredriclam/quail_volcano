@@ -546,13 +546,15 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			# Interpolate state at quadrature points over element and on faces
 			U_elem_faces = helpers.evaluate_state(Uc, self.basis_val_elem_faces,
 					skip_interp=basis.skip_interp)
-			nq_elem = self.quad_wts_elem.shape[0]
-			U_elem = U_elem_faces[:, :nq_elem, :]
+			
 
-			# Average value of state
+			# Compute cell-average state
+			nq_elem = self.quad_wts_elem.shape[0]
+			ne = self.elem_vols.shape[0]
+			U_elem = U_elem_faces[:, :nq_elem, :]
 			U_bar = helpers.get_element_mean(U_elem, self.quad_wts_elem, djac,
 					self.elem_vols)
-			ne = self.elem_vols.shape[0]
+			
 			# Density and pressure from averaged state
 			if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
 				rho_bar = {self.var_name1: physics.compute_variable(self.var_name1, U_bar),
@@ -566,19 +568,13 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 									self.var_nameT1: physics.compute_variable(self.var_nameT1, U_bar),
 									# self.var_nameT2: physics.compute_variable(self.var_nameT2, U_bar),
 									}
-			p_bar = physics.compute_variable(self.var_name4, U_bar)
+			
+			p_bar = physics.compute_variable("Pressure", U_bar)
 
 			if np.any([np.any(rho < 0.) for rho in rho_bar.values()]) \
 				or np.any(p_bar < 0.):
+				# Unrecoverable if pressure or density based on cell-average is negative
 				raise errors.NotPhysicalError
-			# TODO: reduce to mixtDensity
-			mix_rho_bar = physics.compute_variable("pDensityA", U_bar) \
-				+ physics.compute_variable("pDensityWv", U_bar) \
-				+ physics.compute_variable("pDensityM", U_bar)
-			# Assume constant mass fractions
-			y = np.concatenate((physics.compute_variable("pDensityA", U_bar) / mix_rho_bar,
-				physics.compute_variable("pDensityWv", U_bar) / mix_rho_bar,
-				physics.compute_variable("pDensityM", U_bar) / mix_rho_bar), axis=-1)
 
 			# Ignore divide-by-zero
 			np.seterr(divide='ignore')
@@ -586,14 +582,11 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			''' Theta modified here following Zhang, Xia, Shu (J. Sci. Comp. 2012 ),
 			where m = POS_TOL and M = +inf. '''
 
-			if solver.order == 0 or solver.order == 1 or solver.physics.NDIMS == 1:
-				candidate_states = Uc.copy()
-				elt_min = Uc.min(axis=1, keepdims=True)
-			elif solver.order == 2:
-				# Analytic QP solution for element minimum of each state variable,
-				# independently. Note that the resulting candidate_states are not
-				# state vectors at particular points; these contain the extreme values
-				# of the state scalars independently. 
+			def quadratic_extrema(Uc) -> np.array:
+				# Analytic quadratic program (QP) solution for element minimum of each
+				# state variable, independently. Note that the resulting
+				# candidate_states are not state vectors at particular points; these
+				# contain the extreme values of the state scalars independently. 
 				# Compute first-order condition == linear system coefficients
 				A00 = 4*Uc[:,2,:] + 4*Uc[:,0,:] - 8*Uc[:,1,:]
 				A01 = 4*Uc[:,0,:] - 4*Uc[:,3,:] - 4*Uc[:,1,:] + 4*Uc[:,4,:]
@@ -638,7 +631,8 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				candidate_points[:,:,6,:] = np.array([0, 1])
 				# Restrict points to the triangle x >= 1, y >= 1, t = 1 - x - y >= 0
 				candidate_points = np.clip(candidate_points, 0, 1)
-				candidate_points[:,:,:,1] = np.minimum(candidate_points[:,:,:,1], 1 - candidate_points[:,:,:,0])
+				candidate_points[:,:,:,1] = np.minimum(candidate_points[:,:,:,1],
+																					     1 - candidate_points[:,:,:,0])
 
 				def eval_basis_at(x, coeffs):
 					''' Evaluate basis against coefficients for arbitrary x
@@ -659,8 +653,18 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				candidate_states = np.swapaxes(eval_basis_at(candidate_points, Uc), 1, 2)
 				# Compute elementwise extrema(n_elements, 1, n_states)
 				# elt_max = basis_vec(candidate_points, Uc).max(axis=2)[:,np.newaxis,:]
-				elt_min = candidate_states.min(axis=1, keepdims=True)
 
+				return candidate_states
+
+
+			if solver.order == 0 or solver.order == 1 or solver.physics.NDIMS == 1:
+				# Concatenate face/element quadrature point values and nodal points
+				candidate_states = np.concatenate((U_elem_faces, Uc), axis=1)
+				elt_min = candidate_states.min(axis=1, keepdims=True)
+			elif solver.order == 2:
+				# Append quadrature point states and nodal point states
+				candidate_states = np.concatenate((quadratic_extrema(Uc), U_elem_faces, Uc),axis=1 )
+				elt_min = candidate_states.min(axis=1, keepdims=True)
 			else:
 				assert solver.order <= 2, "For higher order, implement piecewise polynomial extreme check for PPL"
 			
@@ -672,7 +676,7 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 			denom = np.where(U_bar[...,_i] - elt_min[...,_i] != 0,
 											U_bar[...,_i] - elt_min[...,_i], POS_TOL)
 			pos_tol_vec = POS_TOL * np.ones_like(denom)
-			pos_tol_vec[...,3] *= 1e6 # Energy scaling
+			pos_tol_vec[...,3] *= 1e5 # Energy scaling
 			theta = np.abs((U_bar[...,_i] - pos_tol_vec)/denom).min(axis=2, keepdims=True)
 					
 			# Pick strictest theta
@@ -698,10 +702,21 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 				raise NotImplementedError
 
 			if np.any(theta1 < 1.):
-				# Intermediate limited solution
+				# Re-evaluate intermediate limited solution
 				U_elem_faces = helpers.evaluate_state(Uc,
 						self.basis_val_elem_faces,
 						skip_interp=basis.skip_interp)
+				# Re-evaluate extrema states
+				if solver.order == 0 or solver.order == 1 or solver.physics.NDIMS == 1:
+					# Concatenate face/element quadrature point values and nodal points
+					candidate_states = np.concatenate((U_elem_faces, Uc), axis=1)
+					elt_min = candidate_states.min(axis=1, keepdims=True)
+				elif solver.order == 2:
+					# Append quadrature point states and nodal point states
+					candidate_states = np.concatenate((quadratic_extrema(Uc), U_elem_faces, Uc),axis=1 )
+					elt_min = candidate_states.min(axis=1, keepdims=True)
+				else:
+					assert solver.order <= 2, "For higher order, implement piecewise polynomial extreme check for PPL"
 
 			''' Limit energy (for ideal gas, p is proportional to vol. internal energy) '''
 			if physics.PHYSICS_TYPE == general.PhysicsType.MultiphaseWLMA:
@@ -744,21 +759,20 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 
 			''' Limit pressure '''
 
+			PRESSURE_TOL = 1e5 * POS_TOL
+
 			estimate_with_quad_points = False
 			if estimate_with_quad_points:
+				# Legacy method
 				# Compute pressure at quadrature points (interior and face)
 				p_elem_faces = physics.compute_variable("Pressure", U_elem_faces)
 				# Indices where pressure is negative
 				theta = np.where(p_elem_faces < 0., (p_bar - POS_TOL) / (p_bar - p_elem_faces), 1.0)
 			else:
 				# Compute pressure at quadrature points
-				p_elem_faces = physics.compute_variable("Pressure", U_elem_faces)
+				p_candidates = physics.compute_variable("Pressure", candidate_states)
 				# Indices where pressure is negative
-				theta = np.where(p_elem_faces < 0., (p_bar - POS_TOL) / (p_bar - p_elem_faces), 1.0)
-				# Use (updated) Uc to compute nodal pressure 
-				p_extrema = physics.compute_variable("Pressure", Uc)
-				theta_extrema = np.clip(np.abs((p_bar - POS_TOL) / (p_bar - p_extrema)), 0, 1)
-				theta = np.concatenate((theta, theta_extrema), axis=1)
+				theta = np.clip(np.abs((p_bar - PRESSURE_TOL) / (p_bar - p_candidates)), 0, 1)
 			
 			theta3 = trunc(np.min(theta, axis=1))
 			# Get IDs of elements that need limiting

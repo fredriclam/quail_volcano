@@ -634,6 +634,10 @@ def main(argv):
 		# Calculate total number of syncs (num time steps * syncs per timestep)
 		_num_timesteps = getattr(domain_list[0].solver.stepper, "nstages", 1) \
 			* domain_list[0].solver.params["NumTimeSteps"]
+		
+		# Set sync to arbitrarily large (prevent cutoff based on counting num timesteps)
+		if domain_list[0].solver.stepper.__class__.__name__.casefold() == "Strang".casefold():
+			_num_timesteps = sys.maxsize
 
 		for domain in domain_list:
 			# Attach domain topology to each domain

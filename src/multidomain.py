@@ -296,7 +296,7 @@ class Observer():
     if not self.num_timesteps > 0:
       raise Exception("Expecting to run for zero timesteps.")
     # Perform N+1 signal cycles (since custom function is called N+1 times)
-    while True: # completed_timesteps <= self.num_timesteps:
+    while completed_timesteps <= self.num_timesteps:
       # Count ready-messages in queue
       msg = self.ready_queue.get(block=True, timeout=Observer.get_timeout)
       num_ready += 1

@@ -494,6 +494,7 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.RiemannProblem: mpvpT_fcns.RiemannProblem,
 			FcnType.UniformExsolutionTest: mpvpT_fcns.UniformExsolutionTest,
 			FcnType.LinearPressureGrad: mpvpT_fcns.LinearPressureGrad,
+			FcnType.UniformTest: mpvpT_fcns.UniformTest,
 			FcnType.RightTravelingGaussian: mpvpT_fcns.RightTravelingGaussian,
 			FcnType.SteadyState: mpvpT_fcns.SteadyState,
 			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,

@@ -85,13 +85,6 @@ SourceTerms = {
         'source_treatment': 'Explicit',
         'tau_f': 1.0,                              # Fragmentation timescale (s)
     },
-    # Add a new source term that does nothing yet; see src/physics/multiphasevpT/functions.py
-    "source5": {
-        "Function" : "GenericEvolutionSource",
-        "param1": 1234.5,
-        "param2": 678,
-        "source_treatment" : "Explicit",
-    },
 }
 
 # An "exact solution" is needed by Quail, but does not need to be called
