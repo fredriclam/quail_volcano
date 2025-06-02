@@ -2,7 +2,7 @@ import numpy as np
 import run_globals
 
 Numerics = {
-    "SolutionOrder" : 1,
+    "SolutionOrder" : 0,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -70,7 +70,8 @@ InitialCondition = {
     "T_fn": T_fn,
     "x_global": np.linspace(Mesh["xmin"], Mesh["xmax"], Mesh["NumElemsX"]),
     "p_chamber": p_chamber,
-    "yA": 1e-5,
+    "yA": 1e-6,
+    "yMin": 1e-6,
     "c_v_magma": 1e3,
     "rho0_magma": 2.7e3,
     "K_magma": 10e9,

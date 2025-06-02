@@ -33,7 +33,7 @@ import numerics.limiting.base as base
 
 import pickle
 
-POS_TOL = 1e-6 # 1.e-10
+POS_TOL = 1e-8 # 1.e-10
 
 
 def trunc(a, decimals=8):

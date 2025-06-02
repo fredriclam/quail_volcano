@@ -406,7 +406,7 @@ class StaticPlug(FcnBase):
 							 yF_fn:callable=None,
 							 x_global:np.array=None,
 							 p_chamber=40e6,
-							 yA=1e-7,
+							 yA=1e-7, yMin=1e-7,
 							 c_v_magma=3e3, rho0_magma=2.7e3, K_magma=10e9,
 							 p0_magma=5e6, solubility_k=5e-6, solubility_n=0.5,
 							 neglect_edfm=True,
@@ -422,6 +422,7 @@ class StaticPlug(FcnBase):
 				"the 1D domain.")
 		self.props = {
 				"yA": yA,
+				"yMin": yMin,
 				"c_v_magma": c_v_magma,
 				"rho0_magma": rho0_magma,
 				"K_magma": K_magma,
@@ -465,9 +466,9 @@ class StaticPlug(FcnBase):
 		# Evaluate initial condition
 		U_init = f(x_conduit,
 									  is_solve_direction_downward=self.is_solve_direction_downward)
+
 		# Initial condition, atmosphere part
 		U_atm = np.zeros((x_atm.shape[0], U_init.shape[1], physics.NUM_STATE_VARS,))
-
 		# Set isothermal atmosphere
 		T_atm = 300
 		g = 9.8
