@@ -2925,7 +2925,7 @@ class PressureStableLinearizedInlet1D(BCWeakPrescribed):
 		# Approximate corresponding velocity in x-direction
 		u = uGrid + (p_chamber - pGrid) / (ZChamber + ZGrid)
 
-		if np.any(normals[...,0]) > 0:
+		if np.any(normals[...,0] > 0):
 			# Flip velocity for right boundary
 			u *= -1.0
 

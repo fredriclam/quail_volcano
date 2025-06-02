@@ -4,7 +4,7 @@ import run_globals
 TimeStepping = {
 	"InitialTime" : 0.0,
 	"FinalTime" : 60*1,
-	"NumTimeSteps" : 60*6000, # 1800 for 1D @ 10 m
+	"NumTimeSteps" : 60*6000, # 60*6000, # 1800 for 1D @ 10 m
 	"TimeStepper" : "RK3SR",
 }
 

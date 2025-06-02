@@ -15,7 +15,7 @@ SlipWallQ = {
   "use_stagnation_correction": False,
 }
 # Output file prefix (no trailing underscore)
-file_prefix = "refblastH"
-write_interval = 5
+file_prefix = "refblastH3" #H2: check 1D conduit
+write_interval = 100
 # Mesh file prefix (no trailing underscore) with parts 1-9
 mesh_prefix = "conicalB"

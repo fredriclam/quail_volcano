@@ -608,6 +608,8 @@ def get_ylabel(physics, var_name, ylabel=None):
 	if ylabel is None:
 		try:
 			ylabel = physics.StateVariables[var_name].value
+			if ylabel is False:
+				ylabel = physics.AdditionalVariables[var_name].value
 		except KeyError:
 			ylabel = physics.AdditionalVariables[var_name].value
 		ylabel = "$" + ylabel + "$"

@@ -2,7 +2,7 @@ import numpy as np
 import run_globals
 
 Numerics = {
-    "SolutionOrder" : run_globals.ElementOrder,
+    "SolutionOrder" : 1,
     "SolutionBasis" : "LagrangeSeg",
     "Solver" : "DG",
     "ApplyLimiters" : "PositivityPreservingMultiphasevpT",
@@ -53,7 +53,7 @@ yWt = 0.02
 yC = 0.15
 
 def traction_fn(x):
-    return -bump(x, -250, -150, 20) #-bump(x, -550, -450, 20)
+    return -bump(x, -550, -450, 20) #-bump(x, -250, -150, 20)
 def yWt_fn(x):
     return yWt * np.ones_like(x)
 def yC_fn(x):
@@ -70,7 +70,7 @@ InitialCondition = {
     "T_fn": T_fn,
     "x_global": np.linspace(Mesh["xmin"], Mesh["xmax"], Mesh["NumElemsX"]),
     "p_chamber": p_chamber,
-    "yA": 1e-7,
+    "yA": 1e-5,
     "c_v_magma": 1e3,
     "rho0_magma": 2.7e3,
     "K_magma": 10e9,
@@ -102,7 +102,7 @@ SourceTerms = {
         "tau_f": 0.005,
         "G": 1e9,
         "mu0": 1e9,
-        "k": 0.1,
+        "k": 0.001,
         "fragsmooth_scale": 0.010,
         "which_criterion": "both",
         "conduit_radius": 50,

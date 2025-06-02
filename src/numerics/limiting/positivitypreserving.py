@@ -33,7 +33,7 @@ import numerics.limiting.base as base
 
 import pickle
 
-POS_TOL = 1e-8 # 1.e-10
+POS_TOL = 1e-6 # 1.e-10
 
 
 def trunc(a, decimals=8):
@@ -788,6 +788,40 @@ class PositivityPreservingMultiphasevpT(PositivityPreserving):
 						elem_IDs], U_bar[elem_IDs])
 			else:
 				raise NotImplementedError
+			
+			# Severe pressure limiting
+			# Since pressure is nonlinear in the state variables, there is no
+			# guarantee that a theta-weighted average is sufficient.
+			theta_final = np.ones_like(theta3)
+			if np.any(theta3 < 1.):
+				# Re-evaluate intermediate limited solution
+				U_elem_faces = helpers.evaluate_state(Uc,
+						self.basis_val_elem_faces,
+						skip_interp=basis.skip_interp)
+				# Re-evaluate extrema states
+				if solver.order == 0 or solver.order == 1 or solver.physics.NDIMS == 1:
+					# Concatenate face/element quadrature point values and nodal points
+					candidate_states = np.concatenate((U_elem_faces, Uc), axis=1)
+					elt_min = candidate_states.min(axis=1, keepdims=True)
+				elif solver.order == 2:
+					# Append quadrature point states and nodal point states
+					candidate_states = np.concatenate((quadratic_extrema(Uc), U_elem_faces, Uc),axis=1 )
+					elt_min = candidate_states.min(axis=1, keepdims=True)
+				else:
+					assert solver.order <= 2, "For higher order, implement piecewise polynomial extreme check for PPL"
+				# Compute pressure at quadrature points
+				p_candidates = physics.compute_variable("Pressure", candidate_states)
+				# Indices where pressure is negative
+				theta_final = np.clip(np.abs((p_bar - PRESSURE_TOL) / (p_bar - p_candidates)), 0, 1)
+
+			if np.any(theta_final < 1):
+				# Get IDs of elements that need limiting
+				elem_IDs = np.where(theta_final < 1.)[0]
+				# Emergency shift to cell-average value
+				if basis.MODAL_OR_NODAL == general.ModalOrNodal.Nodal:
+					Uc[elem_IDs] = U_bar[elem_IDs]
+				else:
+					raise NotImplementedError
 
 			np.seterr(divide='warn')
 

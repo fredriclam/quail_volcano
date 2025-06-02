@@ -204,18 +204,9 @@ class MultiphasevpT(base.PhysicsBase):
 		mom = Uq[:, :, self.get_momentum_slice()]
 		e = Uq[:, :, self.get_state_slice("Energy")]
 		arhoWt = Uq[:, :, self.get_state_slice("pDensityWt")]
-		try:
-			arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
-		except KeyError:
-			arhoC = np.zeros_like(arhoA)
-		try:
-			arhoFm = Uq[:, :, self.get_state_slice("pDensityFm")]
-		except KeyError:
-			arhoFm = np.zeros_like(arhoA)
-		try:
-			rhoSlip = Uq[:, :, self.get_state_slice("rhoSlip")]
-		except KeyError:
-			rhoSlip = np.zeros_like(arhoA)
+		arhoC = Uq[:, :, self.get_state_slice("pDensityC")]
+		arhoFm = Uq[:, :, self.get_state_slice("pDensityFm")]
+		rhoSlip = Uq[:, :, self.get_state_slice("rhoSlip")]
 
 		''' Flag non-physical state
 		The EOS-constrained phases (A, Wv, M) are checked for positivity. Total
@@ -294,9 +285,10 @@ class MultiphasevpT(base.PhysicsBase):
 		elif vname is self.AdditionalVariables["InternalEnergy"].name:
 			varq = e - 0.5*np.sum(mom*mom, axis=2, keepdims=True)/(arhoA+arhoWv+arhoM)
 		elif vname is self.AdditionalVariables["Enthalpy"].name:
+			# Enthalpy per volume
 			varq = e \
 				- 0.5*np.sum(mom*mom, axis=2, keepdims=True)/(arhoA+arhoWv+arhoM) \
-				+ get_pressure() / (arhoA+arhoWv+arhoM)
+				+ get_pressure()
 		elif vname is self.AdditionalVariables["TotalEnthalpy"].name:
 			varq = (e + get_pressure())/(arhoA+arhoWv+arhoM)
 		elif vname is self.AdditionalVariables["SoundSpeed"].name:

@@ -502,7 +502,7 @@ class PhysicsBase(ABC):
 		--------
 			slc: slice corresponding to state variable
 		'''
-		slc = self.state_slices[var_name]
+		slc = self.state_slices.get(var_name, False)
 
 		return slc
 
@@ -723,7 +723,11 @@ class PhysicsBase(ABC):
 		try:
 			# First try state variables
 			sidx = self.get_state_index(var_name)
-			varq = Uq[:, :, sidx:sidx+1].copy()
+			if sidx is False:
+				varq = self.compute_additional_variable(var_name, Uq,
+					flag_non_physical)
+			else:
+				varq = Uq[:, :, sidx:sidx+1].copy()
 		except KeyError:
 			# Now try additional
 			varq = self.compute_additional_variable(var_name, Uq,
