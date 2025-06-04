@@ -838,6 +838,7 @@ class MultiphasevpT2D(MultiphasevpT):
 		d = {
 			FcnType.IsothermalAtmosphere: mpvpT_fcns.IsothermalAtmosphere,
 			FcnType.LinearAtmosphere: mpvpT_fcns.LinearAtmosphere,
+			FcnType.HomogeneousAtmosphere: mpvpT_fcns.HomogeneousAtmosphere,
 			FcnType.NohProblem: mpvpT_fcns.NohProblem,
 			FcnType.NohProblemMixture: mpvpT_fcns.NohProblemMixture,
 		}
