@@ -849,7 +849,7 @@ class HomogeneousAtmosphere(FcnBase):
 		# Compute scale height at reference temperature T0
 		hs0 = R*self.T0/self.gravity
 		# Compute pressure linear in elevation
-		p = self.p_atm * (1.0 - (self.h0)/hs0)
+		p = self.p_atm #* (1.0 - (self.h0)/hs0)
 		# Compute approx. volume fraction correcting for water partial pressure
 		prod = physics.Gas[0]["R"] * (1.0 - self.massFracWv)
 		alphaA = prod / (prod + physics.Gas[1]["R"] * self.massFracWv)
