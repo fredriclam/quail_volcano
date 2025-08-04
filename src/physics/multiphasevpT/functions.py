@@ -53,12 +53,14 @@ class FcnType(Enum):
 	LinearPressureGrad = auto()
 	IsothermalAtmosphere = auto()
 	HomogeneousAtmosphere = auto()
+	HomogeneousAtmosphere1D = auto()
 	LinearAtmosphere = auto()
 	RightTravelingGaussian = auto()
 	SteadyState = auto()
 	StaticPlug = auto()
 	NohProblem = auto()
 	NohProblemMixture = auto()
+	SpatialVectorProfile = auto()
 
 	# Backward compatibility placeholder
 	UniformAir = auto()
@@ -888,6 +890,73 @@ class HomogeneousAtmosphere(FcnBase):
 		return Uq # [ne, nq, ns]
 
 
+class HomogeneousAtmosphere1D(FcnBase):
+	'''
+	Constant pressure atmosphere indepedent of elevation.
+	'''
+
+	def __init__(self,T0:float=300., p_atm:float=1e5,
+		h0:float=-150.0, gravity:float=9.8, massFracWv=5e-3, arhoMR=1e-9):
+		''' Set atmosphere temperature, pressure, and location of pressure.
+		Pressure distribution is computed as hydrostatic profile with p = p_atm
+		at elevation h0.
+		'''
+		self.T0 = T0
+		self.p_atm = p_atm
+		self.h0 = h0
+		self.gravity = gravity
+		self.massFracWv = massFracWv
+		self.arhoMR = arhoMR
+
+	def get_state(self, physics, x, t):
+		# Unpack
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, irhoslip = \
+			physics.get_state_indices()
+		
+		# Mass-weighted gas constant R (approx. yM ~ 0)
+		R = (1.0 - self.massFracWv) * physics.Gas[0]["R"] \
+			+ self.massFracWv * physics.Gas[1]["R"]
+		# Compute scale height at reference temperature T0
+		hs0 = R*self.T0/self.gravity
+		# Compute pressure linear in elevation
+		p = self.p_atm #* (1.0 - (self.h0)/hs0)
+		# Compute approx. volume fraction correcting for water partial pressure
+		prod = physics.Gas[0]["R"] * (1.0 - self.massFracWv)
+		alphaA = prod / (prod + physics.Gas[1]["R"] * self.massFracWv)
+		# Constant pure air density at h0
+		arhoA = alphaA * self.p_atm / (physics.Gas[0]["R"]*self.T0)
+		# Compute temperature
+		T = alphaA * p / (arhoA * physics.Gas[0]["R"])
+		# Zero or trace amounts of Wv, M and tracers
+		arhoWv = (1.0 - alphaA) * p / (physics.Gas[1]["R"] * T)
+		arhoM = self.arhoMR*np.ones_like(p)
+		arhoWt = arhoWv
+		arhoC = 0.1*self.arhoMR*np.ones_like(p) # In principle should be passive in 2D
+		arhoFm = 0.9*self.arhoMR*np.ones_like(p)
+		# Zero velocity
+		u = np.zeros_like(p)
+
+		rho = arhoA + arhoWv + arhoM
+
+		e = (arhoA * physics.Gas[0]["c_v"] * T + 
+			arhoWv * physics.Gas[1]["c_v"] * T + 
+			arhoM * (physics.Liquid["c_m"] * T + physics.Liquid["E_m0"])
+			+ 0.5 * rho * u**2.)
+		
+		Uq[:, :, iarhoA] = arhoA
+		Uq[:, :, iarhoWv] = arhoWv
+		Uq[:, :, iarhoM] = arhoM
+		Uq[:, :, imom] = rho * u
+		Uq[:, :, ie] = e
+		# Tracer quantities
+		Uq[:, :, iarhoWt] = arhoWt
+		Uq[:, :, iarhoC] = arhoC
+		Uq[:, :, iarhoFm] = arhoFm
+
+		return Uq # [ne, nq, ns]
+
 class NohProblem(FcnBase):
 	'''
 	Axisymmetric Noh problem for testing in the (r,z) view. This is a shock
@@ -1106,6 +1175,50 @@ class MultipleRiemann(FcnBase):
 		Uq[np.logical_and(x[:,:,0] < -8, x[:,:,0] > -14), 1] = self.rhoR * self.uR
 		Uq[np.logical_and(x[:,:,0] < -8, x[:,:,0] > -14), 2] = self.pR / (gamma - 1.0) + \
 											 0.5 * self.rhoR* np.power(self.uR, 2.0)
+
+		return Uq # [ne, nq, ns]
+
+class SpatialVectorProfile(FcnBase):
+	'''
+	Set a custom set of initial conditions by passing in a vector that includes all the values for each conserved variable. 
+	'''
+
+	def __init__(self, arhoA, arhoWv, arhoM, mom, e, arhoWt, arhoC, arhoFm, arhoSlip):
+		'''
+		Initialize the spatial vector profile with the given conserved variables.
+		'''
+		self.arhoA = arhoA
+		self.arhoWv = arhoWv
+		self.arhoM = arhoM
+		self.mom = mom
+		self.e = e
+		self.arhoWt = arhoWt
+		self.arhoC = arhoC
+		self.arhoF = arhoFm
+		self.arhoSlip = arhoSlip
+
+	def get_state(self, physics, x, t):
+		# Unpack variables to lcoal scope
+		Uq = np.zeros([x.shape[0], x.shape[1], physics.NUM_STATE_VARS])
+		iarhoA, iarhoWv, iarhoM, imom, ie, iarhoWt, iarhoC, iarhoFm, irhoslip = \
+			physics.get_state_indices()
+		
+		print(f"Shape: {Uq.shape}")
+
+		
+		for i in range(3):
+			# Set state vector
+			Uq[:, i, iarhoA] = self.arhoA
+			Uq[:, i, iarhoWv] = self.arhoWv 
+			Uq[:, i, iarhoM] = self.arhoM
+			Uq[:, i, imom] = self.mom
+			Uq[:, i, ie] = self.e
+			# Tracer quantities
+			Uq[:, i, iarhoWt] = self.arhoWt
+			Uq[:, i, iarhoC] = self.arhoC
+			Uq[:, i, iarhoFm] = self.arhoF
+			# Slip
+			Uq[:, i, irhoslip] = self.arhoSlip
 
 		return Uq # [ne, nq, ns]
 

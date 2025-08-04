@@ -62,17 +62,22 @@ def custom_plot_2D(x, var_plot, solver, levels=None, clims=None):
 	plt.ylabel("$y$")
 	return var_plot
 
-def plot_mean(x, q, clims):
-	''' Create very cheap plot '''
-	cmap = plt.get_cmap()
-	cnorm = matplotlib.colors.Normalize(vmin=clims[0], vmax=clims[1]) 
-	for i in range(x.shape[0]):
-		pp = plt.Polygon([[x[i,0,0], x[i,0,1]],
-			[x[i,1,0], x[i,1,1]],
-			[x[i,2,0], x[i,2,1]]], facecolor=cmap(cnorm(q[i,:,0].mean())), linewidth=0)
-		plt.gca().add_patch(pp)
-	plt.axis("auto")
-	plt.axis("equal")
+def plot_mean(x, q, clims, ax=None, cmap='PiYG',):
+    ''' Create very cheap plot on specified axes '''
+    # Use provided ax if given, otherwise fall back to current axes
+    ax = ax if ax is not None else plt.gca()
+    
+    cmap = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
+    cnorm = matplotlib.colors.Normalize(vmin=clims[0], vmax=clims[1]) 
+    for i in range(x.shape[0]):
+        pp = plt.Polygon([[x[i,0,0], x[i,0,1]],
+                         [x[i,1,0], x[i,1,1]],
+                         [x[i,2,0], x[i,2,1]]], 
+                         facecolor=cmap(cnorm(q[i,:,0].mean())), linewidth=0)
+        ax.add_patch(pp)
+    ax.axis("auto")
+    ax.axis("equal")
+    return pp  # Return the last patch for potential use in animation
 
 def plot_mean1D(x, q, clims, xscale=1.0, xshift=0.0):
 	''' Create very cheap plot '''

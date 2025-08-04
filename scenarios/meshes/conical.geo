@@ -1,22 +1,23 @@
 SetFactory("Built-in");
 //+
+// *** Conical volcano mesh, with improved vent corner. ***
 
 // Set characteristic mesh size with constraint for 20 Hz, 300 m/s: >~ 15 m
 // Set characteristic mesh size with constraint for 5 Hz, 300 m/s: >~ 60 m
-dx = 1.5;
+dx = 70;
 
 // Set distribution exponent
 // (alpha = 1 for uniform; alpha = 2 for asymptotically balanced regions--to check)
-alpha = 1.4;
+alpha = 2;
 // Set size of interior of domain (excluding buffer zone)
-interior_size = 500;
+interior_size = 4000;
 
 // Set vent region size
-r1 = interior_size*(1-(5/6)^alpha);
+r1 = interior_size*(1-(5/6)^alpha) * 0.4;
 // Set conduit radius
-a = 5;
+a = 50;
 // Set corner radius
-b = a;
+b = 50; // 0.5*a;
 // Set trig constants for 1:2 slope
 ccos = 2/Sqrt(5);
 ssin = 1/Sqrt(5);
@@ -35,36 +36,38 @@ yp = yc + h*(xp - xc);
 // yp_i = yc + h*(xp2 - xc);
 
 // Set upper conduit length
-L = 10;
+L = 150;
 
 // Define inlet points (r < r1)
-Point(1) = {0, r1, 0, dx};
-Point(2) = {0, 0, 0, dx};
-Point(3) = {xp, yp, 0, dx};
+Point(1) = {0, r1, 0, 0.8*dx};
+Point(2) = {0, 0, 0, 0.8*dx};
+Point(3) = {xp, yp, 0, 0.8*dx};
 Point(4) = {xc, yc, 0, dx/10};
-Point(5) = {a+b, -b, 0, dx};
+Point(5) = {a+b, -b, 0, 0.8*dx};
 Point(6) = {a, -b, 0, dx/10};
 Point(7) = {a, -L, 0, dx/5};
 Point(8) = {0, -L, 0, dx/5};
 
 // Define outer domain points
 // Distributing r ~ n^2 for load balancing
-r2 = interior_size*(1-(4/6)^alpha);
-r3 = interior_size*(1-(3/6)^alpha);
-r4 = interior_size*(1-(2/6)^alpha);
-r5 = interior_size*(1-(1/6)^alpha);
-r6 = interior_size;
-r7 = 1.2*interior_size;
-r8 = 2.5*interior_size;
+r2 = interior_size*(1-(4/6)^alpha) * 0.55; // * 0.65;
+r3 = interior_size*(1-(3/6)^alpha) * 0.70;
+r4 = interior_size*(1-(2/6)^alpha) * 0.75;
+r5 = interior_size*(1-(1/6)^alpha) * 0.80;
+r6 = interior_size * 0.90;
+r7 = interior_size;
+r8 = 1.2*interior_size;
+r9 = 2.5*interior_size;
 // Set local mesh size
-size2 = dx; // 50;
+size2 = 0.8* dx; // 50;
 size3 = dx; // 100;
 size4 = dx; // 100;...
 size5 = dx;
 size6 = dx;
 // Buffer region
-size7 = 3*dx;
-size8 = 10*dx;
+size7 = dx;
+size8 = 3*dx;
+size9 = 10*dx;
 
 Point(9) = {0, r2, 0, size2};
 xp2 = (-qb+Sqrt(qb^2 - 4*qa*(h^2*xc^2-2*h*xc*yc+yc^2-r2^2)))/(2*qa);
@@ -100,6 +103,11 @@ Point(21) = {0, r8, 0, size8};
 xp8 = (-qb+Sqrt(qb^2 - 4*qa*(h^2*xc^2-2*h*xc*yc+yc^2-r8^2)))/(2*qa);
 yp8 = yc + h*(xp8 - xc);
 Point(22) = {xp8, yp8, 0, size8};
+
+Point(23) = {0, r9, 0, size9};
+xp9 = (-qb+Sqrt(qb^2 - 4*qa*(h^2*xc^2-2*h*xc*yc+yc^2-r9^2)))/(2*qa);
+yp9 = yc + h*(xp9 - xc);
+Point(24) = {xp9, yp9, 0, size9};
 
 // Define inlet curves
 Circle(1) = {1, 2, 3};
@@ -154,15 +162,12 @@ Line(32) = {22, 20};
 Circle(33) = {20, 2, 19};
 Line(34) = {19, 21};
 Curve Loop(9) = {31, 32, 33, 34};
-
-//+
-// (Disabled) global plane surface
-// Plane Surface(1) = {1};
-//+
-// Embedded line no longer needed; mesh on two separate surfaces
-// Curve{1} In Surface{1};
-//+
-
+// Region r8-r9
+Circle(35) = {23, 2, 24};
+Line(36) = {24, 22};
+Circle(37) = {22, 2, 21};
+Line(38) = {21, 23};
+Curve Loop(10) = {35, 36, 37, 38};
 // Set planes with compatible (reversed) orientation
 Plane Surface(2) = {-2};
 Plane Surface(3) = {-3};
@@ -172,16 +177,53 @@ Plane Surface(6) = {-6};
 Plane Surface(7) = {-7};
 Plane Surface(8) = {-8};
 Plane Surface(9) = {-9};
+Plane Surface(10) = {-10};
 //+
-// Set mesh size constraint embeddings
-// Line{15} In Surface{2};
-// Line{16} In Surface{2};
-// Line{17} In Surface{2};
-// Line{18} In Surface{2};
+
+// Refinement with distance from axis, near conduit
+Field[1] = Distance;
+Field[1].CurvesList = {6};
+Field[2] = MathEval;
+Field[2].F = Sprintf("((F1/%g)^2 + 1) * %g", 6*a, 0.15*dx);
+
+// Set refinement near corner radius
+Field[3] = Distance;
+Field[3].CurvesList = {3};
+Field[4] = MathEval;
+Field[4].F = Sprintf("((F3/%g)^2 + 1) * %g", 1.0*b, 0.065*dx);
+
+// Refinement with distance from axis, in r1r2 region
+Field[5] = Distance;
+Field[5].CurvesList = {8};
+Field[6] = MathEval;
+Field[6].F = Sprintf("((F5/%g)^2 + 1) * %g", 6*a, 0.6*dx);
+
+// Set refinement near axis
+Field[7] = Distance;
+Field[7].CurvesList = {11};
+Field[8] = MathEval;
+Field[8].F = Sprintf("(F7/400)^2 + %g", dx);
+
+Field[9] = Box;
+Field[9].VIn  = dx/10;    // dx in box
+Field[9].VOut = 10*dx;  // dx outside box
+Field[9].XMin = 0;
+Field[9].XMax = r1;
+Field[9].YMin = -L;
+Field[9].YMax = 3*L;
+
+// Set min field
+Field[10] = Min;
+Field[10].FieldsList = {2,4,6};
+Background Field = 10;
 
 // Generate 2D mesh
 Mesh 2;
+
 // RefineMesh;
+OptimizeMesh "Laplace2D";
+OptimizeMesh "Laplace2D";
+OptimizeMesh "Laplace2D";
 
 // Mesh export
 
@@ -192,7 +234,7 @@ Physical Curve("pipewall", 4) = {4};
 Physical Curve("x2",       5) = {5};
 Physical Curve("symmetry", 6) = {6};
 Physical Surface("domain1") = {2};
-Save "tungurahuaA1.msh";
+Save "conicalB_1.msh";
 //+
 Delete Physicals;
 Physical Curve("r2",        7) = {7};
@@ -200,7 +242,7 @@ Physical Curve("symmetry2", 8) = {8};
 Physical Curve("ground2",   9) = {9};
 Physical Curve("r1",        10) = {10};
 Physical Surface("domain2") = {3};
-Save "tungurahuaA2.msh";
+Save "conicalB_2.msh";
 //+
 Delete Physicals;
 Physical Curve("r3",        11) = {11};
@@ -208,7 +250,7 @@ Physical Curve("ground3",   12) = {12};
 Physical Curve("r2",        13) = {13};
 Physical Curve("symmetry3", 14) = {14};
 Physical Surface("domain3") = {4};
-Save "tungurahuaA3.msh";
+Save "conicalB_3.msh";
 //+
 Delete Physicals;
 Physical Curve("r4",        15) = {15};
@@ -216,7 +258,7 @@ Physical Curve("ground4",   16) = {16};
 Physical Curve("r3",        17) = {17};
 Physical Curve("symmetry4", 18) = {18};
 Physical Surface("domain4") = {5};
-Save "tungurahuaA4.msh";
+Save "conicalB_4.msh";
 //+
 Delete Physicals;
 Physical Curve("r5",        19) = {19};
@@ -224,7 +266,7 @@ Physical Curve("ground5",   20) = {20};
 Physical Curve("r4",        21) = {21};
 Physical Curve("symmetry5", 22) = {22};
 Physical Surface("domain5") = {6};
-Save "tungurahuaA5.msh";
+Save "conicalB_5.msh";
 //+
 Delete Physicals;
 Physical Curve("r6",        23) = {23};
@@ -232,7 +274,7 @@ Physical Curve("ground6",   24) = {24};
 Physical Curve("r5",        25) = {25};
 Physical Curve("symmetry6", 26) = {26};
 Physical Surface("domain6") = {7};
-Save "tungurahuaA6.msh";
+Save "conicalB_6.msh";
 //+
 Delete Physicals;
 Physical Curve("r7",        27) = {27};
@@ -240,7 +282,7 @@ Physical Curve("ground7",   28) = {28};
 Physical Curve("r6",        29) = {29};
 Physical Curve("symmetry7", 30) = {30};
 Physical Surface("domain7") = {8};
-Save "tungurahuaA7.msh";
+Save "conicalB_7.msh";
 //+
 Delete Physicals;
 Physical Curve("r8",        31) = {31};
@@ -248,7 +290,12 @@ Physical Curve("ground8",   32) = {32};
 Physical Curve("r7",        33) = {33};
 Physical Curve("symmetry8", 34) = {34};
 Physical Surface("domain8") = {9};
-Save "tungurahuaA8.msh";
+Save "conicalB_8.msh";
 //+
-//Hide "*";
-//+
+Delete Physicals;
+Physical Curve("r9",        35) = {35};
+Physical Curve("ground9",   36) = {36};
+Physical Curve("r8",        37) = {37};
+Physical Curve("symmetry9", 38) = {38};
+Physical Surface("domain9") = {10};
+Save "conicalB_9.msh";

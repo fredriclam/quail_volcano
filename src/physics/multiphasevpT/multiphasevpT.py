@@ -475,6 +475,8 @@ class MultiphasevpT1D(MultiphasevpT):
 			FcnType.StaticPlug: mpvpT_fcns.StaticPlug,
 			FcnType.NohProblem: mpvpT_fcns.NohProblem,
 			FcnType.NohProblemMixture: mpvpT_fcns.NohProblemMixture,
+			FcnType.HomogeneousAtmosphere1D: mpvpT_fcns.HomogeneousAtmosphere1D,
+			FcnType.SpatialVectorProfile: mpvpT_fcns.SpatialVectorProfile,
 		}
 
 		self.IC_fcn_map.update(d)

@@ -1569,8 +1569,8 @@ class MultiphasevpT2D1D(CouplingBC):
 			# Set XMomentum(2D) = 0
 			self.bstate.Ulift[:,:,physics.get_momentum_slice()] = 0.0
 			
-			np.append(self.bstate.Ucast, 
-								self.bstate.Ucast[:,:,-1:], axis=2)
+			#np.append(self.bstate.Ucast, 
+			#					self.bstate.Ucast[:,:,-1:], axis=2)
 			self.bstate.Ucast = np.append(self.bstate.Ucast, 
 								self.bstate.Ucast[:,:,-1:], axis=2)
 			# Set tangential momentum to zero
