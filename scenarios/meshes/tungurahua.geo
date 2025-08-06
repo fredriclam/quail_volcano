@@ -3,7 +3,7 @@ SetFactory("Built-in");
 
 // Set characteristic mesh size with constraint for 20 Hz, 300 m/s: >~ 15 m
 // Set characteristic mesh size with constraint for 5 Hz, 300 m/s: >~ 60 m
-dx = 1.5;
+dx = 3;
 
 // Set distribution exponent
 // (alpha = 1 for uniform; alpha = 2 for asymptotically balanced regions--to check)
